@@ -98,8 +98,9 @@ escribir "apagar" y pulsar Enter dos veces) para no apagar por accidente.
 **Dock:** clic = abrir o ir a la ventana · clic central = ventana nueva · clic derecho = abrir ventana
 nueva, cerrar, fijar/quitar del dock.
 
-El teclado es **Latinoamérica** y la zona horaria **Ciudad de México** por defecto. Cámbialo en
-[`build/config.env`](build/config.env) (hay ejemplos para España, Argentina, Colombia…) y vuelve a construir.
+Viene configurado para **Chile**: idioma `es_CL`, teclado **Latinoamérica** (el teclado chileno estándar) y
+zona horaria de **Santiago** (con cambio de horario de verano). Para otro país edita
+[`build/config.env`](build/config.env) y vuelve a construir.
 
 ## Optimización
 
