@@ -1,0 +1,5 @@
+# Infinity OS no usa snap (arranque más lento y más RAM).
+# Si algún paquete intenta traer snapd, apt lo rechazará en lugar de instalarlo en silencio.
+Package: snapd
+Pin: release a=*
+Pin-Priority: -10

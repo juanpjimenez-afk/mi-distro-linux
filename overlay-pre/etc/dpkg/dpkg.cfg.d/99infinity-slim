@@ -1,0 +1,20 @@
+# Ahorra espacio: sin documentación ni traducciones que no uses (se conservan es y en).
+path-exclude=/usr/share/doc/*
+path-include=/usr/share/doc/*/copyright
+path-exclude=/usr/share/info/*
+path-exclude=/usr/share/locale/*
+path-include=/usr/share/locale/locale.alias
+path-include=/usr/share/locale/en*
+path-include=/usr/share/locale/es*
+path-exclude=/usr/share/man/??/*
+path-exclude=/usr/share/man/??_*/*
+
+# Firmware de servidores y de móviles/ARM: inútil en un PC de escritorio x86 (~300 MB)
+path-exclude=/usr/lib/firmware/qcom/*
+path-exclude=/usr/lib/firmware/mellanox/*
+path-exclude=/usr/lib/firmware/netronome/*
+path-exclude=/usr/lib/firmware/liquidio/*
+path-exclude=/usr/lib/firmware/qlogic/*
+path-exclude=/usr/lib/firmware/cxgb4/*
+path-exclude=/usr/lib/firmware/bnx2x/*
+path-exclude=/usr/lib/firmware/bnx2/*

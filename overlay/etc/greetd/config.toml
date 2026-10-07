@@ -1,0 +1,13 @@
+# greetd: gestor de inicio de sesión mínimo.
+[terminal]
+vt = 7
+
+# Al arrancar la ISO en vivo se entra directo al escritorio (solo la primera vez).
+# Si cierras sesión, aparece el login de texto (tuigreet).
+[initial_session]
+command = "infinity-session"
+user = "@LIVE_USER@"
+
+[default_session]
+command = "tuigreet --time --asterisks --remember --cmd infinity-session"
+user = "_greetd"

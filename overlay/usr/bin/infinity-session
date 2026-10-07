@@ -1,0 +1,79 @@
+#!/bin/sh
+# Inicia la sesión gráfica de Infinity OS (la lanza greetd).
+#
+# Si Hyprland falla enseguida (muy típico en máquinas virtuales sin aceleración 3D),
+# se reintenta solo en "modo seguro": renderizado por software y sin efectos pesados.
+# También puedes forzarlo desde el menú de arranque: "gráficos seguros".
+
+# Registro de la sesión (para diagnosticar problemas): ~/.local/state/infinity/sesion.log
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/infinity"
+mkdir -p "$LOG_DIR" 2>/dev/null && exec >>"$LOG_DIR/sesion.log" 2>&1
+echo "=== sesión iniciada $(date) ==="
+
+# En máquinas virtuales no hay GPU real: las apps GTK4 dibujan por CPU (cairo), que es fiable
+# (el renderizador OpenGL sobre llvmpipe puede dejar texto invisible).
+if command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt -q; then
+    export GSK_RENDERER=cairo
+fi
+
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=Hyprland
+export XDG_CURRENT_DESKTOP=Hyprland
+export XCURSOR_THEME=Bibata-Modern-Classic
+export XCURSOR_SIZE=24
+export MOZ_ENABLE_WAYLAND=1
+export QT_QPA_PLATFORM=wayland
+export GDK_BACKEND=wayland,x11
+export ELECTRON_OZONE_PLATFORM_HINT=auto
+
+CONF="$HOME/.config/hypr/hyprland.conf"
+[ -f "$CONF" ] || CONF=/etc/skel/.config/hypr/hyprland.conf
+
+modo_seguro() {
+    export GSK_RENDERER=cairo   # apps GTK4 sin OpenGL: evita texto invisible en render por software
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export AQ_NO_MODIFIERS=1
+    export WLR_RENDERER_ALLOW_SOFTWARE=1
+    # Configuración = la tuya + efectos pesados desactivados
+    SAFE="${XDG_RUNTIME_DIR:-/tmp}/infinity-safe.conf"
+    {
+        echo "source = $CONF"
+        echo "decoration:blur:enabled = false"
+        echo "decoration:shadow:enabled = false"
+        echo "animations:enabled = false"
+        echo "cursor:no_hardware_cursors = true"
+    } > "$SAFE"
+    CONF="$SAFE"
+}
+
+# Se lanza Hyprland directamente (no con start-hyprland): su "modo seguro" tras una caída
+# ignora tu configuración y abre un diálogo que necesita un paquete que Ubuntu no trae.
+# El reinicio lo controlamos nosotros, conservando tu configuración.
+lanzar() {
+    Hyprland --config "$CONF"
+}
+
+grep -qw 'infinity.safe=1' /proc/cmdline 2>/dev/null && modo_seguro
+
+reinicios=0
+while :; do
+    inicio=$(date +%s)
+    lanzar
+    estado=$?
+    duracion=$(( $(date +%s) - inicio ))
+
+    # Salida limpia (Cerrar sesión): se termina aquí.
+    [ "$estado" -eq 0 ] && break
+
+    echo "=== Hyprland terminó con error $estado tras ${duracion}s ($(date)) ==="
+    if [ "$duracion" -lt 20 ] && [ -z "$LIBGL_ALWAYS_SOFTWARE" ]; then
+        # Cayó nada más arrancar: lo habitual en máquinas sin 3D -> modo seguro
+        echo "=== reintentando en modo seguro (render por software) ==="
+        modo_seguro
+        continue
+    fi
+    # Cayó con la sesión ya iniciada: se vuelve al escritorio (máx. 3 veces seguidas)
+    reinicios=$((reinicios + 1))
+    [ "$reinicios" -ge 3 ] && break
+    sleep 1
+done

@@ -1,0 +1,77 @@
+name: Construir ISO de Infinity OS
+
+# Cómo usarlo (desde Windows, sin instalar nada):
+#   1. En GitHub: pestaña "Actions" -> "Construir ISO de Infinity OS" -> "Run workflow".
+#   2. Espera ~15-25 min. Al terminar, entra a la ejecución y baja el archivo de "Artifacts".
+#   3. Para una versión "oficial": crea una etiqueta (tag) v0.1.0 y la ISO se publica en "Releases".
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+    branches: [main]
+    paths:
+      - "build/**"
+      - "overlay/**"
+      - "overlay-pre/**"
+      - "shell/**"
+      - "branding/**"
+      - "VERSION"
+      - ".github/workflows/build-iso.yml"
+
+permissions:
+  contents: write # solo se usa para publicar la ISO en "Releases" cuando hay un tag
+
+jobs:
+  iso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pruebas de la lógica del shell
+        run: python3 -m unittest discover -s shell/tests -v
+
+      - name: Instalar herramientas de construcción
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap squashfs-tools xorriso mtools \
+            grub-pc-bin grub-efi-amd64-bin rsync
+
+      - name: Liberar espacio en el runner
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Construir la ISO
+        run: sudo ./build/build.sh
+
+      - name: Resumen
+        run: |
+          ls -lh out/
+          cat out/*.sha256
+          {
+            echo "### ISO construida"
+            echo '```'
+            ls -lh out/
+            cat out/*.sha256
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir ISO como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: infinity-os-iso
+          path: |
+            out/*.iso
+            out/*.sha256
+          compression-level: 0 # la ISO ya está comprimida
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Publicar en Releases (solo con tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/*.iso out/*.sha256 \
+            --title "Infinity OS $GITHUB_REF_NAME" \
+            --notes "ISO en vivo de Infinity OS. Verifica la descarga con el archivo .sha256. Instrucciones en el README."
