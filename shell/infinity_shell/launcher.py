@@ -1,4 +1,5 @@
 """Buscador rápido + apagado. Se abre sobre el orbe (logo) como una hoja de cristal."""
+import os
 import subprocess
 from urllib.parse import quote_plus
 
@@ -15,6 +16,15 @@ from . import power  # noqa: E402
 from .search import calcular, normalizar  # noqa: E402
 
 MAX_FILAS = 8
+
+
+def _segundos_confirmacion():
+    """Tiempo para pulsar "otra vez" y confirmar apagar/reiniciar/cerrar sesión."""
+    try:
+        return max(1, int(os.environ.get("INFINITY_CONFIRMAR_S", "3")))
+    except ValueError:
+        return 3
+
 BUSCADOR_WEB = "https://duckduckgo.com/?q="
 
 
@@ -262,7 +272,7 @@ class Launcher(Gtk.Window):
             self._desarmar()
             self.botones[accion.clave].add_css_class("armed")
             self.estado.set_text(f"{accion.nombre}: pulsa otra vez para confirmar")
-            self._armado = (accion, GLib.timeout_add_seconds(3, lambda: self._desarmar(desde_temporizador=True)))
+            self._armado = (accion, GLib.timeout_add_seconds(_segundos_confirmacion(), lambda: self._desarmar(desde_temporizador=True)))
             return
         self.cerrar()
         power.ejecutar(accion)

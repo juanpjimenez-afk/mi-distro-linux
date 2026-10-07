@@ -138,6 +138,7 @@ class Dock(Gtk.Window):
         self._pendiente = 0
         self._en_curso = False
         self._repetir = False
+        self._firma = None
         _capa(self, "infinity-dock", [LayerShell.Edge.BOTTOM], None, exclusiva=True)
 
         self.caja = Gtk.Box(spacing=4)
@@ -153,7 +154,9 @@ class Dock(Gtk.Window):
 
     # ----------------------------------------------------------------- eventos
     def _evento(self, nombre, datos):
-        if nombre in ("openwindow", "closewindow", "activewindowv2", "movewindowv2", "windowtitlev2"):
+        # Los cambios de título (windowtitlev2) llegan sin parar con un navegador y no cambian
+        # nada visible en el dock, así que no se escuchan.
+        if nombre in ("openwindow", "closewindow", "activewindowv2", "movewindowv2"):
             self.refrescar_pronto()
 
     def refrescar_pronto(self):
@@ -212,9 +215,21 @@ class Dock(Gtk.Window):
 
     def _dibujar(self, ventanas, activa):
         self.activa = activa
+        elementos = self._modelo(ventanas)
+        # Solo se reconstruyen los botones si algo visible cambió. Reconstruir destruye los
+        # menús abiertos, los tooltips y el estado de "hover", y gasta CPU para nada.
+        firma = tuple(
+            (el.app.id if el.app else "clase:" + (el.clase or "").casefold(), el.fijada,
+             tuple(v["address"] for v in el.ventanas),
+             any(v["address"] == activa for v in el.ventanas))
+            for el in elementos
+        )
+        if firma == self._firma:
+            return
+        self._firma = firma
         while (hijo := self.caja.get_first_child()) is not None:
             self.caja.remove(hijo)
-        for el in self._modelo(ventanas):
+        for el in elementos:
             self.caja.append(self._boton(el))
         self.set_default_size(1, 1)  # permite que la ventana se encoja si hay menos iconos
 

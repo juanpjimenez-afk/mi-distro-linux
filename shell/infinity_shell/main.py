@@ -3,6 +3,12 @@
     infinity-shell                    inicia el shell
     infinity-shell --toggle-launcher  abre/cierra el buscador (en la instancia ya iniciada)
     infinity-shell --refresh          refresca volumen/batería/red (para atajos de teclado)
+
+Para atajos de teclado es MUCHO más rápido hablar con la instancia ya abierta por D-Bus
+(no hay que arrancar Python ni cargar GTK):
+
+    gapplication action org.infinity.Shell toggle-launcher
+    gapplication action org.infinity.Shell refresh
 """
 import os
 import sys
@@ -50,6 +56,20 @@ class Shell(Gtk.Application):
         proveedor.load_from_path(CSS)
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), proveedor, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        # Acciones expuestas por D-Bus (las usan los atajos de teclado)
+        for nombre, funcion in (("toggle-launcher", self._accion_buscador), ("refresh", self._accion_refrescar)):
+            accion = Gio.SimpleAction.new(nombre, None)
+            accion.connect("activate", funcion)
+            self.add_action(accion)
+
+    def _accion_buscador(self, *_):
+        if self.dock is not None:
+            self._launcher().alternar()
+
+    def _accion_refrescar(self, *_):
+        if self.estado is not None:
+            self.estado.refrescar()
 
     def do_command_line(self, linea):
         args = linea.get_arguments()[1:]
