@@ -106,15 +106,23 @@ vuelve a esconder sola); en el modo en vivo no hay contraseña, basta pulsar Ent
 el formato edita `time-format` en `~/.config/gtklock/config.ini` (`%H:%M:%S`); el aspecto está en
 `/usr/share/infinity/lock/style.css`.
 
-**Si el ratón va con lag:** una causa muy habitual en máquinas virtuales es que el escritorio se dibuje por CPU, sin aceleración 3D.
-1. Activa la **aceleración 3D** de la VM (VMware: *Accelerate 3D graphics*; VirtualBox: *VMSVGA* + *Habilitar
-   aceleración 3D*) y súbele la memoria de vídeo.
-2. Usa una resolución más baja en la VM (p. ej. 1280×720): cada fotograma cuesta menos.
-3. Prueba cada ajuste por separado en una terminal (`Super + Enter`) y mira cuál mejora; son temporales:
-   `hyprctl keyword decoration:blur:enabled false` (sin desenfoque),
-   `hyprctl keyword cursor:no_hardware_cursors 1` (cursor por software),
-   `hyprctl keyword misc:vfr false` (redibujar siempre).
-   Si alguno lo arregla, dímelo y lo dejo como predeterminado.
+**Si el ratón va con lag (VirtualBox u otra VM):** en una VM sin aceleración 3D el escritorio se dibuja
+por CPU, y cada movimiento del ratón redibuja toda la pantalla. Por eso Infinity OS **no pone fondo de pantalla
+dentro de una VM** (usa solo un color), lo que en mis pruebas redujo a la mitad el coste del ratón. Para
+recuperar la imagen (a costa de más lag en la VM): `echo imagen > ~/.config/infinity/fondo`.
+
+Ajustes en VirtualBox que ayudan (no pude probar VirtualBox, así que son recomendaciones):
+1. **Configuración → Sistema → Placa base → Dispositivo señalador: *USB Tablet*** (puntero absoluto, sin
+   "capturar" el ratón). Es el ajuste que más suele notarse.
+2. **Pantalla:** controlador *VMSVGA*, memoria de vídeo al máximo (128 MB) y **Habilitar aceleración 3D** ✔.
+   Con 3D sin soporte real del host, el escritorio sigue dibujándose por CPU.
+3. **Sistema:** 4 CPU y 6–8 GB de RAM (tu equipo tiene 16 GB). Un monitor virtual de 1280×720 o 1366×768
+   cuesta menos por fotograma que uno de 1920×1080.
+4. Si el equipo tiene Hyper-V o "Seguridad basada en virtualización" activados en Windows, VirtualBox funciona
+   en un modo más lento; desactivarlo es una decisión tuya, con sus consecuencias.
+
+Para saber qué renderizador usa el escritorio, en una terminal (`Super + Enter`):
+`grep -m1 Renderer /run/user/$(id -u)/hypr/*/hyprland.log`. Si dice `llvmpipe`, es renderizado por CPU.
 
 Viene configurado para **Chile**: idioma `es_CL`, teclado **Latinoamérica** (el teclado chileno estándar) y
 zona horaria de **Santiago** (con cambio de horario de verano). Para otro país edita
