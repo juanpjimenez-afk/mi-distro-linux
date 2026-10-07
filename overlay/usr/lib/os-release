@@ -1,0 +1,10 @@
+NAME="@OS_NAME@"
+PRETTY_NAME="@OS_NAME@ @VERSION@"
+ID=infinity
+ID_LIKE="ubuntu debian"
+VERSION="@VERSION@"
+VERSION_ID="@VERSION@"
+VERSION_CODENAME=@SUITE@
+UBUNTU_CODENAME=@SUITE@
+HOME_URL="https://github.com/juanpjimenez-afk/mi-distro-linux"
+LOGO=infinity

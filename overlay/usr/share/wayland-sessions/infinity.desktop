@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Infinity
+Comment=Escritorio Infinity OS (Hyprland + cristal)
+Exec=infinity-session
+Type=Application
+DesktopNames=Hyprland

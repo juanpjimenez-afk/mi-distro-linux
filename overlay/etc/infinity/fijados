@@ -1,0 +1,5 @@
+# Apps fijadas en el dock de Infinity (una por línea).
+# Tu lista personal está en ~/.config/infinity/fijados (clic derecho en el dock -> Fijar).
+foot.desktop
+org.gnome.Epiphany.desktop
+thunar.desktop

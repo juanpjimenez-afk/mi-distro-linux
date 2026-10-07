@@ -1,0 +1,21 @@
+# Pantalla de bloqueo: tu fondo con un anillo de cristal para la contraseña.
+image=/usr/share/infinity/wallpaper.jpg
+scaling=fill
+daemonize
+show-failed-attempts
+indicator-radius=70
+indicator-thickness=6
+font=Inter
+ring-color=ffffff55
+key-hl-color=ffffffcc
+bs-hl-color=ff8fa6cc
+inside-color=00000055
+inside-clear-color=00000055
+inside-ver-color=00000055
+inside-wrong-color=ff6b8b66
+line-color=00000000
+line-clear-color=00000000
+line-ver-color=00000000
+line-wrong-color=00000000
+separator-color=00000000
+text-color=ffffffff

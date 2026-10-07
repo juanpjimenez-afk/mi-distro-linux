@@ -1,0 +1,4 @@
+// Instalación mínima: solo lo que pides, nada de "recomendados".
+APT::Install-Recommends "false";
+APT::Install-Suggests "false";
+Acquire::Languages "none";

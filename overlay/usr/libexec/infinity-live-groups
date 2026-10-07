@@ -1,0 +1,10 @@
+#!/bin/sh
+# Añade al usuario del modo en vivo a los grupos de hardware (brillo, audio, vídeo, entrada).
+# casper crea el usuario SIN ellos, y las teclas de brillo no funcionan sin el grupo "video".
+for u in $(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 {print $1}'); do
+    for g in video audio render input netdev; do
+        # grupo por grupo: si alguno no existe, los demás se añaden igual
+        getent group "$g" >/dev/null && usermod -aG "$g" "$u" 2>/dev/null
+    done
+done
+exit 0

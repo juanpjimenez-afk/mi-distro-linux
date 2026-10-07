@@ -1,0 +1,96 @@
+# Paquetes de Infinity OS (uno por línea; "#" son comentarios).
+# Se instalan SIN "recomendados", así que la lista es todo lo que hay en el sistema.
+# Menos paquetes = ISO más pequeña, arranque más rápido y menos RAM.
+
+# --- Núcleo y arranque -------------------------------------------------------
+linux-image-generic
+linux-firmware
+intel-microcode
+amd64-microcode
+initramfs-tools
+zstd                        # compresión rápida del initramfs
+casper                      # arranque en vivo desde la ISO
+
+# --- Sistema base ------------------------------------------------------------
+systemd-sysv
+systemd-resolved
+systemd-zram-generator      # swap comprimido en RAM
+earlyoom                    # evita que el equipo se congele si se llena la RAM
+dbus-user-session
+dbus-bin
+libpam-systemd
+polkitd
+udisks2
+sudo
+locales
+tzdata
+kbd
+bash-completion
+nano
+less
+curl
+ca-certificates
+
+# --- Red ---------------------------------------------------------------------
+network-manager
+wpasupplicant
+wireless-regdb
+iw
+
+# --- Audio -------------------------------------------------------------------
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+pavucontrol
+
+# --- Gráficos / escritorio ---------------------------------------------------
+libgl1-mesa-dri
+xwayland
+hyprland                    # compositor Wayland: da el desenfoque "cristal"
+xdg-desktop-portal-hyprland
+xdg-desktop-portal-gtk
+swaylock                    # bloqueo de pantalla (fiable también con render por software)
+hypridle
+swaybg
+grim
+slurp
+wl-clipboard
+brightnessctl
+greetd
+tuigreet
+
+# --- Shell Infinity (dock, orbe y buscador) ----------------------------------
+python3
+python3-gi
+python3-gi-cairo
+gir1.2-gtk-4.0
+gir1.2-gtk4layershell-1.0
+libgtk4-layer-shell0
+librsvg2-common
+gsettings-desktop-schemas
+dconf-gsettings-backend
+libglib2.0-bin              # glib-compile-schemas
+gtk-update-icon-cache
+
+# --- Aplicaciones ------------------------------------------------------------
+foot                        # terminal ligera (con efecto cristal)
+thunar                      # archivos
+gvfs
+epiphany-browser            # navegador (GNOME Web)
+btop
+fastfetch
+
+# --- Apariencia --------------------------------------------------------------
+fonts-inter
+fonts-jetbrains-mono
+fonts-noto-core
+fonts-noto-color-emoji
+papirus-icon-theme
+adwaita-icon-theme
+bibata-cursor-theme
+
+# --- Máquinas virtuales (para probar desde Windows) ---------------------------
+open-vm-tools               # VMware: portapapeles y resolución automática
+qemu-guest-agent
+spice-vdagent

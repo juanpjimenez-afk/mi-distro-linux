@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# Infinity OS — construye la ISO "en vivo" (arranca desde USB/VM sin instalar).
+#
+#   sudo ./build/build.sh          # todo: sistema + ISO
+#   sudo ./build/build.sh rootfs   # solo el sistema de archivos (lo lento, 10-15 min)
+#   sudo ./build/build.sh iso      # solo empaquetar la ISO (reutiliza el sistema ya hecho)
+#   sudo ./build/build.sh clean    # borra work/ y out/
+#
+# Requiere Ubuntu/Debian con:  debootstrap squashfs-tools xorriso mtools
+#                              grub-pc-bin grub-efi-amd64-bin rsync
+# (en Windows 10: no necesitas nada de esto; usa GitHub Actions, ver README.md)
+set -Eeuo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=build/config.env
+source "$ROOT/build/config.env"
+MIRROR=${MIRROR_OVERRIDE:-$MIRROR}
+VERSION=$(<"$ROOT/VERSION")
+WORK=${WORK:-$ROOT/work}
+OUT=${OUT:-$ROOT/out}
+ROOTFS=$WORK/rootfs
+ISO_DIR=$WORK/iso
+ISO=$OUT/infinity-os-$VERSION-amd64.iso
+
+log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
+die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+[[ $EUID -eq 0 ]] || die "ejecuta con sudo:  sudo $0 ${*:-}"
+
+need() {
+  local falta=()
+  for c in "$@"; do command -v "$c" >/dev/null || falta+=("$c"); done
+  ((${#falta[@]} == 0)) || die "faltan herramientas: ${falta[*]}  (sudo apt install debootstrap squashfs-tools xorriso mtools grub-pc-bin grub-efi-amd64-bin rsync)"
+}
+
+# ---------------------------------------------------------------- montajes
+mount_chroot() {
+  mkdir -p "$ROOTFS"/{dev/pts,dev/shm,proc,sys,run}
+  mountpoint -q "$ROOTFS/dev" || mount --bind /dev "$ROOTFS/dev"
+  mountpoint -q "$ROOTFS/dev/pts" || mount -t devpts devpts "$ROOTFS/dev/pts"
+  mountpoint -q "$ROOTFS/dev/shm" || mount -t tmpfs -o mode=1777 tmpfs "$ROOTFS/dev/shm"
+  mountpoint -q "$ROOTFS/proc" || mount -t proc proc "$ROOTFS/proc"
+  mountpoint -q "$ROOTFS/sys" || mount -t sysfs sysfs "$ROOTFS/sys"
+  mountpoint -q "$ROOTFS/run" || mount -t tmpfs tmpfs "$ROOTFS/run"
+  # DNS dentro del chroot
+  rm -f "$ROOTFS/etc/resolv.conf"
+  cp -L /etc/resolv.conf "$ROOTFS/etc/resolv.conf" 2>/dev/null || echo "nameserver 1.1.1.1" >"$ROOTFS/etc/resolv.conf"
+}
+
+umount_chroot() {
+  # Orden inverso; "-l" por si algún proceso hijo aún lo usa.
+  for m in run sys proc dev/shm dev/pts dev; do
+    mountpoint -q "$ROOTFS/$m" 2>/dev/null && umount -l "$ROOTFS/$m" || true
+  done
+}
+trap umount_chroot EXIT
+
+in_chroot() {
+  chroot "$ROOTFS" /usr/bin/env -i \
+    HOME=/root TERM="${TERM:-xterm}" LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive \
+    PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+    ${http_proxy:+http_proxy="$http_proxy"} \
+    "$@"
+}
+
+# ---------------------------------------------------------------- plantillas
+# Sustituye @VARIABLES@ de config.env en los archivos del overlay recién copiados.
+aplicar_plantillas() {
+  local dir=$1 raiz=$2
+  local -a archivos
+  mapfile -t archivos < <(cd "$dir" && find . -type f | sed 's|^\./||')
+  for f in "${archivos[@]}"; do
+    local destino="$raiz/$f"
+    [[ -f $destino ]] && grep -q '@[A-Z_]\+@' "$destino" 2>/dev/null || continue
+    sed -i \
+      -e "s|@OS_NAME@|$OS_NAME|g" \
+      -e "s|@VERSION@|$VERSION|g" \
+      -e "s|@SUITE@|$SUITE|g" \
+      -e "s|@HOSTNAME@|$HOSTNAME_LIVE|g" \
+      -e "s|@LIVE_USER@|$LIVE_USER|g" \
+      -e "s|@LOCALE@|$LOCALE|g" \
+      -e "s|@KB_LAYOUT@|$KB_LAYOUT|g" \
+      -e "s|@TIMEZONE@|$TIMEZONE|g" \
+      "$destino"
+  done
+}
+
+# ---------------------------------------------------------------- etapa 1
+etapa_rootfs() {
+  need debootstrap rsync
+  local firma
+  firma=$(cat "$ROOT/build/packages.list" "$ROOT/build/config.env" | sha256sum | cut -c1-16)
+
+  if [[ -f $WORK/.paquetes-$firma ]]; then
+    log "Paquetes ya instalados (sin cambios en packages.list/config.env)"
+  else
+    if [[ -f $ROOTFS/etc/os-release ]]; then
+      log "Sistema base existente: solo se actualizan los paquetes"
+    else
+      log "Creando el sistema base Ubuntu $SUITE (debootstrap)"
+      umount_chroot
+      rm -rf "$ROOTFS"
+      mkdir -p "$WORK"
+      [[ -e /usr/share/debootstrap/scripts/$SUITE ]] ||
+        ln -s gutsy "/usr/share/debootstrap/scripts/$SUITE"
+      debootstrap --variant=minbase --arch=amd64 --components=main,universe \
+        "$SUITE" "$ROOTFS" "$MIRROR"
+
+      log "Configurando apt y dpkg (instalación mínima)"
+      rsync -a "$ROOT/overlay-pre/" "$ROOTFS/"
+      cat >"$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" <<EOF
+Types: deb
+URIs: $MIRROR
+Suites: $SUITE $SUITE-updates $SUITE-security
+Components: main universe
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+      rm -f "$ROOTFS/etc/apt/sources.list"
+    fi
+    rm -f "$WORK"/.paquetes-*
+    # Que no arranquen servicios dentro del chroot mientras se instala
+    printf '#!/bin/sh\nexit 101\n' >"$ROOTFS/usr/sbin/policy-rc.d"
+    chmod +x "$ROOTFS/usr/sbin/policy-rc.d"
+
+    mount_chroot
+    mkdir -p "$ROOTFS/tmp/infinity"
+    grep -v '^\s*#' "$ROOT/build/packages.list" | sed 's/#.*//' | awk 'NF{print $1}' \
+      >"$ROOTFS/tmp/infinity/packages"
+    install -m755 "$ROOT/build/chroot-setup.sh" "$ROOTFS/tmp/infinity/chroot-setup.sh"
+
+    log "Instalando paquetes (esto tarda unos minutos)"
+    in_chroot /tmp/infinity/chroot-setup.sh packages
+    umount_chroot
+    touch "$WORK/.paquetes-$firma"
+  fi
+
+  etapa_configurar
+}
+
+# ---------------------------------------------------------------- etapa 1b
+etapa_configurar() {
+  log "Aplicando configuración, shell Infinity y marca"
+  umount_chroot
+  rsync -a --chown=root:root "$ROOT/overlay/" "$ROOTFS/"
+  aplicar_plantillas "$ROOT/overlay" "$ROOTFS"
+
+  # Shell (dock + orbe + buscador)
+  rm -rf "$ROOTFS/usr/lib/infinity"
+  mkdir -p "$ROOTFS/usr/lib/infinity" "$ROOTFS/usr/share/infinity"
+  rsync -a --exclude '__pycache__' --exclude 'tests' "$ROOT/shell/infinity_shell" "$ROOTFS/usr/lib/infinity/"
+  install -m755 "$ROOT/shell/infinity-shell" "$ROOTFS/usr/bin/infinity-shell"
+  # Marca
+  install -m644 "$ROOT/branding/logo-white.svg" "$ROOT/branding/logo.svg" "$ROOT/branding/wallpaper.jpg" \
+    "$ROOT/branding/logo-white-256.png" "$ROOTFS/usr/share/infinity/"
+  install -m644 "$ROOT/branding/logo-white.svg" "$ROOTFS/usr/share/pixmaps/infinity.svg"
+
+  mount_chroot
+  mkdir -p "$ROOTFS/tmp/infinity"
+  install -m755 "$ROOT/build/chroot-setup.sh" "$ROOTFS/tmp/infinity/chroot-setup.sh"
+  cat >"$ROOTFS/tmp/infinity/env" <<EOF
+LOCALE='$LOCALE'
+TIMEZONE='$TIMEZONE'
+HOSTNAME_LIVE='$HOSTNAME_LIVE'
+LIVE_USER='$LIVE_USER'
+EOF
+  in_chroot /tmp/infinity/chroot-setup.sh finalize
+  umount_chroot
+  rm -rf "$ROOTFS/tmp/infinity"
+}
+
+# ---------------------------------------------------------------- etapa 2
+etapa_iso() {
+  need mksquashfs grub-mkrescue xorriso mformat
+  [[ -d $ROOTFS/etc ]] || die "no hay sistema construido; ejecuta primero: $0 rootfs"
+
+  log "Preparando la estructura de la ISO"
+  rm -rf "$ISO_DIR"
+  mkdir -p "$ISO_DIR"/{casper,boot/grub,.disk} "$OUT"
+
+  local kernel initrd
+  kernel=$(ls -1 "$ROOTFS"/boot/vmlinuz-* | sort -V | tail -1)
+  initrd=$(ls -1 "$ROOTFS"/boot/initrd.img-* | sort -V | tail -1)
+  [[ -f $kernel && -f $initrd ]] || die "no encuentro kernel/initrd en $ROOTFS/boot"
+  cp "$kernel" "$ISO_DIR/casper/vmlinuz"
+  cp "$initrd" "$ISO_DIR/casper/initrd"
+
+  log "Comprimiendo el sistema (squashfs + zstd)"
+  # zstd: arranca bastante más rápido que xz con un tamaño similar.
+  mksquashfs "$ROOTFS" "$ISO_DIR/casper/filesystem.squashfs" \
+    -noappend -comp zstd -Xcompression-level 15 -b 1M -no-recovery -quiet -wildcards \
+    -e 'boot/*' 'tmp/*' 'var/cache/apt/*' 'var/lib/apt/lists/*' 'root/.cache'
+  chroot "$ROOTFS" dpkg-query -W --showformat='${Package} ${Version}\n' >"$ISO_DIR/casper/filesystem.manifest"
+  du -sx --block-size=1 "$ROOTFS" | cut -f1 >"$ISO_DIR/casper/filesystem.size"
+
+  echo "$OS_NAME $VERSION \"$SUITE\" - amd64 ($(date +%Y%m%d))" >"$ISO_DIR/.disk/info"
+
+  install -m644 "$ROOT/branding/grub-background.png" "$ISO_DIR/boot/grub/background.png"
+  sed -e "s|@OS_NAME@|$OS_NAME|g" -e "s|@VERSION@|$VERSION|g" \
+    "$ROOT/build/grub.cfg" >"$ISO_DIR/boot/grub/grub.cfg"
+
+  log "Generando la ISO híbrida (BIOS + UEFI)"
+  rm -f "$ISO"
+  grub-mkrescue -o "$ISO" "$ISO_DIR" --product-name "$OS_NAME" --product-version "$VERSION" \
+    -- -volid "INFINITY_OS" >"$WORK/grub-mkrescue.log" 2>&1 || {
+    tail -20 "$WORK/grub-mkrescue.log"
+    die "falló grub-mkrescue"
+  }
+  (cd "$OUT" && sha256sum "$(basename "$ISO")" >"$(basename "$ISO").sha256")
+  log "Listo: $ISO ($(du -h "$ISO" | cut -f1))"
+}
+
+case "${1:-all}" in
+  rootfs) etapa_rootfs ;;
+  iso) etapa_iso ;;
+  all) etapa_rootfs && etapa_iso ;;
+  clean) umount_chroot; rm -rf "$WORK" "$OUT"; echo "limpio" ;;
+  *) die "uso: $0 [all|rootfs|iso|clean]" ;;
+esac

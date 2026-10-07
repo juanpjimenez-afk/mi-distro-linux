@@ -1,0 +1,12 @@
+[Unit]
+Description=Grupos de hardware para el usuario en vivo de Infinity OS
+# Debe terminar ANTES de que se pueda iniciar sesión
+Before=systemd-user-sessions.service greetd.service
+ConditionKernelCommandLine=boot=casper
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/infinity-live-groups
+
+[Install]
+WantedBy=multi-user.target
