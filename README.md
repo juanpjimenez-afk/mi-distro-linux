@@ -85,7 +85,7 @@ Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://r
 | `Super + F` / `Super + V` | Pantalla completa / ventana flotante |
 | `Super + ←↑↓→` | Mover el foco · con `Shift`, mover la ventana |
 | `Super + 1…5` | Escritorios · con `Shift`, enviar ventana |
-| `Super + L` | Bloquear la pantalla: hora gigante de cristal (también se bloquea sola a los 10 min) |
+| `Super + L` | Bloquear la pantalla: hora gigante a la derecha (también se bloquea sola a los 10 min) |
 | `Impr` / `Shift + Impr` | Captura de región al portapapeles / pantalla completa a `~/Imágenes` |
 | `Super` + arrastrar (izq./der.) | Mover / redimensionar ventana |
 
@@ -98,13 +98,13 @@ escribir "apagar" y pulsar Enter dos veces) para no apagar por accidente.
 **Dock:** clic = abrir o ir a la ventana · clic central = ventana nueva · clic derecho = abrir ventana
 nueva, cerrar, fijar/quitar del dock.
 
-<p align="center"><img src="docs/bloqueo.jpg" alt="Pantalla de bloqueo: hora gigante en un panel de cristal" width="70%"></p>
+<p align="center"><img src="docs/bloqueo.jpg" alt="Pantalla de bloqueo: hora gigante a la derecha con la fecha debajo" width="70%"></p>
 
-**Pantalla de bloqueo:** al bloquear (botón del orbe, `Super + L` o por inactividad) solo se ve la **hora
-enorme** y la fecha en un panel de cristal. Toca una tecla o mueve el ratón para que aparezca la contraseña (se
-vuelve a esconder sola); en el modo en vivo no hay contraseña, basta pulsar Enter. Para mostrar segundos o cambiar
-el formato edita `time-format` en `~/.config/gtklock/config.ini` (`%H:%M:%S`); el aspecto está en
-`/usr/share/infinity/lock/style.css`.
+**Pantalla de bloqueo:** al bloquear (botón del orbe, `Super + L` o por inactividad) se ve la **hora en dos
+líneas**, enorme y a la derecha, con la fecha debajo, como en la pantalla de bloqueo de un teléfono. Toca una tecla
+o mueve el ratón para que aparezca la contraseña (se vuelve a esconder sola); en el modo en vivo no hay contraseña,
+basta pulsar Enter. Para cambiar el formato de la hora edita `time-format` en `~/.config/gtklock/config.ini`
+(por ejemplo `%H\n%M:%S` para añadir segundos); el aspecto está en `/usr/share/infinity/lock/`.
 
 **Si el ratón va con lag (VirtualBox u otra VM):** en una VM sin aceleración 3D el escritorio se dibuja
 por CPU, y cada movimiento del ratón redibuja toda la pantalla. Por eso Infinity OS **no pone fondo de pantalla
