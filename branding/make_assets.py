@@ -9,7 +9,7 @@ Los resultados ya están en el repo; solo ejecuta esto si quieres cambiar colore
 import subprocess
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
 
 AQUI = Path(__file__).resolve().parent
 
@@ -71,7 +71,13 @@ def main():
     bg.save(AQUI / "grub-background.png", optimize=True)
     tmp.unlink()
 
-    # 3) Iconos PNG del logo (blanco) para usos varios
+    # 3) Fondo de la pantalla de bloqueo: el fondo de siempre, muy desenfocado y algo más oscuro
+    lock = Image.open(AQUI / "wallpaper.jpg").convert("RGB").resize((1920, 1080), Image.LANCZOS)
+    lock = lock.filter(ImageFilter.GaussianBlur(40))
+    lock = ImageEnhance.Brightness(lock).enhance(0.78)
+    lock.save(AQUI / "wallpaper-lock.jpg", quality=88, optimize=True)
+
+    # 4) Iconos PNG del logo (blanco) para usos varios
     for t in (64, 256, 512):
         rasterizar_svg(AQUI / "logo-white.svg", AQUI / f"logo-white-{t}.png", t)
     print("Activos generados en", AQUI)

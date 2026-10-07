@@ -50,7 +50,8 @@ xwayland
 hyprland                    # compositor Wayland: da el desenfoque "cristal"
 xdg-desktop-portal-hyprland
 xdg-desktop-portal-gtk
-swaylock                    # bloqueo de pantalla (fiable también con render por software)
+gtklock                     # pantalla de bloqueo: hora gigante de cristal (GTK3, dibuja por CPU)
+swaylock                    # bloqueo de respaldo, por si gtklock fallara
 hypridle
 swaybg
 grim

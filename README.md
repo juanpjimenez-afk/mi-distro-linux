@@ -85,7 +85,7 @@ Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://r
 | `Super + F` / `Super + V` | Pantalla completa / ventana flotante |
 | `Super + ←↑↓→` | Mover el foco · con `Shift`, mover la ventana |
 | `Super + 1…5` | Escritorios · con `Shift`, enviar ventana |
-| `Super + L` | Bloquear la pantalla (también se bloquea sola a los 10 min) |
+| `Super + L` | Bloquear la pantalla: hora gigante de cristal (también se bloquea sola a los 10 min) |
 | `Impr` / `Shift + Impr` | Captura de región al portapapeles / pantalla completa a `~/Imágenes` |
 | `Super` + arrastrar (izq./der.) | Mover / redimensionar ventana |
 
@@ -97,6 +97,24 @@ busca en la web. Apagar, reiniciar y cerrar sesión **piden confirmación** (pul
 escribir "apagar" y pulsar Enter dos veces) para no apagar por accidente.
 **Dock:** clic = abrir o ir a la ventana · clic central = ventana nueva · clic derecho = abrir ventana
 nueva, cerrar, fijar/quitar del dock.
+
+<p align="center"><img src="docs/bloqueo.jpg" alt="Pantalla de bloqueo: hora gigante en un panel de cristal" width="70%"></p>
+
+**Pantalla de bloqueo:** al bloquear (botón del orbe, `Super + L` o por inactividad) solo se ve la **hora
+enorme** y la fecha en un panel de cristal. Toca una tecla o mueve el ratón para que aparezca la contraseña (se
+vuelve a esconder sola); en el modo en vivo no hay contraseña, basta pulsar Enter. Para mostrar segundos o cambiar
+el formato edita `time-format` en `~/.config/gtklock/config.ini` (`%H:%M:%S`); el aspecto está en
+`/usr/share/infinity/lock/style.css`.
+
+**Si el ratón va con lag:** una causa muy habitual en máquinas virtuales es que el escritorio se dibuje por CPU, sin aceleración 3D.
+1. Activa la **aceleración 3D** de la VM (VMware: *Accelerate 3D graphics*; VirtualBox: *VMSVGA* + *Habilitar
+   aceleración 3D*) y súbele la memoria de vídeo.
+2. Usa una resolución más baja en la VM (p. ej. 1280×720): cada fotograma cuesta menos.
+3. Prueba cada ajuste por separado en una terminal (`Super + Enter`) y mira cuál mejora; son temporales:
+   `hyprctl keyword decoration:blur:enabled false` (sin desenfoque),
+   `hyprctl keyword cursor:no_hardware_cursors 1` (cursor por software),
+   `hyprctl keyword misc:vfr false` (redibujar siempre).
+   Si alguno lo arregla, dímelo y lo dejo como predeterminado.
 
 Viene configurado para **Chile**: idioma `es_CL`, teclado **Latinoamérica** (el teclado chileno estándar) y
 zona horaria de **Santiago** (con cambio de horario de verano). Para otro país edita

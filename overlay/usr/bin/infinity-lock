@@ -1,0 +1,12 @@
+#!/bin/sh
+# Bloquea la pantalla con la hora grande de cristal (gtklock).
+# Si gtklock no logra arrancar, se usa swaylock para no dejarte sin bloqueo.
+#
+# OJO: no se puede fiar del código de salida de "gtklock -d" (devuelve 1 aunque haya
+# bloqueado bien), así que se lanza normal en segundo plano y se comprueba que sigue vivo.
+pidof gtklock >/dev/null 2>&1 && exit 0
+pidof swaylock >/dev/null 2>&1 && exit 0
+gtklock >/dev/null 2>&1 &
+sleep 2
+pidof gtklock >/dev/null 2>&1 && exit 0
+exec swaylock
