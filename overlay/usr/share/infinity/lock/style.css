@@ -1,4 +1,4 @@
-/* Pantalla de bloqueo de Infinity OS: la hora gigante sobre un panel de cristal.
+/* Pantalla de bloqueo de Infinity OS: la hora gigante, en blanco translúcido, a la derecha.
  * (gtklock usa GTK3, así que esto es CSS de GTK3.) */
 
 * {
@@ -6,44 +6,27 @@
   color: #ffffff;
 }
 
-/* ---- el panel de cristal ---- */
-window #info-box {
-  min-width: 900px;
-  padding: 26px 70px 44px 70px;
-  border-radius: 72px;
-  border: 1px solid rgba(255, 255, 255, 0.34);
-  background-color: rgba(20, 24, 50, 0.34);
-  background-image: linear-gradient(160deg,
-      rgba(255, 255, 255, 0.36) 0%,
-      rgba(255, 255, 255, 0.09) 30%,
-      rgba(255, 255, 255, 0.00) 56%,
-      rgba(255, 255, 255, 0.13) 100%);
-  box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.60),
-    inset 0 -2px 0 rgba(255, 255, 255, 0.14),
-    inset 0 0 44px rgba(255, 255, 255, 0.08),
-    0 36px 90px rgba(0, 0, 0, 0.38);
-}
-
-/* ---- la hora: enorme y finita ---- */
+/* ---- la hora: dos líneas enormes (hora arriba, minutos abajo) ---- */
 window #clock-label,
 window.focused:not(.hidden) #clock-label {
-  font-size: 230px;
-  font-weight: 200;
-  letter-spacing: 6px;
-  color: rgba(255, 255, 255, 0.96);
-  text-shadow: 0 6px 40px rgba(0, 0, 0, 0.30);
-}
-window #date-label,
-window.focused:not(.hidden) #date-label {
-  font-size: 40px;
+  font-size: 300px;
   font-weight: 300;
-  letter-spacing: 1px;
+  letter-spacing: -6px;
   color: rgba(255, 255, 255, 0.82);
-  margin-top: -18px;
+  text-shadow: 0 10px 50px rgba(10, 14, 40, 0.30);
 }
 
-/* ---- contraseña ---- */
+/* ---- la fecha: pequeña, debajo de los minutos ---- */
+window #date-label,
+window.focused:not(.hidden) #date-label {
+  font-size: 34px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.88);
+  text-shadow: 0 2px 16px rgba(10, 14, 40, 0.35);
+  margin-top: 6px;
+}
+
+/* ---- contraseña: cápsula de cristal, aparece al tocar una tecla ---- */
 window #input-field {
   min-height: 58px;
   padding: 0 26px;
@@ -51,9 +34,6 @@ window #input-field {
   border: 1px solid rgba(255, 255, 255, 0.34);
   background-color: rgba(20, 24, 50, 0.38);
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.03));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    0 14px 40px rgba(0, 0, 0, 0.28);
   font-size: 22px;
   caret-color: #ffffff;
   color: #ffffff;
@@ -69,12 +49,8 @@ window #unlock-button {
   border: 1px solid rgba(255, 255, 255, 0.30);
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.06));
   background-color: rgba(20, 24, 50, 0.30);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
   font-size: 18px;
   text-shadow: none;
-}
-window #unlock-button:hover {
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.40), rgba(255, 255, 255, 0.12));
 }
 
 window #error-label  { color: #ffb3c0; font-size: 18px; }

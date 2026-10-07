@@ -4,31 +4,35 @@
 <interface>
 	<object class="GtkBox" id="window-box">
 		<property name="name">window-box</property>
-		<property name="halign">center</property>
-		<property name="valign">center</property>
+		<property name="halign">fill</property>
+		<property name="valign">fill</property>
 		<property name="orientation">vertical</property>
-		<property name="spacing">34</property>
+		<property name="spacing">0</property>
 		<child>
-			<!-- El panel de cristal con la hora -->
+			<!-- La hora gigante, a la derecha, como en la pantalla de bloqueo de un teléfono -->
 			<object class="GtkBox" id="info-box">
 				<property name="name">info-box</property>
-				<property name="halign">center</property>
+				<property name="halign">end</property>
+				<property name="valign">center</property>
+				<property name="vexpand">1</property>
+				<property name="margin-end">150</property>
 				<property name="orientation">vertical</property>
 				<child>
 					<object class="GtkBox" id="time-box">
 						<property name="name">time-box</property>
-						<property name="halign">center</property>
+						<property name="halign">end</property>
 						<property name="orientation">vertical</property>
 						<child>
 							<object class="GtkLabel" id="clock-label">
 								<property name="name">clock-label</property>
-								<property name="halign">center</property>
+								<property name="halign">end</property>
+								<property name="justify">right</property>
 							</object>
 						</child>
 						<child>
 							<object class="GtkLabel" id="date-label">
 								<property name="name">date-label</property>
-								<property name="halign">center</property>
+								<property name="halign">end</property>
 							</object>
 						</child>
 					</object>
@@ -41,6 +45,9 @@
 				<property name="transition-type">crossfade</property>
 				<property name="transition-duration">250</property>
 				<property name="reveal-child">0</property>
+				<property name="halign">center</property>
+				<property name="valign">end</property>
+				<property name="margin-bottom">90</property>
 				<child>
 					<object class="GtkGrid" id="body-grid">
 						<property name="row-spacing">10</property>
