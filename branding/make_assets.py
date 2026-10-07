@@ -58,14 +58,16 @@ def main():
     # 1) Fondo de pantalla 4K (JPEG: pesa ~400 KB en vez de varios MB)
     fondo(3840, 2160).save(AQUI / "wallpaper.jpg", quality=90, optimize=True, progressive=True)
 
-    # 2) Imagen del menú de arranque (GRUB) 1280x720: fondo + logo centrado
-    bg = fondo(1280, 720).filter(ImageFilter.GaussianBlur(2))
+    # 2) Imagen del menú de arranque (GRUB) 1024x768 (4:3, la resolución que fija grub.cfg):
+    #    fondo oscurecido + logo pequeño en la esquina superior izquierda, que el menú
+    #    de GRUB (centrado) nunca tapa.
+    bg = fondo(1024, 768).filter(ImageFilter.GaussianBlur(2))
     oscuro = Image.new("RGB", bg.size, (0, 0, 0))
     bg = Image.blend(bg, oscuro, 0.35)
     tmp = AQUI / "_logo_tmp.png"
-    rasterizar_svg(AQUI / "logo-white.svg", tmp, 300)
+    rasterizar_svg(AQUI / "logo-white.svg", tmp, 96)
     logo = Image.open(tmp).convert("RGBA")
-    bg.paste(logo, ((1280 - logo.width) // 2, 70), logo)
+    bg.paste(logo, (30, 8), logo)
     bg.save(AQUI / "grub-background.png", optimize=True)
     tmp.unlink()
 
