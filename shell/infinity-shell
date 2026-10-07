@@ -1,0 +1,21 @@
+#!/bin/sh
+# Lanzador del shell de Infinity OS (dock + orbe + buscador).
+#   infinity-shell                    inicia el shell
+#   infinity-shell --toggle-launcher  abre/cierra el buscador (instancia en ejecución)
+#   infinity-shell --refresh          refresca volumen/batería/red
+#
+# gtk4-layer-shell debe cargarse ANTES que libwayland-client; desde Python la única forma
+# fiable es precargarla. main.py quita la variable al arrancar para no contagiar a las apps.
+for lib in /usr/lib/*/libgtk4-layer-shell.so.0 /usr/lib/libgtk4-layer-shell.so.0; do
+    if [ -e "$lib" ]; then
+        export LD_PRELOAD="$lib${LD_PRELOAD:+:$LD_PRELOAD}"
+        break
+    fi
+done
+# Renderizado por CPU (cairo): para un dock y un panel pequeños cuesta casi nada y es
+# fiable en cualquier máquina. El renderizador acelerado de GTK falla al dibujar texto
+# sobre OpenGL/Vulkan "de software" (típico en máquinas virtuales). Se puede cambiar
+# exportando GSK_RENDERER antes de arrancar.
+export GSK_RENDERER="${GSK_RENDERER:-cairo}"
+export PYTHONPATH="/usr/lib/infinity${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m infinity_shell.main "$@"
