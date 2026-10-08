@@ -82,7 +82,7 @@ def escritorio():
 
 def bloqueo(ancho, alto):
     """Fondo de la pantalla de bloqueo: la foto de paisaje a pantalla completa."""
-    foto = Image.open(FOTOS / "bloqueo-paisaje.webp").convert("RGB")
+    foto = Image.open(FOTOS / "bloqueo-islandia.webp").convert("RGB")
     img = cubrir(foto, ancho, alto)
     carpeta = AQUI / "fondos-bloqueo"
     carpeta.mkdir(exist_ok=True)
