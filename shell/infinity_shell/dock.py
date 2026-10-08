@@ -6,6 +6,7 @@ Son ventanas independientes (la forma de Wayland de tener piezas separadas), as�
 logo queda realmente separado de la barra de tareas.
 """
 import glob
+import math
 import os
 
 import gi
@@ -53,6 +54,25 @@ def _capa(ventana, namespace, bordes, margen_borde, *, exclusiva=False):
         # así orbe, dock y estado quedan alineados en la misma fila.
         LayerShell.set_exclusive_zone(ventana, -1)
     ventana.add_css_class("infinity-window")
+
+
+def icono_cuadricula(tam=22):
+    """Botón de la biblioteca: nueve puntos en rejilla 3x3 (dibujado, no depende del tema)."""
+    area = Gtk.DrawingArea()
+    area.set_content_width(tam)
+    area.set_content_height(tam)
+
+    def dibujar(_area, cr, ancho, alto, _datos=None):
+        paso = min(ancho, alto) / 3
+        radio = paso * 0.34
+        cr.set_source_rgba(1, 1, 1, 0.92)
+        for fila in range(3):
+            for col in range(3):
+                cr.arc(paso * (col + 0.5), paso * (fila + 0.5), radio, 0, 2 * math.pi)
+                cr.fill()
+
+    area.set_draw_func(dibujar)
+    return area
 
 
 def _ejecutar(cmd):
@@ -129,7 +149,7 @@ class Elemento:
 
 
 class Dock(Gtk.Window):
-    def __init__(self, app, indice, hypr):
+    def __init__(self, app, indice, hypr, al_biblioteca=None):
         super().__init__(application=app, title="Infinity — Dock")
         self.indice = indice
         self.hypr = hypr
@@ -147,6 +167,22 @@ class Dock(Gtk.Window):
         self.caja.set_size_request(-1, ALTO)
         self.caja.set_halign(Gtk.Align.CENTER)  # la píldora se ajusta a su contenido
         self.set_child(self.caja)
+
+        # Biblioteca de apps a la izquierda; las apps van en su propia caja, que es la que se
+        # redibuja (así el botón no desaparece en cada refresco).
+        if al_biblioteca is not None:
+            biblioteca = Gtk.Button()
+            biblioteca.add_css_class("dock-item")
+            biblioteca.add_css_class("library-btn")
+            biblioteca.set_child(icono_cuadricula())
+            biblioteca.set_tooltip_text("Biblioteca de apps")
+            biblioteca.connect("clicked", lambda *_: al_biblioteca())
+            self.caja.append(biblioteca)
+            separador = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+            separador.add_css_class("dock-sep")
+            self.caja.append(separador)
+        self.apps = Gtk.Box(spacing=4)
+        self.caja.append(self.apps)
 
         if hypr.disponible:
             hypr.escuchar(self._evento)
@@ -227,10 +263,10 @@ class Dock(Gtk.Window):
         if firma == self._firma:
             return
         self._firma = firma
-        while (hijo := self.caja.get_first_child()) is not None:
-            self.caja.remove(hijo)
+        while (hijo := self.apps.get_first_child()) is not None:
+            self.apps.remove(hijo)
         for el in elementos:
-            self.caja.append(self._boton(el))
+            self.apps.append(self._boton(el))
         self.set_default_size(1, 1)  # permite que la ventana se encoja si hay menos iconos
 
     # ------------------------------------------------------------------ vistas

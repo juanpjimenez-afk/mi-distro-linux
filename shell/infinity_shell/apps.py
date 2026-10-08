@@ -12,7 +12,7 @@ _USO = os.path.join(_ESTADO, "uso.json")
 
 
 class App:
-    __slots__ = ("id", "info", "nombre", "descripcion", "icono", "_n_nombre", "_n_extra", "wm_class", "binario")
+    __slots__ = ("id", "info", "nombre", "descripcion", "icono", "ruta", "_n_nombre", "_n_extra", "wm_class", "binario")
 
     def __init__(self, info):
         self.info = info
@@ -25,8 +25,10 @@ class App:
         if isinstance(info, Gio.DesktopAppInfo):
             palabras = list(info.get_keywords() or [])
             self.wm_class = (info.get_startup_wm_class() or "").casefold()
+            self.ruta = info.get_filename() or ""
         else:
             self.wm_class = ""
+            self.ruta = ""
         cmd = info.get_commandline() or ""
         try:
             self.binario = os.path.basename(shlex.split(cmd)[0]).casefold() if cmd else ""
