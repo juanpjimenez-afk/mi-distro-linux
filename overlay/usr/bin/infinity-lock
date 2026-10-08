@@ -26,13 +26,10 @@ set -- $TAM
 LW=$1
 LH=$2
 
-# La maqueta se diseñó a 1920x1080. La foto ocupa toda la altura (proporción original) y
-# centrada; la hora va a la derecha de la foto, con las mismas proporciones.
-eval "$(awk -v LW="$LW" -v LH="$LH" 'BEGIN {
-    f  = LH / 1080
-    pw = LH * 474 / 1024
-    xr = (LW - pw) / 2 + 0.915 * pw
-    printf "MT=%d MD=%d MF=%d TH=%d TF=%d\n", 140 * f, LW - xr, 21 * f, 250 * f, 17 * f
+# La hora va en la esquina superior derecha, a escala de la pantalla (diseñada a 1920x1080).
+eval "$(awk -v LH="$LH" 'BEGIN {
+    f = LH / 1080
+    printf "MT=%d MD=%d MF=%d TH=%d TF=%d\n", 60 * f, 90 * f, 21 * f, 250 * f, 17 * f
 }')"
 sed -e "s/@MARGEN_SUPERIOR@/$MT/" -e "s/@MARGEN_DERECHO@/$MD/" -e "s/@MARGEN_FECHA@/$MF/" \
     "$LIB/layout.tpl" > "$CACHE/layout.xml"

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Genera los activos gráficos de Infinity OS a partir de las fotos de branding/fotos/.
 
-Requiere: python3-pil y librsvg2-bin (rsvg-convert). La foto de la pantalla de bloqueo sin texto
-la genera limpiar_foto_bloqueo.py (necesita python3-opencv).
+Requiere: python3-pil y librsvg2-bin (rsvg-convert).
 
     python3 -I branding/make_assets.py
 
 Resultado:
 - wallpaper.jpg        escritorio: la cascada, a pantalla completa, con menos brillo
-- fondos-bloqueo/      pantalla de bloqueo, una imagen por resolución: la foto de referencia (sin texto)
-                       a la altura completa y centrada, y a los lados la misma foto muy desenfocada
+- fondos-bloqueo/      pantalla de bloqueo, una imagen por resolución: la foto de paisaje a pantalla
+                       completa (recorte centrado, sin deformar)
 - grub-background.png  menú de arranque (fondo abstracto + logo)
 - logo-white-*.png     iconos del logo
 """
@@ -82,16 +81,12 @@ def escritorio():
 
 
 def bloqueo(ancho, alto):
-    """Fondo de la pantalla de bloqueo: la foto (sin texto) a la altura completa, centrada."""
-    foto = Image.open(FOTOS / "bloqueo-sin-texto.png").convert("RGB")
-    panel_w = round(foto.width * alto / foto.height)       # proporción original de la foto
-    panel = foto.resize((panel_w, alto), Image.LANCZOS)
-    fondo = cubrir(foto, ancho, alto).filter(ImageFilter.GaussianBlur(45))
-    fondo = ImageEnhance.Brightness(fondo).enhance(BRILLO_LADOS_BLOQUEO)
-    fondo.paste(panel, ((ancho - panel_w) // 2, 0))
+    """Fondo de la pantalla de bloqueo: la foto de paisaje a pantalla completa."""
+    foto = Image.open(FOTOS / "bloqueo-paisaje.webp").convert("RGB")
+    img = cubrir(foto, ancho, alto)
     carpeta = AQUI / "fondos-bloqueo"
     carpeta.mkdir(exist_ok=True)
-    fondo.save(carpeta / f"wallpaper-lock-{ancho}x{alto}.jpg", quality=90, optimize=True)
+    img.save(carpeta / f"wallpaper-lock-{ancho}x{alto}.jpg", quality=92, optimize=True)
 
 
 def grub():
