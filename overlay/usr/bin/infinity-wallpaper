@@ -1,21 +1,18 @@
 #!/bin/sh
-# Fondo de pantalla de Infinity OS.
+# Fondo de pantalla de Infinity OS: la cascada, con menos brillo (ver branding/make_assets.py).
 #
-# En una máquina virtual SIN aceleración 3D (VirtualBox, por ejemplo) el escritorio se dibuja
-# por CPU. Ahí, cada movimiento del ratón redibuja toda la pantalla, y un fondo de pantalla
-# (una superficie aparte a pantalla completa) casi duplica ese coste: el ratón se siente con lag.
-# Por eso en una VM se usa solo el color de fondo de Hyprland.
-#
-# Para forzar la imagen también en la VM:  echo imagen > ~/.config/infinity/fondo
-# Para siempre color:                       echo color  > ~/.config/infinity/fondo
+# Por defecto se muestra siempre, también dentro de una máquina virtual.
+# Aviso: en una VM sin aceleración 3D (VirtualBox) el fondo es una superficie a pantalla completa
+# que se dibuja por CPU, y cada movimiento del ratón cuesta más. Si el ratón vuelve a ir con lag:
+#   echo color > ~/.config/infinity/fondo     (fondo sólido, sin imagen)
+# Para volver a la imagen:
+#   echo imagen > ~/.config/infinity/fondo
 
-modo=auto
+modo=imagen
 [ -r "$HOME/.config/infinity/fondo" ] && modo=$(tr -d ' \n' < "$HOME/.config/infinity/fondo")
 
 case "$modo" in
-    imagen) ;;
-    color)  exit 0 ;;
-    *)      systemd-detect-virt -q 2>/dev/null && exit 0 ;;   # auto: solo sin VM
+    color) exit 0 ;;
 esac
 
 exec swaybg -i /usr/share/infinity/wallpaper.jpg -m fill

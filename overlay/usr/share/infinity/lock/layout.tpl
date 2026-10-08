@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Diseño de la pantalla de bloqueo de Infinity OS (gtklock).
-     Los "id" son los que gtklock espera: no los cambies. El aspecto está en style.css. -->
+<!-- Plantilla del diseño de la pantalla de bloqueo (gtklock). infinity-lock la rellena según la pantalla:
+     @MARGEN_SUPERIOR@, @MARGEN_DERECHO@ y @MARGEN_FECHA@ son píxeles. No edites esos marcadores.
+     Igual que la maqueta de referencia: la hora en dos líneas, gigante, a la derecha; la fecha
+     pequeña debajo. Los "id" son los que gtklock espera: no los cambies. El aspecto está en style.css. -->
 <interface>
 	<object class="GtkBox" id="window-box">
 		<property name="name">window-box</property>
@@ -9,13 +11,13 @@
 		<property name="orientation">vertical</property>
 		<property name="spacing">0</property>
 		<child>
-			<!-- La hora gigante, a la derecha, como en la pantalla de bloqueo de un teléfono -->
+			<!-- La hora y la fecha: arriba a la derecha, como en la referencia -->
 			<object class="GtkBox" id="info-box">
 				<property name="name">info-box</property>
 				<property name="halign">end</property>
-				<property name="valign">center</property>
-				<property name="vexpand">1</property>
-				<property name="margin-end">150</property>
+				<property name="valign">start</property>
+				<property name="margin-top">@MARGEN_SUPERIOR@</property>
+				<property name="margin-end">@MARGEN_DERECHO@</property>
 				<property name="orientation">vertical</property>
 				<child>
 					<object class="GtkBox" id="time-box">
@@ -33,6 +35,7 @@
 							<object class="GtkLabel" id="date-label">
 								<property name="name">date-label</property>
 								<property name="halign">end</property>
+								<property name="margin-top">@MARGEN_FECHA@</property>
 							</object>
 						</child>
 					</object>
@@ -40,7 +43,7 @@
 			</object>
 		</child>
 		<child>
-			<!-- La contraseña: aparece al pulsar una tecla o mover el ratón -->
+			<!-- La contraseña: aparece al tocar una tecla o el ratón, abajo al centro -->
 			<object class="GtkRevealer" id="body-revealer">
 				<property name="transition-type">crossfade</property>
 				<property name="transition-duration">250</property>

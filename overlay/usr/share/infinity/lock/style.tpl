@@ -1,4 +1,6 @@
-/* Pantalla de bloqueo de Infinity OS: la hora gigante, en blanco translúcido, a la derecha.
+/* Plantilla de estilo de la pantalla de bloqueo. infinity-lock sustituye @TAMANO_HORA@ y @TAMANO_FECHA@
+ * según la resolución. Pantalla de bloqueo de Infinity OS: igual que la maqueta de referencia.
+ * La hora usa la fuente "Infinity Reloj" (Inter comprimida en horizontal, ver branding/make_fonts.py).
  * (gtklock usa GTK3, así que esto es CSS de GTK3.) */
 
 * {
@@ -6,24 +8,22 @@
   color: #ffffff;
 }
 
-/* ---- la hora: dos líneas enormes (hora arriba, minutos abajo) ---- */
+/* ---- la hora: dos líneas gigantes y estrechas, blanco translúcido ---- */
 window #clock-label,
 window.focused:not(.hidden) #clock-label {
-  font-size: 300px;
-  font-weight: 300;
-  letter-spacing: -6px;
-  color: rgba(255, 255, 255, 0.82);
-  text-shadow: 0 10px 50px rgba(10, 14, 40, 0.30);
+  font-family: "Infinity Reloj";
+  font-size: @TAMANO_HORA@px;
+  color: rgba(255, 255, 255, 0.80);
+  text-shadow: 0 4px 22px rgba(10, 14, 40, 0.18);
 }
 
 /* ---- la fecha: pequeña, debajo de los minutos ---- */
 window #date-label,
 window.focused:not(.hidden) #date-label {
-  font-size: 34px;
+  font-size: @TAMANO_FECHA@px;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.88);
-  text-shadow: 0 2px 16px rgba(10, 14, 40, 0.35);
-  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 8px rgba(10, 14, 40, 0.30);
 }
 
 /* ---- contraseña: cápsula de cristal, aparece al tocar una tecla ---- */

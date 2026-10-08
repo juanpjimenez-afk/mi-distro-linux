@@ -100,16 +100,11 @@ nueva, cerrar, fijar/quitar del dock.
 
 <p align="center"><img src="docs/bloqueo.jpg" alt="Pantalla de bloqueo: hora gigante a la derecha con la fecha debajo" width="70%"></p>
 
-**Pantalla de bloqueo:** al bloquear (botón del orbe, `Super + L` o por inactividad) se ve la **hora en dos
-líneas**, enorme y a la derecha, con la fecha debajo, como en la pantalla de bloqueo de un teléfono. Toca una tecla
-o mueve el ratón para que aparezca la contraseña (se vuelve a esconder sola); en el modo en vivo no hay contraseña,
-basta pulsar Enter. Para cambiar el formato de la hora edita `time-format` en `~/.config/gtklock/config.ini`
-(por ejemplo `%H\n%M:%S` para añadir segundos); el aspecto está en `/usr/share/infinity/lock/`.
+**Pantalla de bloqueo:** al bloquear (botón del orbe, `Super + L` o por inactividad) se ve la foto de referencia con la **hora en directo**, en dos líneas, gigante y a la derecha, con la fecha debajo. Toca una tecla o mueve el ratón para que aparezca la contraseña (se vuelve a esconder sola); en el modo en vivo no hay contraseña, basta pulsar Enter. La hora se adapta a la resolución de la pantalla (lee el tamaño con Hyprland). La foto de referencia traía la hora pintada: en `branding/` se quitó ese texto (`limpiar_foto_bloqueo.py`) y la hora se dibuja en directo con la fuente *Infinity Reloj* (`branding/make_fonts.py`), que es Inter comprimida en horizontal. Para cambiar el formato de la hora edita `time-format` en `~/.config/gtklock/config.ini` (por ejemplo `%H\n%M:%S`).
 
-**Si el ratón va con lag (VirtualBox u otra VM):** en una VM sin aceleración 3D el escritorio se dibuja
-por CPU, y cada movimiento del ratón redibuja toda la pantalla. Por eso Infinity OS **no pone fondo de pantalla
-dentro de una VM** (usa solo un color), lo que en mis pruebas redujo a la mitad el coste del ratón. Para
-recuperar la imagen (a costa de más lag en la VM): `echo imagen > ~/.config/infinity/fondo`.
+**Si el ratón va con lag (VirtualBox u otra VM):** en una VM sin aceleración 3D el escritorio se dibuja por CPU, y el fondo de pantalla es una superficie a pantalla completa que se redibuja en cada movimiento del ratón. Por eso el fondo se puede quitar con una línea (en mis pruebas, mover el ratón costaba unas 2,6 veces menos sin fondo):
+
+`echo color > ~/.config/infinity/fondo`  (fondo sólido)  ·  `echo imagen > ~/.config/infinity/fondo`  (volver a la imagen)
 
 Ajustes en VirtualBox que ayudan (no pude probar VirtualBox, así que son recomendaciones):
 1. **Configuración → Sistema → Placa base → Dispositivo señalador: *USB Tablet*** (puntero absoluto, sin
@@ -173,7 +168,7 @@ sesión). En un equipo real será mucho menor, pero **no lo medí**. Tampoco med
 ```
 GRUB (BIOS o UEFI) → kernel Linux → casper (monta la ISO y crea el usuario) → systemd
    → greetd (inicia sesión solo) → infinity-session → Hyprland (compositor)
-        ├─ swaybg ........... el fondo de pantalla
+        ├─ swaybg ........... el fondo de pantalla (la cascada, con menos brillo)
         └─ infinity-shell ... orbe ∞ + dock + estado (3 ventanas "capa") + buscador (oculto hasta que lo abres)
 ```
 
@@ -206,7 +201,7 @@ overlay-pre/      configuración de apt/dpkg que debe existir ANTES de instalar 
 shell/            el shell propio: orbe, dock, estado y buscador (Python + GTK4)
   infinity_shell/style.css              ← el estilo de cristal de las piezas
   tests/                                 pruebas automáticas (incluye un Hyprland simulado)
-branding/         logo (SVG), fondo de pantalla, imagen del menú de arranque
+branding/         logo (SVG), fotos de referencia, fondos, fuente de la hora e imagen del menú de arranque
 docs/             capturas
 .github/workflows/build-iso.yml   construye la ISO en GitHub
 ```
