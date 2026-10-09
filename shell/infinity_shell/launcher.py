@@ -13,6 +13,7 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from . import power  # noqa: E402
 from .ajustes import valor as ajuste  # noqa: E402
+from .dock import asset  # noqa: E402
 from .search import calcular, normalizar  # noqa: E402
 
 MAX_FILAS = 8
@@ -103,13 +104,14 @@ class Launcher(Gtk.Window):
         self.scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.panel.append(self.scroll)
 
-        # Fila inferior: estado + botones de energía
+        # Fila inferior: estado + ajustes + botones de energía
         inferior = Gtk.Box(spacing=6)
         inferior.add_css_class("launcher-bottom")
         self.estado = Gtk.Label(label="", xalign=0)
         self.estado.add_css_class("launcher-status")
         self.estado.set_hexpand(True)
         inferior.append(self.estado)
+        inferior.append(self._boton_ajustes())
         self.botones = {}
         for a in power.ACCIONES:
             b = Gtk.Button()
@@ -282,6 +284,27 @@ class Launcher(Gtk.Window):
             r.lbl_sub.set_text(r.subtitulo)
             r.lbl_sub.remove_css_class("warn")
         return False
+
+    # ------------------------------------------------------------------ ajustes
+    def _boton_ajustes(self):
+        """Engranaje junto a los botones de energía: abre la app de Ajustes."""
+        b = Gtk.Button()
+        ruta = asset("gear-white.png")
+        if ruta:
+            imagen = Gtk.Image.new_from_file(ruta)
+            imagen.set_pixel_size(18)
+        else:
+            imagen = _imagen("preferences-system-symbolic", 18)
+        b.set_child(imagen)
+        b.add_css_class("power-btn")
+        b.set_tooltip_text("Ajustes")
+        b.connect("clicked", self._abrir_ajustes)
+        return b
+
+    def _abrir_ajustes(self, _boton):
+        self.cerrar()
+        subprocess.Popen(["infinity-ajustes"], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # ------------------------------------------------------------------ energía
     def _clic_energia(self, _boton, accion):

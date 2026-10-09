@@ -94,7 +94,8 @@ Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://r
 
 ### Ajustes del sistema
 
-`Super + ,` (o **Ajustes** en el menú de aplicaciones) abre la app de configuración. Sus páginas:
+`Super + ,`, el engranaje del buscador (orbe ∞, junto a los botones de energía) o **Ajustes** en el menú de
+aplicaciones abren la app de configuración. Sus páginas:
 
 - **Escritorio:** fondo (cascada o color sólido), color, marca ∞, escala de pantalla, efecto cristal
   (desenfoque, calidad, opacidad de los paneles), separación, esquinas, sombras y animaciones.
