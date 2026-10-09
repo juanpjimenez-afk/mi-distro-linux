@@ -1,0 +1,15 @@
+#!/bin/sh
+# Qué fondo usa Infinity OS: "imagen" (la cascada, por defecto) o "color" (sólido, con la marca ∞).
+# Lo usan infinity-wallpaper y el shell, así que la decisión está en un solo sitio.
+#
+# El usuario lo cambia en Ajustes (o con ~/.config/infinity/fondo: "imagen" o "color"). En una VM
+# sin 3D la cascada va más lenta al mover el ratón (ver el README): ahí se puede elegir "color".
+# Respeta XDG_CONFIG_HOME, igual que la app de Ajustes (shell/infinity_shell/ajustes.py).
+
+modo=imagen
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}/infinity/fondo"
+if [ -r "$cfg" ]; then
+    elegido=$(tr -d ' \t\r\n' < "$cfg" | tr 'A-Z' 'a-z')
+    [ -n "$elegido" ] && modo=$elegido
+fi
+echo "$modo"

@@ -12,7 +12,7 @@ _USO = os.path.join(_ESTADO, "uso.json")
 
 
 class App:
-    __slots__ = ("id", "info", "nombre", "descripcion", "icono", "_n_nombre", "_n_extra", "wm_class", "binario")
+    __slots__ = ("id", "info", "nombre", "descripcion", "icono", "ruta", "_n_nombre", "_n_extra", "wm_class", "binario")
 
     def __init__(self, info):
         self.info = info
@@ -25,8 +25,10 @@ class App:
         if isinstance(info, Gio.DesktopAppInfo):
             palabras = list(info.get_keywords() or [])
             self.wm_class = (info.get_startup_wm_class() or "").casefold()
+            self.ruta = info.get_filename() or ""
         else:
             self.wm_class = ""
+            self.ruta = ""
         cmd = info.get_commandline() or ""
         try:
             self.binario = os.path.basename(shlex.split(cmd)[0]).casefold() if cmd else ""
@@ -95,17 +97,24 @@ class Indice:
             if c in (a.id.removesuffix(".desktop").casefold(), a.wm_class, a.binario):
                 return a
         for a in self.apps:
-            if c and (c in a.id.casefold() or (a.binario and a.binario in c)):
+            # subcadenas demasiado cortas ("e", "sh") coinciden con casi cualquier app: no se usan
+            if c and ((len(c) >= 3 and c in a.id.removesuffix(".desktop").casefold())
+                      or (len(a.binario) >= 4 and a.binario in c)):
                 return a
         return None
 
 
 def _leer_uso():
+    """Contador de lanzamientos por app. Un fichero con otra forma se ignora entero."""
     try:
-        with open(_USO) as f:
-            return json.load(f)
+        with open(_USO, encoding="utf-8") as f:
+            datos = json.load(f)
     except (OSError, ValueError):
         return {}
+    if not isinstance(datos, dict):
+        return {}
+    return {k: v for k, v in datos.items()
+            if isinstance(k, str) and isinstance(v, int) and not isinstance(v, bool) and v >= 0}
 
 
 def _sumar_uso(app_id):
@@ -113,7 +122,8 @@ def _sumar_uso(app_id):
     uso[app_id] = uso.get(app_id, 0) + 1
     try:
         os.makedirs(_ESTADO, exist_ok=True)
-        with open(_USO, "w") as f:
+        with open(_USO + ".tmp", "w", encoding="utf-8") as f:
             json.dump(uso, f)
+        os.replace(_USO + ".tmp", _USO)
     except OSError:
         pass

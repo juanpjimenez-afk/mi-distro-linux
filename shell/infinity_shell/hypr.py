@@ -7,6 +7,7 @@
 import json
 import os
 import socket
+import sys
 import threading
 
 from gi.repository import GLib
@@ -80,8 +81,11 @@ class Hyprland:
         """Consulta ventanas y ventana activa en un hilo y llama `callback(ventanas, activa)`
         en el hilo principal. Así la interfaz nunca se congela esperando al compositor."""
         def trabajo():
-            ventanas = self.ventanas()
-            activa = self.ventana_activa()
+            try:
+                ventanas = self.ventanas()
+                activa = self.ventana_activa()
+            except Exception:  # si falla a mitad, la barra debe seguir: el callback se llama igual
+                ventanas, activa = [], None
             GLib.idle_add(lambda: callback(ventanas, activa) and False)
         threading.Thread(target=trabajo, daemon=True).start()
 
@@ -118,5 +122,8 @@ class Hyprland:
         for linea in lineas:
             nombre, _, resto = linea.decode(errors="replace").partition(">>")
             if self.on_event:
-                self.on_event(nombre, resto)
+                try:
+                    self.on_event(nombre, resto)
+                except Exception as e:  # GLib quitaria la fuente si el callback lanza
+                    print(f"infinity-shell: error al procesar el evento {nombre}: {e}", file=sys.stderr)
         return True

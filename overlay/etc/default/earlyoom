@@ -1,4 +1,4 @@
 # Mata el proceso más pesado ANTES de que el equipo se congele por falta de RAM,
 # y protege el escritorio.
 # (systemd no procesa comillas dentro de la variable: las expresiones van sin comillas.)
-EARLYOOM_ARGS="-r 3600 -m 5 -s 5 --avoid (^|/)(Hyprland|infinity-shell|systemd|greetd|pipewire|wireplumber)$ --prefer (^|/)(epiphany|WebKitWebProcess|firefox|chromium)$"
+EARLYOOM_ARGS="-r 3600 -m 5 -s 5 --avoid (^|/)(Hyprland|infinity-shell|systemd|greetd|pipewire|wireplumber|gtklock|swaylock)$ --prefer (^|/)(epiphany|WebKitWebProces|firefox|chromium)$"

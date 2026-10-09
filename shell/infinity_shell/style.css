@@ -234,3 +234,116 @@ button.menu-item {
 button.menu-item:hover {
   background-color: rgba(255, 255, 255, 0.16);
 }
+
+/* ------------------------------------------------------------- biblioteca */
+.dock-sep {
+  margin: 8px 4px;
+  background-color: rgba(255, 255, 255, 0.22);
+  min-width: 1px;
+}
+.biblioteca {
+  padding: 16px;
+  border-radius: 30px;
+}
+.biblioteca-cabecera {
+  min-height: 36px;
+}
+.lib-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
+}
+button.lib-back {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.10);
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.92);
+}
+button.lib-back:hover {
+  background-color: rgba(255, 255, 255, 0.22);
+}
+button.lib-toggle {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.80);
+  font-size: 12px;
+}
+button.lib-toggle.on {
+  background-color: rgba(120, 170, 255, 0.35);
+  color: rgba(255, 255, 255, 0.98);
+}
+button.lib-tile {
+  min-width: 104px;
+  min-height: 104px;
+  padding: 10px 6px;
+  border: 1px solid transparent;
+  border-radius: 22px;
+  background: none;
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.92);
+}
+button.lib-tile:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+button.lib-tile.drop-target {
+  border-color: rgba(120, 190, 255, 0.85);
+  background-color: rgba(120, 190, 255, 0.22);
+}
+button.lib-folder {
+  background-color: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+.lib-name {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.92);
+}
+.lib-empty {
+  padding: 24px;
+  color: rgba(255, 255, 255, 0.70);
+}
+button.library-btn {
+  padding: 5px 9px;
+}
+
+/* barra de acciones de una tarjeta (clic derecho): va dentro del panel, sin popovers */
+.lib-actions {
+  padding: 8px 10px;
+  border-radius: 18px;
+  background-color: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.lib-action-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.90);
+}
+button.lib-action {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background-image: none;
+  background-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+}
+button.lib-action:hover {
+  background-color: rgba(255, 255, 255, 0.20);
+}
+entry.lib-entry {
+  min-height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 12px;
+}

@@ -5,7 +5,7 @@ from collections import namedtuple
 Accion = namedtuple("Accion", "clave nombre icono comando palabras peligrosa")
 
 ACCIONES = [
-    Accion("bloquear", "Bloquear", "system-lock-screen-symbolic", ["loginctl", "lock-session"],
+    Accion("bloquear", "Bloquear", "system-lock-screen-symbolic", ["infinity-lock"],
            "bloquear lock pantalla", False),
     Accion("suspender", "Suspender", "weather-clear-night-symbolic", ["systemctl", "suspend"],
            "suspender dormir sleep suspend", False),

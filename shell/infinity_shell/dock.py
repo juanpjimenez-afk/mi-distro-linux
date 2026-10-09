@@ -6,6 +6,7 @@ Son ventanas independientes (la forma de Wayland de tener piezas separadas), as�
 logo queda realmente separado de la barra de tareas.
 """
 import glob
+import math
 import os
 
 import gi
@@ -16,6 +17,8 @@ from gi.repository import Gtk4LayerShell as LayerShell  # noqa: E402  (antes que
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
+
+from .ajustes import valor as ajuste  # noqa: E402
 
 ALTO = 60  # alto común de las tres islas (px)
 MARGEN = 14  # separación con el borde de la pantalla
@@ -53,6 +56,25 @@ def _capa(ventana, namespace, bordes, margen_borde, *, exclusiva=False):
         # así orbe, dock y estado quedan alineados en la misma fila.
         LayerShell.set_exclusive_zone(ventana, -1)
     ventana.add_css_class("infinity-window")
+
+
+def icono_cuadricula(tam=22):
+    """Botón de la biblioteca: nueve puntos en rejilla 3x3 (dibujado, no depende del tema)."""
+    area = Gtk.DrawingArea()
+    area.set_content_width(tam)
+    area.set_content_height(tam)
+
+    def dibujar(_area, cr, ancho, alto, _datos=None):
+        paso = min(ancho, alto) / 3
+        radio = paso * 0.34
+        cr.set_source_rgba(1, 1, 1, 0.92)
+        for fila in range(3):
+            for col in range(3):
+                cr.arc(paso * (col + 0.5), paso * (fila + 0.5), radio, 0, 2 * math.pi)
+                cr.fill()
+
+    area.set_draw_func(dibujar)
+    return area
 
 
 def _ejecutar(cmd):
@@ -96,12 +118,11 @@ def _rutas_fijados():
 
 
 def leer_fijados():
+    # El fichero del usuario manda aunque este vacio: asi se pueden quitar todas las apps.
     for ruta in _rutas_fijados():
         try:
-            with open(ruta) as f:
-                ids = [l.strip() for l in f if l.strip() and not l.startswith("#")]
-            if ids:
-                return ids
+            with open(ruta, encoding="utf-8", errors="replace") as f:
+                return [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
         except OSError:
             continue
     return list(DEFECTO_FIJADOS)
@@ -111,11 +132,14 @@ def guardar_fijados(ids):
     ruta = _rutas_fijados()[0]
     try:
         os.makedirs(os.path.dirname(ruta), exist_ok=True)
-        with open(ruta, "w") as f:
+        with open(ruta + ".tmp", "w", encoding="utf-8") as f:
             f.write("# Apps fijadas en el dock de Infinity (una por línea)\n")
             f.write("\n".join(ids) + "\n")
+        os.replace(ruta + ".tmp", ruta)
+        return True
     except OSError as e:
         print(f"infinity-shell: no se pudo guardar {ruta}: {e}")
+        return False
 
 
 class Elemento:
@@ -129,7 +153,7 @@ class Elemento:
 
 
 class Dock(Gtk.Window):
-    def __init__(self, app, indice, hypr):
+    def __init__(self, app, indice, hypr, al_biblioteca=None):
         super().__init__(application=app, title="Infinity — Dock")
         self.indice = indice
         self.hypr = hypr
@@ -147,6 +171,22 @@ class Dock(Gtk.Window):
         self.caja.set_size_request(-1, ALTO)
         self.caja.set_halign(Gtk.Align.CENTER)  # la píldora se ajusta a su contenido
         self.set_child(self.caja)
+
+        # Biblioteca de apps a la izquierda; las apps van en su propia caja, que es la que se
+        # redibuja (así el botón no desaparece en cada refresco).
+        if al_biblioteca is not None:
+            biblioteca = Gtk.Button()
+            biblioteca.add_css_class("dock-item")
+            biblioteca.add_css_class("library-btn")
+            biblioteca.set_child(icono_cuadricula())
+            biblioteca.set_tooltip_text("Biblioteca de apps")
+            biblioteca.connect("clicked", lambda *_: al_biblioteca())
+            self.caja.append(biblioteca)
+            separador = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+            separador.add_css_class("dock-sep")
+            self.caja.append(separador)
+        self.apps = Gtk.Box(spacing=4)
+        self.caja.append(self.apps)
 
         if hypr.disponible:
             hypr.escuchar(self._evento)
@@ -227,10 +267,10 @@ class Dock(Gtk.Window):
         if firma == self._firma:
             return
         self._firma = firma
-        while (hijo := self.caja.get_first_child()) is not None:
-            self.caja.remove(hijo)
+        while (hijo := self.apps.get_first_child()) is not None:
+            self.apps.remove(hijo)
         for el in elementos:
-            self.caja.append(self._boton(el))
+            self.apps.append(self._boton(el))
         self.set_default_size(1, 1)  # permite que la ventana se encoja si hay menos iconos
 
     # ------------------------------------------------------------------ vistas
@@ -371,6 +411,7 @@ class Estado(Gtk.Window):
         reloj.append(self.fecha)
         caja.append(reloj)
 
+        self.recargar_reloj()
         self.refrescar()
         self._iniciar_reloj()
         monitor = Gio.NetworkMonitor.get_default()
@@ -388,9 +429,14 @@ class Estado(Gtk.Window):
         GLib.timeout_add_seconds(60, lambda: (self._actualizar_reloj(), True)[1])
         return False
 
+    def recargar_reloj(self):
+        """Hora de 24 o 12 horas, según Ajustes. El shell lo llama al aplicar un cambio."""
+        self._fmt_hora = "%-I:%M %p" if ajuste("dock.reloj") == "12h" else "%H:%M"
+        self._actualizar_reloj()
+
     def _actualizar_reloj(self):
         ahora = GLib.DateTime.new_now_local()
-        self.hora.set_text(ahora.format("%H:%M"))
+        self.hora.set_text(ahora.format(self._fmt_hora))
         self.fecha.set_text(ahora.format("%a %-d %b"))
 
     # ----------------------------------------------------------------- estado

@@ -77,6 +77,9 @@ class TestCalcular(unittest.TestCase):
         self.assertIsNone(calcular("9**9**9"))
         self.assertIsNone(calcular("2^100000"))
         self.assertIsNone(calcular("(" * 500 + "1+1" + ")" * 500))
+        self.assertIsNone(calcular("99999^1000"))     # entero con mas de 4300 cifras
+        self.assertIsNone(calcular("(9^1000)^1000"))  # potencia anidada
+        self.assertEqual(calcular("9^100"), str(9 ** 100))
 
 
 if __name__ == "__main__":

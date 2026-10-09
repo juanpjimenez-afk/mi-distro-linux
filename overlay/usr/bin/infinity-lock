@@ -1,0 +1,44 @@
+#!/bin/sh
+# Bloquea la pantalla con la hora en directo, como en la maqueta de referencia (gtklock).
+#
+# La hora, su tamaño y su posición se calculan según la resolución de la pantalla donde está el
+# foco: las plantillas están en /usr/share/infinity/lock/ (layout.tpl y style.tpl) y el fondo
+# en /usr/share/infinity/lock/fondos/. Si gtklock no arranca, se usa swaylock.
+#
+# OJO: "gtklock -d" devuelve 1 aunque bloquee bien, así que no se fía de su código de salida:
+# se lanza en segundo plano y se comprueba que sigue vivo.
+
+pidof gtklock >/dev/null 2>&1 && exit 0
+pidof swaylock >/dev/null 2>&1 && exit 0
+
+LIB=/usr/share/infinity/lock
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/infinity/lock"
+mkdir -p "$CACHE" 2>/dev/null || exec swaylock
+
+# Tamaño lógico de la pantalla con el foco (1920x1080 si no se puede consultar Hyprland)
+TAM=$(hyprctl -j monitors 2>/dev/null | python3 -c '
+import json, sys
+m = [x for x in json.load(sys.stdin) if x.get("focused")]
+x = m[0] if m else {"width": 1920, "height": 1080, "scale": 1}
+print(round(x["width"] / x["scale"]), round(x["height"] / x["scale"]))' 2>/dev/null)
+[ -n "$TAM" ] || TAM="1920 1080"
+set -- $TAM
+LW=$1
+LH=$2
+
+# La hora va en la esquina superior derecha, a escala de la pantalla (diseñada a 1920x1080).
+eval "$(awk -v LH="$LH" 'BEGIN {
+    f = LH / 1080
+    printf "MT=%d MD=%d MF=%d TH=%d TF=%d\n", 60 * f, 90 * f, 21 * f, 250 * f, 17 * f
+}')"
+sed -e "s/@MARGEN_SUPERIOR@/$MT/" -e "s/@MARGEN_DERECHO@/$MD/" -e "s/@MARGEN_FECHA@/$MF/" \
+    "$LIB/layout.tpl" > "$CACHE/layout.xml"
+sed -e "s/@TAMANO_HORA@/$TH/" -e "s/@TAMANO_FECHA@/$TF/" "$LIB/style.tpl" > "$CACHE/style.css"
+
+FONDO="$LIB/fondos/wallpaper-lock-${LW}x${LH}.jpg"
+[ -r "$FONDO" ] || FONDO="$LIB/fondos/wallpaper-lock-1920x1080.jpg"
+
+gtklock -b "$FONDO" -x "$CACHE/layout.xml" -s "$CACHE/style.css" >/dev/null 2>&1 &
+sleep 2
+pidof gtklock >/dev/null 2>&1 && exit 0
+exec swaylock

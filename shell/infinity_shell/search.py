@@ -5,6 +5,7 @@
 - calcular():   evalúa expresiones matemáticas de forma segura (sin eval)
 """
 import ast
+import math
 import operator
 import re
 import unicodedata
@@ -73,8 +74,12 @@ def _eval(nodo):
         return nodo.value
     if isinstance(nodo, ast.BinOp) and type(nodo.op) in _OPS:
         izq, der = _eval(nodo.left), _eval(nodo.right)
-        if isinstance(nodo.op, ast.Pow) and abs(der) > 1000:
-            raise ValueError("exponente demasiado grande")
+        if isinstance(nodo.op, ast.Pow):
+            if abs(der) > 1000:
+                raise ValueError("exponente demasiado grande")
+            # Cifras aproximadas del resultado: (9^1000)^1000 no debe calcularse
+            if abs(izq) > 1 and abs(der) * math.log10(abs(izq)) > 4000:
+                raise ValueError("resultado demasiado grande")
         return _OPS[type(nodo.op)](izq, der)
     if isinstance(nodo, ast.UnaryOp) and type(nodo.op) in _UNARIOS:
         return _UNARIOS[type(nodo.op)](_eval(nodo.operand))
@@ -92,12 +97,12 @@ def calcular(consulta):
     q = q.replace(",", ".")
     try:
         valor = _eval(ast.parse(q, mode="eval"))
+        if isinstance(valor, float):
+            if valor != valor or valor in (float("inf"), float("-inf")):
+                return None
+            if valor == int(valor) and abs(valor) < 1e15:
+                return str(int(valor))
+            return f"{valor:.10g}"
+        return str(valor)  # ValueError si el entero tiene mas de 4300 cifras
     except (ValueError, SyntaxError, ZeroDivisionError, OverflowError, RecursionError):
         return None
-    if isinstance(valor, float):
-        if valor != valor or valor in (float("inf"), float("-inf")):
-            return None
-        if valor == int(valor) and abs(valor) < 1e15:
-            return str(int(valor))
-        return f"{valor:.10g}"
-    return str(valor)

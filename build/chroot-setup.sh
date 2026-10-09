@@ -18,6 +18,7 @@ limpiar() {
     /var/log/*.log /var/log/apt /var/log/dpkg.log /var/log/alternatives.log \
     /root/.cache /root/.bash_history /tmp/* 2>/dev/null || true
   rm -f /usr/sbin/policy-rc.d
+  rm -f /var/cache/debconf/*-old   # copias de seguridad de debconf (~3 MB)
   # Cada arranque genera su propio machine-id
   : >/etc/machine-id
   rm -f /var/lib/dbus/machine-id
@@ -34,7 +35,16 @@ finalizar() {
   locale-gen
   update-locale LANG="$LOCALE" LANGUAGE="${LOCALE%%.*}" LC_MESSAGES="$LOCALE"
   echo "$TIMEZONE" >/etc/timezone
+  # Teclado de la consola y del login (tty7): la misma distribución que el escritorio
+  printf 'XKBMODEL="pc105"\nXKBLAYOUT="%s"\nXKBVARIANT=""\nXKBOPTIONS=""\nBACKSPACE="guess"\n' "$KB_LAYOUT" >/etc/default/keyboard
   ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
+
+  # El debootstrap instala la base ANTES de copiar overlay-pre, asi que su path-exclude no
+  # llega a esos paquetes: aqui se quitan los idiomas y manuales que no usamos (es y en).
+  find /usr/share/locale -mindepth 1 -maxdepth 1 -type d ! -name "en*" ! -name "es*" -exec rm -rf {} +
+  find /usr/share/man -mindepth 1 -maxdepth 1 -type d ! -name "man[0-9]*" ! -name "es" -exec rm -rf {} +
+  # /usr/share/i18n (fuentes de locales) NO se borra: la futura instalacion a disco (Calamares,
+  # README) necesita generar locales. Pendiente de decision (unos 4,5 MiB comprimidos).
 
   # Nombre del equipo
   echo "$HOSTNAME_LIVE" >/etc/hostname
@@ -46,12 +56,20 @@ finalizar() {
 
   # Cursores: solo el tema que usamos (cada variante pesa ~30 MB)
   rm -rf /usr/share/icons/Bibata-Original-* /usr/share/icons/Bibata-Modern-Amber /usr/share/icons/Bibata-Modern-Ice
+  # Solo se usa Papirus-Dark (GTK y dconf). Papirus-Light sobra; Papirus NO se borra: Papirus-Dark
+  # enlaza sus tamaños a ../Papirus (sin ella quedan enlaces rotos).
+  rm -rf /usr/share/icons/Papirus-Light
+  # La interfaz usa solo la familia "Inter": Inter Display sobra
+  rm -f /usr/share/fonts/opentype/inter/InterDisplay-*.otf
 
   # Esquemas de GTK (tema oscuro, iconos, fuente) y caché de iconos
   glib-compile-schemas /usr/share/glib-2.0/schemas
   gtk-update-icon-cache -q -f /usr/share/icons/Papirus-Dark 2>/dev/null || true
   fc-cache -f >/dev/null 2>&1 || true
 
+  # Sesión de serie hyprland-uwsm: necesita uwsm, que no se instala, así que la entrada no funciona.
+  # (hyprland.desktop, que salta infinity-session, queda pendiente: decisión de producto.)
+  rm -f /usr/share/wayland-sessions/hyprland-uwsm.desktop
   # Servicios: solo lo necesario
   systemctl enable greetd.service NetworkManager.service systemd-resolved.service \
     earlyoom.service fstrim.timer 2>&1 | grep -v '^Created symlink' || true

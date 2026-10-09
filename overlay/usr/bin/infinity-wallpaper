@@ -1,0 +1,14 @@
+#!/bin/sh
+# Fondo de pantalla de Infinity OS: la cascada, con menos brillo (ver branding/make_assets.py).
+#
+# Se muestra la cascada. Si prefieres un color sólido (en una VM sin 3D la cascada va más lenta
+# al mover el ratón), la decisión la toma /usr/libexec/infinity/fondo-modo, que usa también el
+# shell para la marca. Para cambiarlo, en el terminal (y después cerrar sesión y volver a entrar):
+#   echo imagen > ~/.config/infinity/fondo    (la cascada)
+#   echo color  > ~/.config/infinity/fondo    (color sólido, sin imagen)
+
+case "$(/usr/libexec/infinity/fondo-modo)" in
+    color) exit 0 ;;
+esac
+
+exec swaybg -i /usr/share/infinity/wallpaper.jpg -m fill
