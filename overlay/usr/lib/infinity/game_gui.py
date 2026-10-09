@@ -11,6 +11,11 @@ se calculan solo al pulsar «Actualizar procesos».
 
 Las acciones de root se lanzan con `sudo -n` (la sesión en vivo lo permite sin contraseña). Si
 sudo pide contraseña, se abre una terminal para pedirla ahí.
+
+Nunca se queda en silencio: si la ventana no puede abrirse, o falla una acción, se avisa con una
+notificación (o con una terminal si no hay servicio de notificaciones) y se anota en
+~/.cache/infinity/juegos.log. El lanzador descarta la salida de las aplicaciones, así que un
+error que solo saliera por stderr no lo vería nadie.
 """
 import functools
 import os
@@ -21,6 +26,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -220,6 +226,55 @@ def _limpiar(texto):
         if texto.startswith(prefijo):
             return texto[len(prefijo):]
     return texto
+
+
+# --------------------------------------------------------------------------- avisos fuera de la ventana
+REGISTRO = "juegos.log"
+# Sin ventana no hay Tk que muestre nada. Se prueba una notificación y, si no hay servicio de
+# notificaciones (la ISO no trae ninguno por defecto), una terminal con el aviso que espera a Enter.
+SCRIPT_AVISO = 'printf "%s\\n\\n" "$1"; printf "Pulsa Enter para cerrar... "; read -r _'
+
+
+def ruta_registro():
+    """Registro de fallos: ~/.cache/infinity/juegos.log (o $XDG_CACHE_HOME/infinity/juegos.log)."""
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    return os.path.join(base, "infinity", REGISTRO)
+
+
+def registrar(texto):
+    """Añade el texto con la hora al registro. Nunca lanza: si no se puede escribir, no queda otro sitio."""
+    try:
+        ruta = ruta_registro()
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with open(ruta, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {texto.rstrip()}\n")
+    except OSError:
+        pass
+
+
+def avisar_sin_ventana(texto):
+    """Muestra el aviso fuera de la ventana. Devuelve False si no hubo ningún medio para mostrarlo."""
+    try:
+        r = subprocess.run(["notify-send", "-u", "critical", "-a", "Juegos", "Juegos", texto],
+                           capture_output=True, timeout=5)
+        if r.returncode == 0:
+            return True
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        subprocess.Popen(["foot", "-T", "Juegos: aviso", "sh", "-c", SCRIPT_AVISO, "sh", texto],
+                         start_new_session=True, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except OSError:
+        return False
+
+
+def fallo_al_abrir(texto, detalle=""):
+    """Un fallo que impide abrir la ventana: se anota, se avisa y devuelve 1 (código de salida)."""
+    registrar(f"{texto}\n{detalle}" if detalle else texto)
+    avisar_sin_ventana(texto)
+    return 1
 
 
 class _InformeGui:
@@ -644,7 +699,16 @@ class Juegos(tk.Tk):
             texto = f"{etiqueta} · {hecho} archivos"
         self._texto_progreso.configure(text=texto)
 
-    # ----------------------------------------------------------------- foco y cierre
+    # ----------------------------------------------------------------- errores y foco
+    def report_callback_exception(self, exc, val, tb):
+        """Tk llama aquí si falla un botón o una consulta. Por defecto solo escribiría en stderr,
+        donde nadie lo ve: se anota en el registro y se muestra en la barra de estado."""
+        registrar("".join(traceback.format_exception(exc, val, tb)))
+        try:
+            self._mostrar(f"Error inesperado: {val}. Detalles en {ruta_registro()}", error=True)
+        except AttributeError:  # la barra de estado aún no existe (el fallo fue al construir la ventana)
+            pass
+
     def _al_enfocar(self, evento):
         # Solo cuando la ventana gana el foco (no con los widgets hijos), y sin tarea en curso
         if evento.widget is self and self._tarea is None:
@@ -671,10 +735,16 @@ class Juegos(tk.Tk):
 
 
 def main(argv=None):
-    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
-        print("[error] no hay pantalla: esta ventana necesita una sesión gráfica.", file=sys.stderr)
-        return 1
-    Juegos().mainloop()
+    if not os.environ.get("DISPLAY"):
+        # Tk solo funciona con X11: en Hyprland llega por XWayland, que es quien define DISPLAY.
+        # WAYLAND_DISPLAY sola no basta: antes se intentaba abrir igual y fallaba sin decir nada.
+        return fallo_al_abrir("Juegos no puede abrirse: falta DISPLAY (XWayland), que la ventana necesita. "
+                              "Reinicia la sesión y vuelve a probar.")
+    try:
+        ventana = Juegos()
+    except Exception as e:  # p. ej. tk.TclError si el servidor gráfico no responde
+        return fallo_al_abrir(f"No se pudo abrir la ventana de Juegos: {e}", traceback.format_exc())
+    ventana.mainloop()
     return 0
 
 

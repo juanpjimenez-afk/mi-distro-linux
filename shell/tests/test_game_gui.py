@@ -1,5 +1,6 @@
 import gc
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,8 @@ except ImportError:  # sin tkinter (p. ej. CI sin python3-tk): se saltan las pru
     TK_OK = False
 
 PANTALLA = bool(os.environ.get("DISPLAY"))
+WRAPPER = os.path.join(HERE, "..", "..", "overlay", "usr", "bin", "infinity-juegos-gui")
+GAME_GUI_REAL = os.path.join(HERE, "..", "..", "overlay", "usr", "lib", "infinity", "game_gui.py")
 
 
 def esperar(app, limite=15):
@@ -128,6 +131,15 @@ class TestVentana(unittest.TestCase):
             self.app._modo_juego()
             esperar(self.app)
         self.assertIn("no hay control de frecuencia", self.app._estado.cget("text"))
+
+    # ------------------------------------------------------------------ errores visibles
+    def test_error_en_un_callback_de_tk_se_muestra_en_la_ventana(self):
+        self.app.after(0, lambda: 1 / 0)  # un fallo dentro de un botón o de una consulta de Tk
+        self.app.update()
+        self.assertIn("division by zero", self.app._estado.cget("text"))
+        self.assertEqual(self.app._estado.cget("fg"), GG.COLORES["rojo"])
+        with open(GG.ruta_registro(), encoding="utf-8") as f:
+            self.assertIn("ZeroDivisionError", f.read())
 
     # ------------------------------------------------------------------ GE-Proton
     def test_lista_proton_la_mas_nueva_primero(self):
@@ -370,6 +382,208 @@ class TestLogica(unittest.TestCase):
             self.assertIsInstance(pid, int)
             self.assertIsInstance(nombre, str)
             self.assertIsInstance(pct, float)
+
+
+@unittest.skipUnless(TK_OK, "necesita tkinter")
+class TestAvisosSinVentana(unittest.TestCase):
+    """Un fallo que impide abrir la ventana se anota y se avisa fuera de ella."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="juegos-avisos-")
+        self.casa = os.path.join(self.tmp, "home")
+        os.makedirs(self.casa)
+        self.parche = mock.patch.dict(os.environ, {"HOME": self.casa})
+        self.parche.start()
+        os.environ.pop("XDG_CACHE_HOME", None)
+
+    def tearDown(self):
+        self.parche.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def leer_registro(self):
+        try:
+            with open(GG.ruta_registro(), encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return ""
+
+    def test_registro_en_cache_de_infinity_con_hora(self):
+        GG.registrar("prueba de registro")
+        self.assertEqual(GG.ruta_registro(), os.path.join(self.casa, ".cache", "infinity", "juegos.log"))
+        self.assertRegex(self.leer_registro(), r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} prueba de registro\n$")
+
+    def test_registro_respeta_xdg_cache_home(self):
+        destino = os.path.join(self.tmp, "cache")
+        os.environ["XDG_CACHE_HOME"] = destino
+        GG.registrar("otra ruta")
+        self.assertTrue(os.path.isfile(os.path.join(destino, "infinity", "juegos.log")))
+
+    def test_registrar_no_lanza_si_no_puede_escribir(self):
+        fichero = os.path.join(self.tmp, "no-es-carpeta")
+        open(fichero, "w").close()
+        os.environ["XDG_CACHE_HOME"] = fichero  # no se puede crear infinity/ dentro de un fichero
+        GG.registrar("sin sitio donde escribir")  # no debe lanzar
+
+    def test_aviso_prefiere_notify_send(self):
+        with mock.patch.object(GG.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as nsend, \
+                mock.patch.object(GG.subprocess, "Popen") as terminal:
+            self.assertTrue(GG.avisar_sin_ventana("hola"))
+        self.assertEqual(nsend.call_args[0][0][-1], "hola")
+        terminal.assert_not_called()
+
+    def test_aviso_cae_a_foot_si_no_hay_notify_send(self):
+        with mock.patch.object(GG.subprocess, "run", side_effect=FileNotFoundError("notify-send")), \
+                mock.patch.object(GG.subprocess, "Popen") as terminal:
+            self.assertTrue(GG.avisar_sin_ventana("sin notificaciones"))
+        argv = terminal.call_args[0][0]
+        self.assertEqual(argv[0], "foot")
+        self.assertEqual(argv[-1], "sin notificaciones")
+
+    def test_sin_display_avisa_y_no_intenta_abrir_tk(self):
+        with mock.patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-1"}), \
+                mock.patch.object(GG, "avisar_sin_ventana", return_value=True) as aviso, \
+                mock.patch.object(GG, "Juegos") as ventana:
+            os.environ.pop("DISPLAY", None)
+            self.assertEqual(GG.main([]), 1)
+        ventana.assert_not_called()
+        self.assertIn("DISPLAY", aviso.call_args[0][0])
+        self.assertIn("falta DISPLAY", self.leer_registro())
+
+    def test_si_tk_no_abre_la_ventana_se_avisa(self):
+        with mock.patch.dict(os.environ, {"DISPLAY": ":99"}), \
+                mock.patch.object(GG, "avisar_sin_ventana", return_value=True) as aviso, \
+                mock.patch.object(GG, "Juegos", side_effect=GG.tk.TclError("no conecta con :99")):
+            self.assertEqual(GG.main([]), 1)
+        self.assertIn("no conecta con :99", aviso.call_args[0][0])
+        self.assertIn("Traceback", self.leer_registro())
+
+
+@unittest.skipUnless(shutil.which("sh"), "necesita sh")
+class TestWrapper(unittest.TestCase):
+    """infinity-juegos-gui: lo que falla antes de llegar a Python también se avisa."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="juegos-wrapper-")
+        self.bin = os.path.join(self.tmp, "bin")
+        self.casa = os.path.join(self.tmp, "home")
+        self.llamadas = os.path.join(self.tmp, "llamadas.txt")
+        os.makedirs(self.bin)
+        os.makedirs(self.casa)
+        for util in ("sh", "date", "mkdir", "tail"):
+            ruta = shutil.which(util)
+            if ruta:
+                os.symlink(ruta, os.path.join(self.bin, util))
+        # python3 del propio intérprete de las pruebas (con tkinter si lo tiene)
+        with open(os.path.join(self.bin, "python3"), "w") as f:
+            f.write(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+        os.chmod(os.path.join(self.bin, "python3"), 0o755)
+        self.falso("notify-send")
+        self.falso("foot")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def falso(self, nombre):
+        """Herramienta de mentira que anota su nombre y sus argumentos en self.llamadas."""
+        ruta = os.path.join(self.bin, nombre)
+        with open(ruta, "w") as f:
+            f.write("#!/bin/sh\n"
+                    f"printf '%s' '{nombre}' >>'{self.llamadas}'\n"
+                    f"for a in \"$@\"; do printf ' [%s]' \"$a\" >>'{self.llamadas}'; done\n"
+                    f"printf '\\n' >>'{self.llamadas}'\n")
+        os.chmod(ruta, 0o755)
+
+    def ejecutar(self, lib=None, quitar=()):
+        entorno = {"PATH": self.bin, "HOME": self.casa, "LANG": "C.UTF-8"}
+        if lib is not None:
+            entorno["INFINITY_JUEGOS_LIB"] = lib
+        for nombre in quitar:
+            self.quitar_herramienta(nombre)
+        return subprocess.run([os.path.abspath(WRAPPER)], env=entorno, capture_output=True, text=True, timeout=60)
+
+    def quitar_herramienta(self, nombre):
+        ruta = os.path.join(self.bin, nombre)
+        if os.path.exists(ruta):
+            os.remove(ruta)
+
+    def avisos(self):
+        try:
+            with open(self.llamadas, encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return ""
+
+    def registro(self):
+        try:
+            with open(os.path.join(self.casa, ".cache", "infinity", "juegos.log"), encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return ""
+
+    def modulo(self, contenido):
+        carpeta = os.path.join(self.tmp, "lib")
+        os.makedirs(carpeta, exist_ok=True)
+        ruta = os.path.join(carpeta, "game_gui.py")
+        with open(ruta, "w", encoding="utf-8") as f:
+            f.write(contenido)
+        return ruta
+
+    def test_falta_el_codigo_avisa_y_sale_con_error(self):
+        ruta = os.path.join(self.tmp, "no", "game_gui.py")
+        r = self.ejecutar(lib=ruta)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(f"Falta {ruta}", self.avisos())
+        self.assertIn(f"Falta {ruta}", self.registro())
+
+    def test_sin_notify_send_el_aviso_sale_en_foot(self):
+        r = self.ejecutar(lib=os.path.join(self.tmp, "no", "game_gui.py"), quitar=("notify-send",))
+        self.assertEqual(r.returncode, 1)
+        self.assertTrue(self.avisos().startswith("foot"), self.avisos())
+        self.assertIn("Falta", self.avisos())
+
+    def test_modulo_que_no_carga_muestra_el_error(self):
+        r = self.ejecutar(lib=self.modulo("raise ImportError('prueba de fallo')\n"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no carga: ImportError: prueba de fallo", self.avisos())
+        self.assertIn("ImportError: prueba de fallo", self.registro())
+
+    def test_falta_tkinter_se_explica_con_el_paquete(self):
+        r = self.ejecutar(lib=self.modulo("raise ModuleNotFoundError(\"No module named 'tkinter'\")\n"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("python3-tk", self.avisos())
+
+    def test_codigo_correcto_arranca_sin_avisos(self):
+        lib = self.modulo("import sys\nif __name__ == '__main__':\n    print('arrancado')\n")
+        r = self.ejecutar(lib=lib)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("arrancado", r.stdout)
+        self.assertEqual(self.avisos(), "")
+
+    @unittest.skipUnless(TK_OK, "necesita tkinter en el intérprete de las pruebas")
+    def test_sin_display_el_codigo_real_avisa(self):
+        entorno_sin_pantalla = dict(os.environ)
+        entorno_sin_pantalla.pop("DISPLAY", None)
+        entorno_sin_pantalla.pop("WAYLAND_DISPLAY", None)
+        entorno_sin_pantalla.pop("XDG_CACHE_HOME", None)
+        entorno_sin_pantalla.update({"PATH": self.bin, "HOME": self.casa, "INFINITY_JUEGOS_LIB": GAME_GUI_REAL})
+        r = subprocess.run([os.path.abspath(WRAPPER)], env=entorno_sin_pantalla, capture_output=True,
+                           text=True, timeout=60)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("falta DISPLAY", self.avisos())
+        self.assertIn("falta DISPLAY", self.registro())
+
+
+class TestReglaDeHyprland(unittest.TestCase):
+    def test_la_regla_de_flotar_casa_con_la_clase_que_pone_tk(self):
+        # Tk escribe WM_CLASS = ("infinity-juegos", "Infinity-juegos"): comprobado con XGetClassHint en Xvfb.
+        conf = os.path.join(HERE, "..", "..", "overlay", "etc", "skel", ".config", "hypr", "hyprland.conf")
+        with open(conf, encoding="utf-8") as f:
+            reglas = [linea for linea in f if "match:class" in linea and "juegos" in linea]
+        self.assertEqual(len(reglas), 2, "faltan las reglas float y center de la ventana de Juegos")
+        for linea in reglas:
+            patron = linea.split("match:class", 1)[1].strip()
+            self.assertIsNotNone(re.fullmatch(patron, "Infinity-juegos"), linea)
+            self.assertIsNotNone(re.fullmatch(patron, "infinity-juegos"), linea)
 
 
 if __name__ == "__main__":

@@ -8,3 +8,7 @@ font-name='Inter 10'
 document-font-name='Inter 10'
 monospace-font-name='JetBrains Mono 10'
 enable-animations=true
+
+[org.gnome.Epiphany]
+default-search-engine='Google'
+incognito-search-engine='Google'

@@ -23,7 +23,7 @@ def _segundos_confirmacion():
     """Tiempo para pulsar "otra vez" y confirmar apagar/reiniciar/cerrar sesión (Ajustes)."""
     return int(ajuste("buscador.confirmar_s"))
 
-BUSCADOR_WEB = "https://duckduckgo.com/?q="
+BUSCADOR_WEB = "https://www.google.com/search?q="
 
 
 class Resultado:
@@ -204,7 +204,7 @@ class Launcher(Gtk.Window):
                                          lambda ac=ac: power.ejecutar(ac), confirmar=ac.peligrosa))
 
         if q and valor is None:
-            res.append(Resultado(f"Buscar en la web: «{q}»", "DuckDuckGo", "web-browser",
+            res.append(Resultado(f"Buscar en la web: «{q}»", "Google", "web-browser",
                                  lambda q=q: self._lanzar(["xdg-open", BUSCADOR_WEB + quote_plus(q)])))
         return res[: MAX_FILAS + 2]
 

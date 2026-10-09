@@ -1,3 +1,41 @@
 #!/bin/sh
 # Ventana de Juegos: modo juego (LED, CPU, RAM) y GE-Proton. Código: /usr/lib/infinity/game_gui.py
-exec python3 /usr/lib/infinity/game_gui.py "$@"
+#
+# El lanzador descarta la salida de las aplicaciones: un fallo que solo saliera por stderr no lo
+# vería nadie. Por eso cada problema se avisa (notificación, o terminal si no hay servicio de
+# notificaciones) y se anota en ~/.cache/infinity/juegos.log.
+# INFINITY_JUEGOS_LIB permite probar otro game_gui.py (lo usan las pruebas).
+LIB="${INFINITY_JUEGOS_LIB:-/usr/lib/infinity/game_gui.py}"
+LOG="${XDG_CACHE_HOME:-$HOME/.cache}/infinity/juegos.log"
+mkdir -p "${LOG%/*}" 2>/dev/null
+
+avisar() {
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" 2>/dev/null >>"$LOG"
+    if command -v notify-send >/dev/null 2>&1 &&
+       notify-send -u critical -a Juegos Juegos "$1" >/dev/null 2>&1; then
+        return 0
+    fi
+    if command -v foot >/dev/null 2>&1; then
+        foot -T "Juegos: aviso" sh -c 'printf "%s\n\n" "$1"; printf "Pulsa Enter para cerrar... "; read -r _' sh "$1"
+    fi
+}
+
+if [ ! -f "$LIB" ]; then
+    avisar "Falta $LIB. Reinstala Infinity OS o regenera la ISO."
+    exit 1
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+    avisar "No se encuentra python3."
+    exit 1
+fi
+# Antes de abrir nada se comprueba que el código carga (tkinter incluido). Así un fallo de
+# importación se explica en pantalla en vez de morir en silencio.
+if ! ERR="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import game_gui' "${LIB%/*}" 2>&1)"; then
+    printf '%s\n' "$ERR" 2>/dev/null >>"$LOG"
+    case "$ERR" in
+        *tkinter*) avisar "Falta tkinter: hace falta el paquete python3-tk." ;;
+        *) avisar "La ventana de Juegos no carga: $(printf '%s\n' "$ERR" | tail -n 1)" ;;
+    esac
+    exit 1
+fi
+exec python3 "$LIB" "$@"
