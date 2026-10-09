@@ -3,19 +3,13 @@
 #
 # En un equipo real se muestra la cascada. Dentro de una máquina virtual (sin aceleración 3D,
 # como VirtualBox) el fondo por defecto es un color sólido de Hyprland (misc.background_color),
-# porque una imagen a pantalla completa se dibuja por CPU y cuesta bastante más al mover el ratón (ver README).
+# porque una imagen a pantalla completa se dibuja por CPU y cuesta bastante más al mover el ratón.
+# La decisión la toma /usr/libexec/infinity/fondo-modo (la usa también el shell para la marca).
 # Para cambiarlo, en el terminal (y después cerrar sesión y volver a entrar):
 #   echo imagen > ~/.config/infinity/fondo    (la cascada)
 #   echo color  > ~/.config/infinity/fondo    (color sólido, sin imagen)
 
-modo=imagen
-command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt --vm -q && modo=color
-if [ -r "$HOME/.config/infinity/fondo" ]; then
-    elegido=$(tr -d ' \t\r\n' < "$HOME/.config/infinity/fondo" | tr 'A-Z' 'a-z')
-    [ -n "$elegido" ] && modo=$elegido
-fi
-
-case "$modo" in
+case "$(/usr/libexec/infinity/fondo-modo)" in
     color) exit 0 ;;
 esac
 

@@ -48,6 +48,7 @@ from .biblioteca_ventana import VentanaBiblioteca  # noqa: E402
 from .dock import Dock, Estado, Orbe  # noqa: E402
 from .hypr import Hyprland  # noqa: E402
 from .launcher import Launcher  # noqa: E402
+from .marca import Marca, fondo_modo  # noqa: E402
 
 APP_ID = "org.infinity.Shell"
 CSS = os.path.join(os.path.dirname(__file__), "style.css")
@@ -112,6 +113,10 @@ class Shell(Gtk.Application):
         self.estado = Estado(self)
         for ventana in (self.dock, self.orbe, self.estado):
             ventana.present()
+        # Con el fondo de color, la marca ∞ se ve en el centro (ver marca.py)
+        if fondo_modo() == "color":
+            self.marca = Marca(self)
+            self.marca.present()
 
     def _launcher(self):
         if self.launcher is None:

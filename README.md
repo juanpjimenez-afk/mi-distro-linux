@@ -102,15 +102,14 @@ nueva, cerrar, fijar/quitar del dock.
 
 **Pantalla de bloqueo:** al bloquear (botón del orbe, `Super + L` o por inactividad) la foto de paisaje ocupa toda la pantalla y la **hora en directo** va arriba a la derecha, en dos líneas, gigante, con la fecha debajo. Toca una tecla o mueve el ratón para que aparezca la contraseña (se vuelve a esconder sola); en el modo en vivo no hay contraseña, basta pulsar Enter. La foto se recorta al centro para llenar cualquier resolución (`branding/make_assets.py` genera un fondo por cada una), y la posición de la hora se calcula con el tamaño real de la pantalla que lee Hyprland. La hora se dibuja en directo con la fuente *Infinity Reloj* (`branding/make_fonts.py`), que es Inter comprimida en horizontal, así que la foto no lleva texto. Para cambiar el formato de la hora edita `time-format` en `~/.config/gtklock/config.ini` (por ejemplo `%H\n%M:%S`).
 
-**Si el ratón va con lag (VirtualBox u otra VM):** en una VM sin aceleración 3D todo se dibuja por CPU, y una imagen a pantalla completa se redibuja en cada movimiento del ratón. Por eso, dentro de una VM, el escritorio usa un **color sólido** en lugar de la cascada, y **mantiene el cristal** (el desenfoque de los paneles). Medido en una VM de pruebas a 1920x1080, moviendo el ratón de forma continua (CPU de Hyprland):
+**Si el ratón va con lag (VirtualBox u otra VM):** en una VM sin aceleración 3D todo se dibuja por CPU, y una imagen a pantalla completa se redibuja en cada movimiento del ratón. Por eso, dentro de una VM, el escritorio usa un **color sólido con la marca ∞ muy tenue** en lugar de la cascada, y **mantiene el cristal** (el desenfoque de los paneles). Medido en una VM de pruebas a 1920x1080, moviendo el ratón de forma continua (CPU de Hyprland; la VM es muy irregular, por eso son rangos):
 
 | Fondo | CPU al mover el ratón |
 |---|---|
 | Cascada (la imagen) | ≈ 370 % (estable en varias medidas) |
-| **Color sólido con cristal** (lo que usa una VM por defecto) | **≈ 120–210 %** (varía mucho entre medidas) |
-| Color sólido sin desenfoque | ≈ 130–140 % |
+| **Color sólido + marca ∞** (lo que usa una VM por defecto) | **≈ 120–150 %** (con algún pico) |
 
-Si aun así va lento, puedes quitar el desenfoque: en `~/.config/hypr/hyprland.conf`, dentro de `blur { ... }`, cambia `enabled = true` por `enabled = false`, y vuelve a entrar en la sesión. Así se gana CPU, pero los paneles dejan de desenfocar lo que hay detrás de ellos.
+La marca ∞ apenas añade coste: las medidas con y sin ella se solapan. Si aun así va lento, el desenfoque es lo siguiente que se puede quitar: en `~/.config/hypr/hyprland.conf`, dentro de `blur { ... }`, `enabled = false`. En mis medidas la diferencia no fue clara, así que quítalo solo si lo notas.
 
 Para volver a la cascada en la VM, en el terminal, y después cerrar sesión y volver a entrar:
 
