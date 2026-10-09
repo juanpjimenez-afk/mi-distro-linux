@@ -90,7 +90,10 @@ aplicar_plantillas() {
 etapa_rootfs() {
   need debootstrap rsync
   local firma
-  firma=$(cat "$ROOT/build/packages.list" "$ROOT/build/config.env" | sha256sum | cut -c1-16)
+  # La firma cubre todo lo que cambia el resultado de instalar paquetes: la lista, la configuración,
+  # el script del chroot y los ficheros de apt de overlay-pre. Si cambia cualquiera, se reinstala.
+  firma=$(cat "$ROOT/build/packages.list" "$ROOT/build/config.env" "$ROOT/build/chroot-setup.sh" \
+    $(find "$ROOT/overlay-pre" -type f | sort) | sha256sum | cut -c1-16)
 
   if [[ -f $WORK/.paquetes-$firma ]]; then
     log "Paquetes ya instalados (sin cambios en packages.list/config.env)"
@@ -120,7 +123,7 @@ etapa_rootfs() {
 
     # Fuentes de apt en CADA instalación de paquetes, no solo al crear la base: así un work/ ya
     # existente también recibe componentes nuevos (multiverse, para Steam).
-      cat >"$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" <<EOF
+    cat >"$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" <<EOF
 Types: deb
 URIs: $MIRROR
 Suites: $SUITE $SUITE-updates $SUITE-security

@@ -76,11 +76,21 @@ class Informe:
     """
 
     def __init__(self):
-        self.tty = sys.stderr.isatty()
         self._decil = {}
 
+    @property
+    def tty(self):
+        """Se consulta al usar, no al importar el módulo (stderr puede no existir aún)."""
+        try:
+            return sys.stderr.isatty()
+        except (AttributeError, ValueError):
+            return False
+
     def mensaje(self, texto):
-        print(texto, file=sys.stderr, flush=True)
+        # Resultados ([ok] y los listados de órdenes) a stdout, para poder encadenarlos en un script;
+        # avisos y progreso a stderr.
+        flujo = sys.stdout if texto.startswith(("[ok]", "  ")) else sys.stderr
+        print(texto, file=flujo, flush=True)
 
     def progreso(self, etiqueta, hecho, total, velocidad):
         if total is None:

@@ -75,6 +75,7 @@ vulkan-validationlayers     # capas de validación de Vulkan (depurar drivers y 
 gamemode                    # daemon de rendimiento (CPU, prioridad) a demanda: gamemoderun
 mangohud                    # superposición de FPS y temperaturas (MANGOHUD=1 %command%)
 steam-installer             # Steam (multiverse). Trae steam-libs-i386 y zenity/lsof como dependencias
+steam-devices               # reglas udev para mandos y periféricos de Steam (multiverse)
 python3-tk                  # ventana de Juegos (tkinter estándar, sin dependencias extra)
 
 # --- Shell Infinity (dock, orbe y buscador) ----------------------------------

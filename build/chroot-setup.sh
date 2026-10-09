@@ -8,6 +8,9 @@ paquetes() {
   # Se añade antes del primer "apt-get update" para que los índices incluyan i386.
   dpkg --add-architecture i386
   apt-get update
+  # Si una ejecución anterior se cortó a mitad, dpkg queda interrumpido: se repara antes de seguir
+  dpkg --configure -a
+  apt-get -y -f install
   apt-get -y -o Dpkg::Options::=--force-confold dist-upgrade
   # shellcheck disable=SC2046
   apt-get -y -o Dpkg::Options::=--force-confold install --no-install-recommends \
