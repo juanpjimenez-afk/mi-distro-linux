@@ -167,6 +167,7 @@ LOCALE='$LOCALE'
 TIMEZONE='$TIMEZONE'
 HOSTNAME_LIVE='$HOSTNAME_LIVE'
 LIVE_USER='$LIVE_USER'
+KB_LAYOUT='$KB_LAYOUT'
 EOF
   in_chroot /tmp/infinity/chroot-setup.sh finalize
   umount_chroot

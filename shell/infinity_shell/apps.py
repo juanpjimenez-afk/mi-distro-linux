@@ -105,11 +105,16 @@ class Indice:
 
 
 def _leer_uso():
+    """Contador de lanzamientos por app. Un fichero con otra forma se ignora entero."""
     try:
-        with open(_USO) as f:
-            return json.load(f)
+        with open(_USO, encoding="utf-8") as f:
+            datos = json.load(f)
     except (OSError, ValueError):
         return {}
+    if not isinstance(datos, dict):
+        return {}
+    return {k: v for k, v in datos.items()
+            if isinstance(k, str) and isinstance(v, int) and not isinstance(v, bool) and v >= 0}
 
 
 def _sumar_uso(app_id):
@@ -117,7 +122,8 @@ def _sumar_uso(app_id):
     uso[app_id] = uso.get(app_id, 0) + 1
     try:
         os.makedirs(_ESTADO, exist_ok=True)
-        with open(_USO, "w") as f:
+        with open(_USO + ".tmp", "w", encoding="utf-8") as f:
             json.dump(uso, f)
+        os.replace(_USO + ".tmp", _USO)
     except OSError:
         pass

@@ -165,7 +165,8 @@ class TestPersistencia(unittest.TestCase):
                 "otro": "texto",
             }}, f)
         b = Biblioteca.cargar(self.ruta)
-        self.assertFalse(b.solo_descargadas)
+        # Solo "false" de verdad apaga el filtro: 0 no es un booleano y cuenta como el valor por defecto
+        self.assertTrue(b.solo_descargadas)
         self.assertEqual(b.carpetas, {"ok": {"nombre": "Bien", "apps": ["a.desktop"]}})
 
     def test_json_que_no_es_objeto(self):
@@ -201,7 +202,8 @@ class TestPersistenciaTiposRaros(unittest.TestCase):
         for malo in (5, "steam.desktop", None, {"a": 1}):
             with self.subTest(apps=malo):
                 b = self._cargar({"carpetas": {"c1": {"nombre": "A", "apps": malo}}})
-                self.assertEqual(b.carpetas["c1"]["apps"], [])
+                # Una carpeta sin apps válidas desaparece en vez de quedar vacía
+                self.assertNotIn("c1", b.carpetas)
 
     def test_nombre_vacio_o_largo_en_el_json(self):
         b = self._cargar({"carpetas": {"c1": {"nombre": "   ", "apps": ["a.desktop"]},
@@ -212,3 +214,32 @@ class TestPersistenciaTiposRaros(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRobustezBiblioteca(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.ruta = os.path.join(self.dir, "biblioteca.json")
+
+    def test_una_app_solo_puede_estar_en_una_carpeta(self):
+        with open(self.ruta, "w") as f:
+            json.dump({"carpetas": {
+                "a": {"nombre": "Juegos", "apps": ["steam.desktop", "lutris.desktop"]},
+                "b": {"nombre": "Otra", "apps": ["lutris.desktop"]},
+            }}, f)
+        b = Biblioteca.cargar(self.ruta)
+        ids = [i for c in b.carpetas.values() for i in c["apps"]]
+        self.assertEqual(sorted(ids), ["lutris.desktop", "steam.desktop"])
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_fichero_corrupto_se_copia_antes_de_sobrescribir(self):
+        with open(self.ruta, "w") as f:
+            f.write('{"carpetas": {"c1": {"nombre": "Juegos", "apps": ["steam.desktop"]}')  # sin cerrar
+        b = Biblioteca.cargar(self.ruta)
+        self.assertTrue(b.ilegible)
+        b.agregar("x.desktop", "nada")  # cualquier cambio dispara la escritura
+        self.assertTrue(b.guardar())
+        copias = [f for f in os.listdir(self.dir) if ".roto-" in f]
+        self.assertEqual(len(copias), 1)
+        with open(os.path.join(self.dir, copias[0])) as f:
+            self.assertIn("steam.desktop", f.read())

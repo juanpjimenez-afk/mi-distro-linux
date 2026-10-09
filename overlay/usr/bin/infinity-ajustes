@@ -1,0 +1,7 @@
+#!/bin/sh
+# Ajustes de Infinity OS: la configuración del escritorio, el bloqueo, el teclado, la terminal...
+# La lógica está en shell/infinity_shell/ajustes.py (qué se configura y cómo se escribe) y la
+# ventana en ajustes_app.py (se construye sola a partir de SCHEMA).
+export PYTHONPATH=/usr/lib/infinity
+export GSK_RENDERER="${GSK_RENDERER:-cairo}"
+exec python3 -m infinity_shell.ajustes_app "$@"

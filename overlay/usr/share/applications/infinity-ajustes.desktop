@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ajustes
+Comment=Escritorio, dock, bloqueo, teclado, terminal y atajos
+Exec=infinity-ajustes
+Icon=preferences-system
+Terminal=false
+Categories=Settings;GTK;
+Keywords=ajustes;configuración;preferencias;fondo;bloqueo;teclado;

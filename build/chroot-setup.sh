@@ -35,6 +35,8 @@ finalizar() {
   locale-gen
   update-locale LANG="$LOCALE" LANGUAGE="${LOCALE%%.*}" LC_MESSAGES="$LOCALE"
   echo "$TIMEZONE" >/etc/timezone
+  # Teclado de la consola y del login (tty7): la misma distribución que el escritorio
+  printf 'XKBMODEL="pc105"\nXKBLAYOUT="%s"\nXKBVARIANT=""\nXKBOPTIONS=""\nBACKSPACE="guess"\n' "$KB_LAYOUT" >/etc/default/keyboard
   ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
 
   # El debootstrap instala la base ANTES de copiar overlay-pre, asi que su path-exclude no
@@ -54,8 +56,9 @@ finalizar() {
 
   # Cursores: solo el tema que usamos (cada variante pesa ~30 MB)
   rm -rf /usr/share/icons/Bibata-Original-* /usr/share/icons/Bibata-Modern-Amber /usr/share/icons/Bibata-Modern-Ice
-  # Solo se usa Papirus-Dark (GTK y dconf): Papirus y Papirus-Light no se referencian en ningun sitio
-  rm -rf /usr/share/icons/Papirus /usr/share/icons/Papirus-Light
+  # Solo se usa Papirus-Dark (GTK y dconf). Papirus-Light sobra; Papirus NO se borra: Papirus-Dark
+  # enlaza sus tamaños a ../Papirus (sin ella quedan enlaces rotos).
+  rm -rf /usr/share/icons/Papirus-Light
   # La interfaz usa solo la familia "Inter": Inter Display sobra
   rm -f /usr/share/fonts/opentype/inter/InterDisplay-*.otf
 

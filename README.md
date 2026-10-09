@@ -86,10 +86,37 @@ Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://r
 | `Super + ←↑↓→` | Mover el foco · con `Shift`, mover la ventana |
 | `Super + 1…5` | Escritorios · con `Shift`, enviar ventana |
 | `Super + L` | Bloquear la pantalla: hora gigante a la derecha (también se bloquea sola a los 10 min) |
+| `Super + ,` | **Ajustes** del sistema (ver abajo) |
 | `Impr` / `Shift + Impr` | Captura de región al portapapeles / pantalla completa a `~/Imágenes` |
 | `Super` + arrastrar (izq./der.) | Mover / redimensionar ventana |
 
 > `Super` es la tecla con el logo de Windows.
+
+### Ajustes del sistema
+
+`Super + ,` (o **Ajustes** en el menú de aplicaciones) abre la app de configuración. Sus páginas:
+
+- **Escritorio:** fondo (cascada o color sólido), color, marca ∞, escala de pantalla, efecto cristal
+  (desenfoque, calidad, opacidad de los paneles), separación, esquinas, sombras y animaciones.
+- **Dock y estado:** formato de la hora (24 h / 12 h) y segundos para confirmar apagar o reiniciar.
+- **Bloqueo y energía:** tiempos para bloquear, apagar la pantalla y suspender; bloquear antes de dormir;
+  formato de la hora y tiempo de la contraseña en la pantalla de bloqueo.
+- **Teclado y ratón:** distribución, velocidad del ratón y gestos del táctil.
+- **Terminal:** fuente, tamaño y transparencia.
+- **Atajos:** los atajos de `hyprland.conf`, solo para consultar (se cambian editando ese fichero).
+- **Sistema:** datos del equipo y los comandos de administrador para la zona horaria, el idioma y el teclado
+  de la consola (esos ajustes necesitan permisos de administrador y no están en la app).
+
+Pulsa **Aplicar**: Hyprland, hypridle, el fondo y el shell se recargan al momento. Los cambios de la **terminal**
+y de la **pantalla de bloqueo** se ven en las ventanas que abras después. **Restaurar** carga los valores de
+fábrica (todavía sin aplicar); **Exportar…** e **Importar…** guardan y cargan los ajustes en un fichero JSON.
+
+Los valores se guardan en `~/.config/infinity/ajustes.json`. La app genera `hypr/infinity-ajustes.conf`,
+`hypr/hypridle.conf` e `infinity/estilo.css` (no los edites a mano: se reescriben), y cambia solo las claves
+que gestiona de `foot/foot.ini` y `gtklock/config.ini`, dejando el resto del fichero como esté.
+
+> **En la ISO en vivo, los cambios se pierden al apagar.** Antes de apagar, usa **Exportar…** y guarda el
+> fichero en un USB; después, **Importar…** lo carga en la sesión nueva.
 
 **Buscador del orbe:** escribe para filtrar apps (sin importar tildes ni mayúsculas, acepta letras
 sueltas: `ffx` → Firefox). `2+2*10` calcula; `> ls -la` ejecuta en una terminal; cualquier otra cosa se
@@ -100,7 +127,7 @@ nueva, cerrar, fijar/quitar del dock.
 
 <p align="center"><img src="docs/bloqueo.jpg" alt="Pantalla de bloqueo: la foto de paisaje a pantalla completa con la hora gigante arriba a la derecha" width="70%"></p>
 
-**Pantalla de bloqueo:** al bloquear (botón del orbe, `Super + L` o por inactividad) la foto de paisaje ocupa toda la pantalla y la **hora en directo** va arriba a la derecha, en dos líneas, gigante, con la fecha debajo. Toca una tecla o mueve el ratón para que aparezca la contraseña (se vuelve a esconder sola); en el modo en vivo no hay contraseña, basta pulsar Enter. La foto se recorta al centro para llenar cualquier resolución (`branding/make_assets.py` genera un fondo por cada una), y la posición de la hora se calcula con el tamaño real de la pantalla que lee Hyprland. La hora se dibuja en directo con la fuente *Infinity Reloj* (`branding/make_fonts.py`), que es Inter comprimida en horizontal, así que la foto no lleva texto. Para cambiar el formato de la hora edita `time-format` en `~/.config/gtklock/config.ini` (por ejemplo `%H\n%M:%S`).
+**Pantalla de bloqueo:** al bloquear (botón del orbe, `Super + L` o por inactividad) la foto de paisaje ocupa toda la pantalla y la **hora en directo** va arriba a la derecha, en dos líneas, gigante, con la fecha debajo. Toca una tecla o mueve el ratón para que aparezca la contraseña (se vuelve a esconder sola); en el modo en vivo no hay contraseña, basta pulsar Enter. La foto se recorta al centro para llenar cualquier resolución (`branding/make_assets.py` genera un fondo por cada una), y la posición de la hora se calcula con el tamaño real de la pantalla que lee Hyprland. La hora se dibuja en directo con la fuente *Infinity Reloj* (`branding/make_fonts.py`), que es Inter comprimida en horizontal, así que la foto no lleva texto. Para cambiar el formato de la hora, **Ajustes → Bloqueo y energía** (en dos líneas o en una, 24 o 12 horas).
 
 **Si el ratón va con lag (VirtualBox u otra VM):** en una VM sin aceleración 3D todo se dibuja por CPU, y la cascada, que es una imagen a pantalla completa, se redibuja en cada movimiento del ratón. Medido en una VM de pruebas a 1920x1080, moviendo el ratón de forma continua (CPU de Hyprland; la VM es muy irregular, por eso son rangos):
 
@@ -109,11 +136,12 @@ nueva, cerrar, fijar/quitar del dock.
 | **Cascada** (por defecto) | ≈ 370 % (estable en varias medidas) |
 | Color sólido + marca ∞ | ≈ 120–150 % (con algún pico) |
 
-Si va lento, cambia el fondo a color en el terminal, y después cierra sesión y vuelve a entrar:
+Si va lento, cambia el fondo a **Color sólido** en **Ajustes → Escritorio** y pulsa Aplicar (no hace falta cerrar
+sesión). Para volver a la cascada, elige **Cascada** y vuelve a pulsar Aplicar. Usa la app y no edites
+`~/.config/infinity/fondo` a mano: la app también reinicia el fondo y la marca.
 
-`echo color > ~/.config/infinity/fondo`  ·  para volver a la cascada: `echo imagen > ~/.config/infinity/fondo`
-
-Con el color, el desenfoque (cristal) de los paneles sigue activo; si aun así va lento, en `~/.config/hypr/hyprland.conf`, dentro de `blur { ... }`, puedes poner `enabled = false`. En mis medidas esa diferencia no fue clara.
+Con el color, el desenfoque (cristal) de los paneles sigue activo; si aun así va lento, desactívalo en
+**Ajustes → Escritorio → Efecto cristal**. En mis medidas esa diferencia no fue clara.
 
 Ajustes en VirtualBox que ayudan (no pude probar VirtualBox, así que son recomendaciones):
 1. **Configuración → Sistema → Placa base → Dispositivo señalador: *USB Tablet*** (puntero absoluto, sin
@@ -177,8 +205,10 @@ sesión). En un equipo real será mucho menor, pero **no lo medí**. Tampoco med
 ```
 GRUB (BIOS o UEFI) → kernel Linux → casper (monta la ISO y crea el usuario) → systemd
    → greetd (inicia sesión solo) → infinity-session → Hyprland (compositor)
-        ├─ swaybg ........... el fondo de pantalla: la cascada, con menos brillo (en una VM no se lanza: color sólido de Hyprland)
-        └─ infinity-shell ... orbe ∞ + dock + estado (3 ventanas "capa") + buscador (oculto hasta que lo abres)
+        ├─ swaybg ........... el fondo de pantalla: la cascada (con el fondo de color no se lanza: lo pinta Hyprland)
+        ├─ infinity-shell ... orbe ∞ + dock + estado (3 ventanas "capa") + buscador (oculto hasta que lo abres)
+        └─ infinity-ajustes . la app de Ajustes: escribe ~/.config/infinity/ajustes.json y los ficheros de cada
+                              programa, y pide a Hyprland, hypridle, el fondo y el shell que se recarguen
 ```
 
 **El efecto cristal** son dos mitades que se complementan:
@@ -221,7 +251,9 @@ docs/             capturas
 |---|---|
 | Cambiar idioma, teclado, zona horaria | `build/config.env` |
 | Añadir o quitar programas | `build/packages.list` |
-| Cambiar colores, desenfoque, animaciones, atajos | `overlay/etc/skel/.config/hypr/hyprland.conf` |
+| Colores, desenfoque, animaciones, escala, teclado, bloqueo, terminal, hora | **Ajustes** (`Super + ,`) |
+| Atajos de teclado | `overlay/etc/skel/.config/hypr/hyprland.conf` |
+| Añadir un ajuste nuevo | `shell/infinity_shell/ajustes.py`: una entrada en `SCHEMA` (la ventana crea el control sola) y, si toca un fichero, una línea en `generar()` |
 | Cambiar el aspecto de dock/orbe/buscador | `shell/infinity_shell/style.css` |
 | Apps fijadas en el dock | `overlay/etc/infinity/fijados` (o clic derecho en el dock) |
 | Fondo de pantalla | `branding/make_assets.py` (genera `wallpaper.jpg`) |
@@ -245,6 +277,10 @@ Esto es la **versión 0.1**: una ISO "en vivo" (arranca sin instalar, lo que cam
   lanzamiento de la terminal y del navegador.
 - **Apagado desde la interfaz**: clic en el orbe → botón de apagar → *"Apagar: pulsa otra vez para confirmar"* →
   segundo clic → el sistema se apaga.
+- **App de Ajustes** en la VM, con su ventana real: aplicar escala, cristal, fondo y marca, reloj de 12 horas,
+  bloqueo, terminal y teclado (Hyprland, hypridle, foot y gtklock lo reciben); un valor no válido no escribe nada;
+  restaurar, exportar e importar; y el atajo `Super + ,`. Además, `shell/tests/test_ajustes.py` comprueba la
+  validación y que los ficheros del skel coinciden con lo que genera la app.
 - **Desenfoque** del fondo detrás de los paneles (prueba de las rayas, arriba), bloqueo/desbloqueo de pantalla,
   red por cable conectada, recuperación automática tras forzar una caída de Hyprland.
 - Pruebas automáticas del shell (búsqueda, calculadora, comunicación con Hyprland) y validación de las
@@ -257,6 +293,8 @@ Esto es la **versión 0.1**: una ISO "en vivo" (arranca sin instalar, lo que cam
 - **VMware, VirtualBox y hardware real:** sin probar. El flujo de **GitHub Actions** usa el mismo script de
   construcción que sí se probó, pero aún no se ha ejecutado en GitHub.
 - Sin probar: audio, teclas de brillo/volumen, capturas de pantalla (`Impr`), WiFi, varios monitores, pantallas HiDPI.
+- La app de Ajustes no cubre todavía audio, red ni Bluetooth, ni cambiar los atajos o el idioma/zona horaria del
+  sistema (esos últimos se explican en la página *Sistema*). La página *Sistema* solo muestra datos.
 - Durante las pruebas hubo **una caída aislada de Hyprland** (en el renderizador por software `llvmpipe`) mientras
   la VM emulaba una CPU exótica; no se repitió con una CPU estándar en más de 9 minutos de uso intensivo.
 - **Sin instalador a disco** todavía. **Sin Secure Boot** (desactívalo en la BIOS/UEFI o usa una VM).
@@ -269,5 +307,5 @@ Esto es la **versión 0.1**: una ISO "en vivo" (arranca sin instalar, lo que cam
 1. Instalador a disco (Calamares).
 2. Panel rápido (WiFi, Bluetooth, brillo, volumen) y centro de notificaciones.
 3. Pantalla de arranque (Plymouth) con el logo ∞ animado.
-4. Aplicación de ajustes y tema de iconos propio.
+4. Ajustes de red, Bluetooth y audio en la app de Ajustes; tema de iconos propio.
 5. Soporte de Secure Boot y Flatpak.

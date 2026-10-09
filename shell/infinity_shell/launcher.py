@@ -1,5 +1,4 @@
 """Buscador rápido + apagado. Se abre sobre el orbe (logo) como una hoja de cristal."""
-import os
 import subprocess
 from urllib.parse import quote_plus
 
@@ -13,17 +12,15 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from . import power  # noqa: E402
+from .ajustes import valor as ajuste  # noqa: E402
 from .search import calcular, normalizar  # noqa: E402
 
 MAX_FILAS = 8
 
 
 def _segundos_confirmacion():
-    """Tiempo para pulsar "otra vez" y confirmar apagar/reiniciar/cerrar sesión."""
-    try:
-        return max(1, int(os.environ.get("INFINITY_CONFIRMAR_S", "3")))
-    except ValueError:
-        return 3
+    """Tiempo para pulsar "otra vez" y confirmar apagar/reiniciar/cerrar sesión (Ajustes)."""
+    return int(ajuste("buscador.confirmar_s"))
 
 BUSCADOR_WEB = "https://duckduckgo.com/?q="
 
@@ -36,6 +33,7 @@ class Resultado:
         self.accion = accion  # callable() -> None
         self.confirmar = confirmar
         self.armado = False
+        self.tid = 0  # temporizador que desarma la confirmación
         self.lbl_sub = None
 
 
@@ -146,7 +144,15 @@ class Launcher(Gtk.Window):
 
     def cerrar(self):
         self._desarmar()
+        self._cancelar_armados()
         self.set_visible(False)
+
+    def _cancelar_armados(self):
+        for r in self.resultados:
+            if r.tid:
+                GLib.source_remove(r.tid)
+                r.tid = 0
+            r.armado = False
 
     def _clic_fondo(self, _gesto, _n, x, y):
         destino = self.fondo.pick(x, y, Gtk.PickFlags.DEFAULT)
@@ -201,6 +207,7 @@ class Launcher(Gtk.Window):
         return res[: MAX_FILAS + 2]
 
     def _actualizar(self):
+        self._cancelar_armados()
         while (fila := self.lista.get_first_child()) is not None:
             self.lista.remove(fila)
         self.resultados = self._consultar(self.entrada.get_text())
@@ -258,13 +265,23 @@ class Launcher(Gtk.Window):
         if r is None:
             return
         if r.confirmar and not r.armado:
+            # Igual que los botones de energía: la confirmación caduca tras unos segundos
             r.armado = True
+            r.tid = GLib.timeout_add_seconds(_segundos_confirmacion(), lambda: self._caducar(r))
             if r.lbl_sub:
                 r.lbl_sub.set_text("Pulsa Enter otra vez para confirmar")
                 r.lbl_sub.add_css_class("warn")
             return
         self.cerrar()
         r.accion()
+
+    def _caducar(self, r):
+        r.armado = False
+        r.tid = 0
+        if r.lbl_sub:
+            r.lbl_sub.set_text(r.subtitulo)
+            r.lbl_sub.remove_css_class("warn")
+        return False
 
     # ------------------------------------------------------------------ energía
     def _clic_energia(self, _boton, accion):

@@ -10,6 +10,8 @@ como mucho. Si una carpeta se queda vacía, desaparece.
 """
 import json
 import os
+import shutil
+import time
 import uuid
 from collections import namedtuple
 
@@ -37,35 +39,55 @@ class Biblioteca:
         self.ruta = ruta or ruta_biblioteca()
         self.solo_descargadas = True
         self.carpetas = {}  # cid -> {"nombre": str, "apps": [app_id, ...]}
+        self.ilegible = False  # el fichero existía pero no se pudo leer: no se sobrescribe sin copia
 
     # ------------------------------------------------------------- persistencia
     @classmethod
     def cargar(cls, ruta=None):
         b = cls(ruta)
+        if not os.path.exists(b.ruta):
+            return b
         try:
             with open(b.ruta, encoding="utf-8") as f:
                 datos = json.load(f)
         except (OSError, ValueError):
+            b.ilegible = True
             return b
         if not isinstance(datos, dict):
+            b.ilegible = True
             return b
-        b.solo_descargadas = bool(datos.get("solo_descargadas", True))
+        b.solo_descargadas = datos.get("solo_descargadas") is not False
         carpetas = datos.get("carpetas")
-        if not isinstance(carpetas, dict):  # null, lista, número…: se empieza sin carpetas
+        if carpetas is None:
             return b
+        if not isinstance(carpetas, dict):  # lista, número…: se empieza sin carpetas
+            b.ilegible = True
+            return b
+        ya_usadas = set()  # una app solo puede estar en una carpeta: gana la primera
         for cid, c in carpetas.items():
             if not isinstance(c, dict) or not isinstance(c.get("nombre"), str):
                 continue
             apps = c.get("apps")
             apps = [a for a in apps if isinstance(a, str)] if isinstance(apps, list) else []
+            apps = [a for a in dict.fromkeys(apps) if a not in ya_usadas]
+            ya_usadas.update(apps)
+            if not apps:
+                continue
             nombre = c["nombre"].strip()[:40] or "Carpeta"
-            b.carpetas[str(cid)] = {"nombre": nombre, "apps": list(dict.fromkeys(apps))}
+            b.carpetas[str(cid)] = {"nombre": nombre, "apps": apps}
         return b
 
     def guardar(self):
         datos = {"solo_descargadas": self.solo_descargadas, "carpetas": self.carpetas}
         try:
             os.makedirs(os.path.dirname(self.ruta), exist_ok=True)
+            if self.ilegible and os.path.exists(self.ruta):
+                # Un fichero que no se pudo leer (corrupto o editado a mano) no se pierde:
+                # se guarda una copia antes de escribir el nuevo.
+                copia = f"{self.ruta}.roto-{time.strftime('%Y%m%d-%H%M%S')}"
+                shutil.copy2(self.ruta, copia)
+                print(f"infinity-shell: biblioteca.json no se pudo leer; copia en {copia}")
+                self.ilegible = False
             tmp = self.ruta + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=1)

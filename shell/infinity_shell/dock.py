@@ -18,6 +18,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
+from .ajustes import valor as ajuste  # noqa: E402
+
 ALTO = 60  # alto común de las tres islas (px)
 MARGEN = 14  # separación con el borde de la pantalla
 
@@ -119,7 +121,7 @@ def leer_fijados():
     # El fichero del usuario manda aunque este vacio: asi se pueden quitar todas las apps.
     for ruta in _rutas_fijados():
         try:
-            with open(ruta) as f:
+            with open(ruta, encoding="utf-8", errors="replace") as f:
                 return [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
         except OSError:
             continue
@@ -130,11 +132,14 @@ def guardar_fijados(ids):
     ruta = _rutas_fijados()[0]
     try:
         os.makedirs(os.path.dirname(ruta), exist_ok=True)
-        with open(ruta, "w") as f:
+        with open(ruta + ".tmp", "w", encoding="utf-8") as f:
             f.write("# Apps fijadas en el dock de Infinity (una por línea)\n")
             f.write("\n".join(ids) + "\n")
+        os.replace(ruta + ".tmp", ruta)
+        return True
     except OSError as e:
         print(f"infinity-shell: no se pudo guardar {ruta}: {e}")
+        return False
 
 
 class Elemento:
@@ -406,6 +411,7 @@ class Estado(Gtk.Window):
         reloj.append(self.fecha)
         caja.append(reloj)
 
+        self.recargar_reloj()
         self.refrescar()
         self._iniciar_reloj()
         monitor = Gio.NetworkMonitor.get_default()
@@ -423,9 +429,14 @@ class Estado(Gtk.Window):
         GLib.timeout_add_seconds(60, lambda: (self._actualizar_reloj(), True)[1])
         return False
 
+    def recargar_reloj(self):
+        """Hora de 24 o 12 horas, según Ajustes. El shell lo llama al aplicar un cambio."""
+        self._fmt_hora = "%-I:%M %p" if ajuste("dock.reloj") == "12h" else "%H:%M"
+        self._actualizar_reloj()
+
     def _actualizar_reloj(self):
         ahora = GLib.DateTime.new_now_local()
-        self.hora.set_text(ahora.format("%H:%M"))
+        self.hora.set_text(ahora.format(self._fmt_hora))
         self.fecha.set_text(ahora.format("%a %-d %b"))
 
     # ----------------------------------------------------------------- estado
