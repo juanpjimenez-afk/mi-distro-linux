@@ -6,11 +6,11 @@
 #   infinity-juegos comprobar                  estado de Vulkan y DXVK (sin root)
 #   infinity-juegos instalar-dependencias      instala lo que falte (pide sudo para apt)
 #   infinity-juegos ge-proton [--version TAG]  instala GE-Proton en Steam (sin root)
-#   sudo infinity-juegos activar               CPU en modo rendimiento
-#   sudo infinity-juegos liberar-ram           libera la caché de páginas
-#   sudo infinity-juegos optimizar PID         nice -10 y tiempo real para el juego
-#   sudo infinity-juegos revertir              devuelve el governor de la CPU
-#   infinity-juegos estado                     muestra el governor actual (sin root)
+#   sudo infinity-juegos activar               CPU en modo rendimiento (governor performance)
+#   sudo infinity-juegos liberar-ram           libera la caché (no añade memoria disponible)
+#   sudo infinity-juegos optimizar PID [--tiempo-real]   nice -10 en todos los hilos; tiempo real opcional
+#   sudo infinity-juegos revertir              deshace governor, nice y política originales
+#   infinity-juegos estado                     muestra qué está cambiado (sin root)
 
 case "${1:-}" in
     activar|liberar-ram|optimizar|revertir|estado)
