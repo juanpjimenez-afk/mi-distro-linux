@@ -1,0 +1,10 @@
+#!/bin/sh
+# Panel de juegos: abre una terminal con el estado del entorno de juegos y cómo completarlo.
+infinity-juegos comprobar
+echo
+echo "Instalar lo que falte (pide tu contraseña):  infinity-juegos instalar-dependencias"
+echo "Instalar GE-Proton en Steam:                 infinity-juegos ge-proton"
+echo "Optimizar para jugar (pide sudo):            sudo infinity-juegos activar"
+echo
+printf 'Pulsa Enter para cerrar... '
+read -r _

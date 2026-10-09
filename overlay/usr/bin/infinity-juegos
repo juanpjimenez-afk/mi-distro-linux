@@ -1,0 +1,26 @@
+#!/bin/sh
+# Juegos en Infinity OS: un solo comando para el entorno (Vulkan, DXVK, GE-Proton) y para
+# optimizar el sistema mientras se juega. La lógica está en /usr/lib/infinity/game_environment.py
+# y /usr/lib/infinity/game_optimizer.py.
+#
+#   infinity-juegos comprobar                  estado de Vulkan y DXVK (sin root)
+#   infinity-juegos instalar-dependencias      instala lo que falte (pide sudo para apt)
+#   infinity-juegos ge-proton [--version TAG]  instala GE-Proton en Steam (sin root)
+#   sudo infinity-juegos activar               CPU en modo rendimiento
+#   sudo infinity-juegos liberar-ram           libera la caché de páginas
+#   sudo infinity-juegos optimizar PID         nice -10 y tiempo real para el juego
+#   sudo infinity-juegos revertir              devuelve el governor de la CPU
+#   infinity-juegos estado                     muestra el governor actual (sin root)
+
+case "${1:-}" in
+    activar|liberar-ram|optimizar|revertir|estado)
+        exec python3 /usr/lib/infinity/game_optimizer.py "$@" ;;
+    comprobar|instalar-dependencias|ge-proton)
+        exec python3 /usr/lib/infinity/game_environment.py "$@" ;;
+    ""|-h|--help|ayuda)
+        sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+        exit 0 ;;
+    *)
+        echo "orden desconocida: $1 (mira: infinity-juegos --help)" >&2
+        exit 2 ;;
+esac

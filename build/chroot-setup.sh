@@ -4,6 +4,9 @@ set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 paquetes() {
+  # Arquitectura de 32 bits: muchos juegos (y Steam) siguen necesitando librerías i386 (Vulkan, GL).
+  # Se añade antes del primer "apt-get update" para que los índices incluyan i386.
+  dpkg --add-architecture i386
   apt-get update
   apt-get -y -o Dpkg::Options::=--force-confold dist-upgrade
   # shellcheck disable=SC2046
