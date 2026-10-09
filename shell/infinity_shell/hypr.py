@@ -81,8 +81,11 @@ class Hyprland:
         """Consulta ventanas y ventana activa en un hilo y llama `callback(ventanas, activa)`
         en el hilo principal. Así la interfaz nunca se congela esperando al compositor."""
         def trabajo():
-            ventanas = self.ventanas()
-            activa = self.ventana_activa()
+            try:
+                ventanas = self.ventanas()
+                activa = self.ventana_activa()
+            except Exception:  # si falla a mitad, la barra debe seguir: el callback se llama igual
+                ventanas, activa = [], None
             GLib.idle_add(lambda: callback(ventanas, activa) and False)
         threading.Thread(target=trabajo, daemon=True).start()
 
