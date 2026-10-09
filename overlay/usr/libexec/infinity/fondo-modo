@@ -1,12 +1,11 @@
 #!/bin/sh
-# Qué fondo usa Infinity OS: "imagen" (la cascada) o "color" (sólido, con la marca ∞).
+# Qué fondo usa Infinity OS: "imagen" (la cascada, por defecto) o "color" (sólido, con la marca ∞).
 # Lo usan infinity-wallpaper y el shell, así que la decisión está en un solo sitio.
 #
-# Dentro de una VM sin aceleración 3D el valor por defecto es "color" (ver el README).
-# El usuario lo cambia con ~/.config/infinity/fondo ("imagen" o "color").
+# El usuario lo cambia con ~/.config/infinity/fondo ("imagen" o "color"). En una VM sin 3D la
+# cascada va más lenta al mover el ratón (ver el README): ahí se puede elegir "color".
 
 modo=imagen
-command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt --vm -q && modo=color
 if [ -r "$HOME/.config/infinity/fondo" ]; then
     elegido=$(tr -d ' \t\r\n' < "$HOME/.config/infinity/fondo" | tr 'A-Z' 'a-z')
     [ -n "$elegido" ] && modo=$elegido
