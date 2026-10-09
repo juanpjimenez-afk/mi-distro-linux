@@ -175,8 +175,39 @@ class TestPersistencia(unittest.TestCase):
         self.assertEqual(Biblioteca.cargar(self.ruta).carpetas, {})
 
     def test_guardar_sin_permisos_devuelve_false(self):
-        b = Biblioteca(ruta="/proc/no-existe/biblioteca.json")
+        # Un fichero normal no puede tener hijos: falla tambien como root (que salta los permisos)
+        fichero = os.path.join(self.dir, "fichero")
+        open(fichero, "w").close()
+        b = Biblioteca(ruta=os.path.join(fichero, "biblioteca.json"))
         self.assertFalse(b.guardar())
+
+
+class TestPersistenciaTiposRaros(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.ruta = os.path.join(self.dir, "biblioteca.json")
+
+    def _cargar(self, datos):
+        with open(self.ruta, "w") as f:
+            json.dump(datos, f)
+        return Biblioteca.cargar(self.ruta)
+
+    def test_carpetas_con_tipo_inesperado_no_rompe(self):
+        for malo in (5, [1], "texto", None, True):
+            with self.subTest(carpetas=malo):
+                self.assertEqual(self._cargar({"carpetas": malo}).carpetas, {})
+
+    def test_apps_con_tipo_inesperado_no_rompe(self):
+        for malo in (5, "steam.desktop", None, {"a": 1}):
+            with self.subTest(apps=malo):
+                b = self._cargar({"carpetas": {"c1": {"nombre": "A", "apps": malo}}})
+                self.assertEqual(b.carpetas["c1"]["apps"], [])
+
+    def test_nombre_vacio_o_largo_en_el_json(self):
+        b = self._cargar({"carpetas": {"c1": {"nombre": "   ", "apps": ["a.desktop"]},
+                                       "c2": {"nombre": "x" * 100, "apps": ["b.desktop"]}}})
+        self.assertEqual(b.carpetas["c1"]["nombre"], "Carpeta")
+        self.assertEqual(len(b.carpetas["c2"]["nombre"]), 40)
 
 
 if __name__ == "__main__":

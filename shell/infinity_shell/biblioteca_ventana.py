@@ -14,7 +14,7 @@ from gi.repository import Gtk4LayerShell as LayerShell  # noqa: E402  (antes que
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, GLib, GObject, Gtk  # noqa: E402
+from gi.repository import Gdk, GLib, GObject, Gtk, Pango  # noqa: E402
 
 from .biblioteca import Carpeta  # noqa: E402
 from .dock import ALTO, MARGEN  # noqa: E402
@@ -92,7 +92,6 @@ class VentanaBiblioteca(Gtk.Window):
 
         # Gtk.Grid y no Gtk.FlowBox: el FlowBox se queda con los clics de sus hijos.
         self.rejilla = Gtk.Grid(column_spacing=10, row_spacing=10, halign=Gtk.Align.CENTER)
-        self.rejilla.add_css_class("lib-grid")
         self.scroll = Gtk.ScrolledWindow()
         self.scroll.set_child(self.rejilla)
         self.scroll.set_propagate_natural_height(True)
@@ -119,6 +118,7 @@ class VentanaBiblioteca(Gtk.Window):
     def abrir(self):
         self.carpeta_abierta = None
         self._redibujar()
+        self.scroll.get_vadjustment().set_value(0)  # que no reabra desplazada (B9)
         self.present()
 
     def cerrar(self):
@@ -335,7 +335,10 @@ def _etiqueta_nombre(texto):
     etiqueta = Gtk.Label(label=texto)
     etiqueta.add_css_class("lib-name")
     etiqueta.set_wrap(True)
+    etiqueta.set_wrap_mode(Pango.WrapMode.WORD_CHAR)  # una palabra sin espacios no ensancha la tarjeta
     etiqueta.set_max_width_chars(12)
+    etiqueta.set_lines(2)  # dos líneas como máximo, como dice la documentación del módulo
+    etiqueta.set_ellipsize(Pango.EllipsizeMode.END)
     etiqueta.set_justify(Gtk.Justification.CENTER)
     return etiqueta
 

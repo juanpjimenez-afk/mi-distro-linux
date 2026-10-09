@@ -14,6 +14,17 @@ Para atajos de teclado es MUCHO más rápido hablar con la instancia ya abierta 
 import os
 import sys
 
+# earlyoom (/etc/default/earlyoom) compara el nombre del proceso (comm), no la ruta. El lanzador
+# ejecuta "python3", asi que sin esto el shell no se llamaria "infinity-shell" y no tendria la
+# proteccion frente al OOM. PR_SET_NAME = 15; el nombre no puede pasar de 15 bytes.
+try:
+    import ctypes
+    _libc = ctypes.CDLL(None)
+    _libc.prctl.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+    _libc.prctl(15, b"infinity-shell", 0, 0, 0)
+except (OSError, AttributeError):
+    pass
+
 # El lanzador precarga gtk4-layer-shell con LD_PRELOAD; ya cumplió su función, así que se
 # quita para que las aplicaciones que abras desde el shell no la hereden.
 _pre = [p for p in os.environ.get("LD_PRELOAD", "").split(":") if p and "gtk4-layer-shell" not in p]

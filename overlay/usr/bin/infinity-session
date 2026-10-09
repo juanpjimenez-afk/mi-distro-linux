@@ -73,6 +73,8 @@ while :; do
         continue
     fi
     # Cayó con la sesión ya iniciada: se vuelve al escritorio (máx. 3 veces seguidas)
+    # Una sesión que ha durado un rato sano cuenta como recuperada: el contador vuelve a 0.
+    [ "$duracion" -ge 600 ] && reinicios=0
     reinicios=$((reinicios + 1))
     [ "$reinicios" -ge 3 ] && break
     sleep 1

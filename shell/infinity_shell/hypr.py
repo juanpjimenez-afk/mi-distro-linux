@@ -7,6 +7,7 @@
 import json
 import os
 import socket
+import sys
 import threading
 
 from gi.repository import GLib
@@ -118,5 +119,8 @@ class Hyprland:
         for linea in lineas:
             nombre, _, resto = linea.decode(errors="replace").partition(">>")
             if self.on_event:
-                self.on_event(nombre, resto)
+                try:
+                    self.on_event(nombre, resto)
+                except Exception as e:  # GLib quitaria la fuente si el callback lanza
+                    print(f"infinity-shell: error al procesar el evento {nombre}: {e}", file=sys.stderr)
         return True

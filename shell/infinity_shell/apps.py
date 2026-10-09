@@ -97,7 +97,9 @@ class Indice:
             if c in (a.id.removesuffix(".desktop").casefold(), a.wm_class, a.binario):
                 return a
         for a in self.apps:
-            if c and (c in a.id.casefold() or (a.binario and a.binario in c)):
+            # subcadenas demasiado cortas ("e", "sh") coinciden con casi cualquier app: no se usan
+            if c and ((len(c) >= 3 and c in a.id.removesuffix(".desktop").casefold())
+                      or (len(a.binario) >= 4 and a.binario in c)):
                 return a
         return None
 

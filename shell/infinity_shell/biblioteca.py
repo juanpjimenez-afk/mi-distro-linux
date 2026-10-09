@@ -50,10 +50,16 @@ class Biblioteca:
         if not isinstance(datos, dict):
             return b
         b.solo_descargadas = bool(datos.get("solo_descargadas", True))
-        for cid, c in (datos.get("carpetas") or {}).items():
-            if isinstance(c, dict) and isinstance(c.get("nombre"), str):
-                apps = [a for a in c.get("apps") or [] if isinstance(a, str)]
-                b.carpetas[str(cid)] = {"nombre": c["nombre"], "apps": list(dict.fromkeys(apps))}
+        carpetas = datos.get("carpetas")
+        if not isinstance(carpetas, dict):  # null, lista, número…: se empieza sin carpetas
+            return b
+        for cid, c in carpetas.items():
+            if not isinstance(c, dict) or not isinstance(c.get("nombre"), str):
+                continue
+            apps = c.get("apps")
+            apps = [a for a in apps if isinstance(a, str)] if isinstance(apps, list) else []
+            nombre = c["nombre"].strip()[:40] or "Carpeta"
+            b.carpetas[str(cid)] = {"nombre": nombre, "apps": list(dict.fromkeys(apps))}
         return b
 
     def guardar(self):

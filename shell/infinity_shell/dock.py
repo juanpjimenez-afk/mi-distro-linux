@@ -116,12 +116,11 @@ def _rutas_fijados():
 
 
 def leer_fijados():
+    # El fichero del usuario manda aunque este vacio: asi se pueden quitar todas las apps.
     for ruta in _rutas_fijados():
         try:
             with open(ruta) as f:
-                ids = [l.strip() for l in f if l.strip() and not l.startswith("#")]
-            if ids:
-                return ids
+                return [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
         except OSError:
             continue
     return list(DEFECTO_FIJADOS)
