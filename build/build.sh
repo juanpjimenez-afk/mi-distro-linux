@@ -154,7 +154,8 @@ etapa_configurar() {
   aplicar_plantillas "$ROOT/overlay" "$ROOTFS"
 
   # Shell (dock + orbe + buscador)
-  rm -rf "$ROOTFS/usr/lib/infinity"
+  # Solo se borra el código de la shell: el overlay ya trajo los módulos de juegos a usr/lib/infinity
+  rm -rf "$ROOTFS/usr/lib/infinity/infinity_shell"
   mkdir -p "$ROOTFS/usr/lib/infinity" "$ROOTFS/usr/share/infinity"
   rsync -a --exclude '__pycache__' --exclude 'tests' "$ROOT/shell/infinity_shell" "$ROOTFS/usr/lib/infinity/"
   install -m755 "$ROOT/shell/infinity-shell" "$ROOTFS/usr/bin/infinity-shell"
