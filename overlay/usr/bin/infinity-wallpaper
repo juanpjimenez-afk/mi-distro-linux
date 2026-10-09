@@ -1,15 +1,19 @@
 #!/bin/sh
 # Fondo de pantalla de Infinity OS: la cascada, con menos brillo (ver branding/make_assets.py).
 #
-# Por defecto se muestra siempre, también dentro de una máquina virtual.
-# Aviso: en una VM sin aceleración 3D (VirtualBox) el fondo es una superficie a pantalla completa
-# que se dibuja por CPU, y cada movimiento del ratón cuesta más. Si el ratón vuelve a ir con lag:
-#   echo color > ~/.config/infinity/fondo     (fondo sólido, sin imagen)
-# Para volver a la imagen:
-#   echo imagen > ~/.config/infinity/fondo
+# En un equipo real se muestra la cascada. Dentro de una máquina virtual (sin aceleración 3D,
+# como VirtualBox) el fondo por defecto es un color sólido de Hyprland (misc.background_color),
+# porque una imagen a pantalla completa se dibuja por CPU y cuesta bastante más al mover el ratón (ver README).
+# Para cambiarlo, en el terminal (y después cerrar sesión y volver a entrar):
+#   echo imagen > ~/.config/infinity/fondo    (la cascada)
+#   echo color  > ~/.config/infinity/fondo    (color sólido, sin imagen)
 
 modo=imagen
-[ -r "$HOME/.config/infinity/fondo" ] && modo=$(tr -d ' \n' < "$HOME/.config/infinity/fondo")
+command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt --vm -q && modo=color
+if [ -r "$HOME/.config/infinity/fondo" ]; then
+    elegido=$(tr -d ' \t\r\n' < "$HOME/.config/infinity/fondo" | tr 'A-Z' 'a-z')
+    [ -n "$elegido" ] && modo=$elegido
+fi
 
 case "$modo" in
     color) exit 0 ;;
