@@ -12,7 +12,7 @@ y un **logo ∞ flotante, separado de la barra de tareas**, desde el que buscas 
 
 | Lo que pediste | Cómo está resuelto |
 |---|---|
-| 1. Optimizado | Instalación mínima (sin snap ni servicios inútiles), swap comprimido en RAM, apagado rápido, un shell que no sondea nada. ISO de **1,09 GB**. [Detalles](#optimización) |
+| 1. Optimizado | Instalación mínima (sin snap ni servicios inútiles), swap comprimido en RAM, apagado rápido, un shell de un solo proceso con pocos temporizadores. ISO de **1,05 GB** (medida el 9 oct, antes de añadir Vulkan, Steam y los paquetes de juegos). [Detalles](#optimización) |
 | 2. Minimalista + *liquid glass* | Compositor Hyprland (desenfoque real) + un shell propio con estilo de cristal. |
 | 3. Logo separado de la barra, con búsqueda y apagado | El **orbe ∞** vive aparte, a la izquierda. Al pulsarlo (o con `Super + Espacio`) se abre un panel con buscador y botones de energía. |
 | 4. Logo = tu imagen | Tu imagen, vectorizada (`branding/logo.svg`, error de trazado ≈ 1,5 %). |
@@ -130,19 +130,14 @@ nueva, cerrar, fijar/quitar del dock.
 
 **Pantalla de bloqueo:** al bloquear (botón del orbe, `Super + L` o por inactividad) la foto de paisaje ocupa toda la pantalla y la **hora en directo** va arriba a la derecha, en dos líneas, gigante, con la fecha debajo. Toca una tecla o mueve el ratón para que aparezca la contraseña (se vuelve a esconder sola); en el modo en vivo no hay contraseña, basta pulsar Enter. La foto se recorta al centro para llenar cualquier resolución (`branding/make_assets.py` genera un fondo por cada una), y la posición de la hora se calcula con el tamaño real de la pantalla que lee Hyprland. La hora se dibuja en directo con la fuente *Infinity Reloj* (`branding/make_fonts.py`), que es Inter comprimida en horizontal, así que la foto no lleva texto. Para cambiar el formato de la hora, **Ajustes → Bloqueo y energía** (en dos líneas o en una, 24 o 12 horas).
 
-**Si el ratón va con lag (VirtualBox u otra VM):** en una VM sin aceleración 3D todo se dibuja por CPU, y la cascada, que es una imagen a pantalla completa, se redibuja en cada movimiento del ratón. Medido en una VM de pruebas a 1920x1080, moviendo el ratón de forma continua (CPU de Hyprland; la VM es muy irregular, por eso son rangos):
-
-| Fondo | CPU al mover el ratón |
-|---|---|
-| **Cascada** (por defecto) | ≈ 370 % (estable en varias medidas) |
-| Color sólido + marca ∞ | ≈ 120–150 % (con algún pico) |
+**Si el ratón va con lag (VirtualBox u otra VM):** en una VM sin aceleración 3D todo se dibuja por CPU. No hay una medida reproducible de cuánto cuesta cada fondo, así que lo siguiente son recomendaciones y no datos.
 
 Si va lento, cambia el fondo a **Color sólido** en **Ajustes → Escritorio** y pulsa Aplicar (no hace falta cerrar
 sesión). Para volver a la cascada, elige **Cascada** y vuelve a pulsar Aplicar. Usa la app y no edites
 `~/.config/infinity/fondo` a mano: la app también reinicia el fondo y la marca.
 
 Con el color, el desenfoque (cristal) de los paneles sigue activo; si aun así va lento, desactívalo en
-**Ajustes → Escritorio → Efecto cristal**. En mis medidas esa diferencia no fue clara.
+**Ajustes → Escritorio → Efecto cristal**. No he medido cuánto ayuda cada cosa por separado.
 
 Ajustes en VirtualBox que ayudan (no pude probar VirtualBox, así que son recomendaciones):
 1. **Configuración → Sistema → Placa base → Dispositivo señalador: *USB Tablet*** (puntero absoluto, sin
@@ -173,7 +168,7 @@ Qué se hizo para que sea ligera, y por qué:
   que xz) y el initramfs también en zstd.
 - **Menos peso muerto:** sin documentación ni traducciones que no uses (solo español/inglés), sin el firmware de
   servidores y móviles ARM (Mellanox, Qualcomm…), solo los controladores Vulkan que piden los juegos (de 32 y 64 bits; Hyprland no los necesita)
-  y con un solo tema de cursor. **Efecto medido: la ISO pasó de 1,38 GB a 1,09 GB (−21 %).**
+  y con un solo tema de cursor.
 - **Memoria:** swap **comprimido en RAM (zram + zstd)**, `earlyoom` (evita que el equipo se cuelgue al llenarse
   la RAM, protegiendo el escritorio) y ajustes de `sysctl` pensados para zram.
 - **Arranque y apagado:** se enmascaran los temporizadores de apt, `man-db` y las esperas de red; los servicios
@@ -181,25 +176,47 @@ Qué se hizo para que sea ligera, y por qué:
 - **Disco:** planificador de E/S según el tipo de disco (NVMe `none`, SSD `mq-deadline`, HDD `bfq`) y `fstrim`
   semanal. Registro del sistema solo en RAM y limitado a 64 MB.
 - **Escritorio:** Hyprland con `vfr` (solo redibuja cuando algo cambia). El shell (dock, orbe, buscador) es
-  **un solo proceso** que no sondea nada: se entera de las ventanas por el socket de Hyprland, del reloj por un
-  temporizador alineado al minuto y de la red por señales del sistema; el dock solo se redibuja si algo visible
-  cambió y las consultas a Hyprland van en un hilo aparte para que la interfaz nunca se congele. Los atajos hablan
+  **un solo proceso**: se entera de las ventanas por el socket de Hyprland y de la red por señales del sistema.
+  Tiene pocos temporizadores: el reloj se alinea al minuto y cada 30 s se actualizan batería, volumen y red. El
+  dock solo se redibuja si algo visible cambió, y las consultas a Hyprland van en un hilo aparte para que la interfaz
+  nunca se congele. Los atajos hablan
   con el shell por D-Bus (`gapplication`), sin arrancar Python. El buscador se crea la primera vez que lo abres.
 
 ### Mediciones
 
-Sobre el sistema arrancado en QEMU con 4 GB de RAM y **sin GPU** (todo se dibuja por CPU):
+Solo lo medido, con método y fecha:
 
-| | |
-|---|---|
-| Tamaño de la ISO | 1,09 GB (`squashfs` de 0,99 GB) |
-| Construcción desde cero (4 núcleos) | 5 min 18 s |
-| RAM usada con el escritorio abierto y en reposo | **≈ 670 MB** de 3,9 GB (Hyprland ≈ 215 MB por el render de software; shell ≈ 52 MB) |
-| Servicios fallidos al arrancar | 0 |
-| Swap | zram de 1,9 GB, `swappiness` 133 |
+| Qué | Resultado | Método y fecha |
+|---|---|---|
+| Tamaño de la ISO | **1,05 GB** (1 049 399 296 bytes) | `ls -l` de la ISO tras `build/build.sh`, 9 oct 2026, **antes de añadir Vulkan, Steam y los paquetes de juegos** (no mide la versión actual). La construcción del 8 oct dio 1,09 GB (1 091 817 472 bytes). |
+| `squashfs` del sistema | 0,95 GB (949 383 168 bytes) | `casper/filesystem.squashfs` de la misma construcción (9 oct 2026), con el mismo límite |
+| Construcción desde cero | 5 min 18 s | diferencia entre la hora de inicio y la de fin de `build/build.sh`, 7 oct 2026 |
+| Swap | zram de tamaño `ram / 2` con zstd; `swappiness` 133 | configuración en `overlay/etc/systemd/zram-generator.conf` y `overlay/etc/sysctl.d/99-infinity.conf`; no medido en ejecución |
 
 El tiempo de arranque no es significativo aquí: QEMU emula la CPU sin aceleración (≈ 2 min hasta poder iniciar
 sesión). En un equipo real será mucho menor, pero **no lo medí**. Tampoco medí consumo de CPU/batería en reposo.
+
+### Modo juego
+
+La app **Juegos** (o `infinity-juegos` en una terminal) prepara el equipo para jugar. Con `sudo`:
+
+- `activar`: governor `performance` en todos los núcleos (guarda el original).
+- `liberar-ram`: libera la caché de páginas limpias, con `sync` antes.
+- `optimizar PID`: nice −10 en todos los hilos del proceso; con `--tiempo-real`, además SCHED_RR en el hilo principal.
+- `revertir`: devuelve el governor, el nice y la política guardados.
+
+Medido el 9 de octubre de 2026 en un equipo de pruebas de 4 núcleos sin control de frecuencia:
+
+- **Planificación:** `optimizar` cambió el nice (0 → −10) y la política (SCHED_RR) del proceso de prueba. Su reparto
+  de CPU frente a 4 procesos de carga pasó de 64,5 % a 94,7 %. En esa medida solo cambió el hilo principal; desde
+  entonces no se han medido de nuevo los hilos secundarios.
+- **Liberar caché:** `liberar-ram` quitó unos 512 MB de caché, pero la memoria disponible no subió (mediana +24 MB en
+  10 repeticiones). La siguiente lectura de un fichero de 512 MB tardó de mediana 0,185 s, frente a 0,070 s con la
+  caché caliente.
+
+**No está demostrado:** que suba los FPS o la fluidez de ningún juego (no se ha medido); que el governor
+`performance` aporte algo (el equipo de pruebas no tenía control de frecuencia para medirlo); ni que liberar la
+caché ayude.
 
 ## Cómo funciona (para curiosos)
 

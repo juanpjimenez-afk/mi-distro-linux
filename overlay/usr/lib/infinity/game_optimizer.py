@@ -201,6 +201,11 @@ def _comprobar_proceso(pid):
         raise OptimizadorError(f"el PID {pid} ({nombre}) es un hilo del kernel, no un programa; no se toca.")
     if campos.get("State", "")[:1] in ("Z", "X"):
         raise OptimizadorError(f"el proceso {pid} ({nombre}) ya ha terminado (zombie); no hay nada que optimizar.")
+    try:
+        os.readlink(os.path.join(PROC_DIR, str(pid), "exe"))
+    except OSError:
+        # Los hilos del kernel no tienen ejecutable (los zombies ya se han descartado arriba)
+        raise OptimizadorError(f"el PID {pid} ({nombre}) es un hilo del kernel, no un programa; no se toca.")
     inicio = _inicio_proceso(pid)
     if inicio is None:
         raise OptimizadorError(f"no existe ningún proceso con PID {pid}.")
@@ -579,7 +584,7 @@ def main(argv=None):
         elif args.orden == "revertir":
             r = revertir_optimizacion()
             if r["nada"]:
-                print("No hay ninguna activación que revertir: no se ha tocado nada.")
+                print("No hay activación que revertir: no se ha tocado nada.")
             else:
                 partes = []
                 if r["governors"]:
