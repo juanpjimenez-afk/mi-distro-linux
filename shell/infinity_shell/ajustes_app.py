@@ -367,7 +367,9 @@ class Ajustes(Gtk.Application):
     def _activar(self, _app):
         ventana = self.get_active_window()
         if ventana is None:
-            Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
+            ajustes_gtk = Gtk.Settings.get_default()  # None si GTK no tiene pantalla
+            if ajustes_gtk is not None:
+                ajustes_gtk.set_property("gtk-application-prefer-dark-theme", True)
             ventana = VentanaAjustes(self)
         ventana.present()
 
