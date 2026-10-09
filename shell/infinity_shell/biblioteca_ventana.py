@@ -99,6 +99,13 @@ class VentanaBiblioteca(Gtk.Window):
         self.scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.panel.append(self.scroll)
 
+        # Acciones de una tarjeta (clic derecho). Va dentro del panel y no en un Gtk.Popover:
+        # los menús emergentes de esta ventana no recibían los clics (fallo B2 de la auditoría).
+        self.acciones = Gtk.Box(spacing=8)
+        self.acciones.add_css_class("lib-actions")
+        self.acciones.set_visible(False)
+        self.panel.append(self.acciones)
+
         self.vacio = Gtk.Label(xalign=0.5)
         self.vacio.add_css_class("lib-empty")
         self.panel.append(self.vacio)
@@ -117,6 +124,7 @@ class VentanaBiblioteca(Gtk.Window):
 
     def abrir(self):
         self.carpeta_abierta = None
+        self._ocultar_acciones()
         self._redibujar()
         self.scroll.get_vadjustment().set_value(0)  # que no reabra desplazada (B9)
         self.present()
@@ -134,7 +142,9 @@ class VentanaBiblioteca(Gtk.Window):
 
     def _tecla(self, _ctrl, keyval, _code, _estado):
         if keyval == Gdk.KEY_Escape:
-            if self.carpeta_abierta is not None:
+            if self.acciones.get_visible():
+                self._ocultar_acciones()
+            elif self.carpeta_abierta is not None:
                 self._abrir_carpeta(None)
             else:
                 self.cerrar()
@@ -142,6 +152,7 @@ class VentanaBiblioteca(Gtk.Window):
         return False
 
     def _cambiar_filtro(self, boton):
+        self._ocultar_acciones()
         self.bib.solo_descargadas = boton.get_active()
         self._marcar_filtro(self.bib.solo_descargadas)
         self._guardar_y_redibujar()
@@ -154,6 +165,7 @@ class VentanaBiblioteca(Gtk.Window):
 
     # ---------------------------------------------------------------- vista
     def _abrir_carpeta(self, cid):
+        self._ocultar_acciones()
         self.carpeta_abierta = cid
         self._redibujar()
 
@@ -195,7 +207,7 @@ class VentanaBiblioteca(Gtk.Window):
         boton.connect("clicked", lambda *_: self._lanzar(app))
 
         derecho = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
-        derecho.connect("pressed", lambda *_: self._menu_app(boton, app, dentro))
+        derecho.connect("pressed", lambda *_: self._menu_app(app, dentro))
         boton.add_controller(derecho)
         self._arrastrar(boton, app.id)
         self._soltar_sobre(boton, lambda origen, destino: self.bib.soltar(origen, destino), app.id)
@@ -223,7 +235,7 @@ class VentanaBiblioteca(Gtk.Window):
         boton.connect("clicked", lambda *_: self._abrir_carpeta(carpeta.cid))
 
         derecho = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
-        derecho.connect("pressed", lambda *_: self._menu_carpeta(boton, carpeta))
+        derecho.connect("pressed", lambda *_: self._menu_carpeta(carpeta))
         boton.add_controller(derecho)
         self._soltar_sobre(boton, lambda origen, _destino: self.bib.agregar(origen, carpeta.cid))
         return boton
@@ -256,63 +268,70 @@ class VentanaBiblioteca(Gtk.Window):
         destino.connect("drop", al_soltar)
         widget.add_controller(destino)
 
-    # ------------------------------------------------------------------ menús
-    def _menu(self, widget, filas):
-        pop = Gtk.Popover()
-        pop.set_parent(widget)
-        pop.set_position(Gtk.PositionType.TOP)
-        pop.add_css_class("dock-menu")
-        caja = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        for texto, fn in filas:
-            b = Gtk.Button(label=texto)
-            b.add_css_class("menu-item")
-            b.set_halign(Gtk.Align.FILL)
-            b.connect("clicked", lambda *_, fn=fn: (pop.popdown(), fn()))
-            caja.append(b)
-        pop.set_child(caja)
-        pop.connect("closed", lambda p: GLib.idle_add(_desligar, p))
-        pop.popup()
+    # ------------------------------------------------------------ acciones
+    def _ocultar_acciones(self):
+        while (hijo := self.acciones.get_first_child()) is not None:
+            self.acciones.remove(hijo)
+        self.acciones.set_visible(False)
 
-    def _menu_app(self, widget, app, dentro):
+    def _mostrar_acciones(self, titulo, filas):
+        """Barra de acciones de una tarjeta. filas = [(texto, funcion)]; cada acción cierra la barra."""
+        self._ocultar_acciones()
+        etiqueta = Gtk.Label(label=titulo, xalign=0)
+        etiqueta.add_css_class("lib-action-title")
+        etiqueta.set_hexpand(True)
+        etiqueta.set_ellipsize(Pango.EllipsizeMode.END)
+        self.acciones.append(etiqueta)
+        for texto, fn in filas:
+            boton = self._boton_accion(texto)
+            boton.connect("clicked", lambda *_, fn=fn: (self._ocultar_acciones(), fn()))
+            self.acciones.append(boton)
+        self._anadir_cancelar()
+        self.acciones.set_visible(True)
+
+    def _boton_accion(self, texto):
+        boton = Gtk.Button(label=texto)
+        boton.add_css_class("lib-action")
+        return boton
+
+    def _anadir_cancelar(self):
+        boton = self._boton_accion("Cancelar")
+        boton.connect("clicked", lambda *_: self._ocultar_acciones())
+        self.acciones.append(boton)
+
+    def _menu_app(self, app, dentro):
         filas = [("Abrir", lambda: self._lanzar(app))]
         if dentro:
             filas.append(("Sacar de la carpeta", lambda: (self.bib.sacar(app.id), self._guardar_y_redibujar())))
-        self._menu(widget, filas)
+        self._mostrar_acciones(app.nombre, filas)
 
-    def _menu_carpeta(self, widget, carpeta):
+    def _menu_carpeta(self, carpeta):
         filas = [
-            ("Renombrar…", lambda: self._renombrar(widget, carpeta)),
+            ("Renombrar", lambda: self._renombrar(carpeta)),
             ("Eliminar carpeta", lambda: (self.bib.eliminar(carpeta.cid), self._guardar_y_redibujar())),
         ]
-        self._menu(widget, filas)
+        self._mostrar_acciones(carpeta.nombre, filas)
 
-    def _renombrar(self, widget, carpeta):
-        pop = Gtk.Popover()
-        pop.set_parent(widget)
-        pop.set_position(Gtk.PositionType.TOP)
-        pop.add_css_class("dock-menu")
-        caja = Gtk.Box(spacing=6)
-        caja.set_margin_start(6)
-        caja.set_margin_end(6)
+    def _renombrar(self, carpeta):
+        self._ocultar_acciones()
         entrada = Gtk.Entry()
+        entrada.add_css_class("lib-entry")
         entrada.set_text(carpeta.nombre)
         entrada.set_max_length(40)
-        entrada.set_width_chars(16)
-        caja.append(entrada)
+        entrada.set_hexpand(True)
 
         def guardar(*_):
             self.bib.renombrar(carpeta.cid, entrada.get_text())
-            pop.popdown()
+            self._ocultar_acciones()
             self._guardar_y_redibujar()
 
         entrada.connect("activate", guardar)
-        boton = Gtk.Button(label="Guardar")
-        boton.add_css_class("menu-item")
+        self.acciones.append(entrada)
+        boton = self._boton_accion("Guardar")
         boton.connect("clicked", guardar)
-        caja.append(boton)
-        pop.set_child(caja)
-        pop.connect("closed", lambda p: GLib.idle_add(_desligar, p))
-        pop.popup()
+        self.acciones.append(boton)
+        self._anadir_cancelar()
+        self.acciones.set_visible(True)
         entrada.grab_focus()
 
     # ------------------------------------------------------------ utilidades
@@ -341,13 +360,6 @@ def _etiqueta_nombre(texto):
     etiqueta.set_ellipsize(Pango.EllipsizeMode.END)
     etiqueta.set_justify(Gtk.Justification.CENTER)
     return etiqueta
-
-
-def _desligar(popover):
-    """Quita el popover de su padre si sigue colgando (el padre puede haberse redibujado)."""
-    if popover.get_parent() is not None:
-        popover.unparent()
-    return False
 
 
 def _icono_nombre(nombre, tam):

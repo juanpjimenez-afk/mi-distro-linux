@@ -312,3 +312,38 @@ button.lib-folder {
 button.library-btn {
   padding: 5px 9px;
 }
+
+/* barra de acciones de una tarjeta (clic derecho): va dentro del panel, sin popovers */
+.lib-actions {
+  padding: 8px 10px;
+  border-radius: 18px;
+  background-color: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.lib-action-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.90);
+}
+button.lib-action {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background-image: none;
+  background-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+}
+button.lib-action:hover {
+  background-color: rgba(255, 255, 255, 0.20);
+}
+entry.lib-entry {
+  min-height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 12px;
+}
