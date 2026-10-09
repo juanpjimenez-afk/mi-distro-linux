@@ -1,0 +1,3 @@
+#!/bin/sh
+# Ventana de Juegos: modo juego (LED, CPU, RAM) y GE-Proton. Código: /usr/lib/infinity/game_gui.py
+exec python3 /usr/lib/infinity/game_gui.py "$@"

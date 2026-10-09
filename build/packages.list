@@ -61,6 +61,22 @@ brightnessctl
 greetd
 tuigreet
 
+# --- Juegos: Vulkan y librerías de 32 bits -----------------------------------
+# La arquitectura i386 se habilita en chroot-setup.sh. Steam y muchos juegos y Wine la necesitan.
+mesa-vulkan-drivers         # controladores Vulkan de Mesa (64 bits)
+mesa-vulkan-drivers:i386    # controladores Vulkan de Mesa (32 bits)
+libvulkan1                  # cargador de Vulkan (64 bits)
+libvulkan1:i386             # cargador de Vulkan (32 bits)
+libgl1-mesa-dri:i386        # OpenGL de 32 bits
+libglx-mesa0:i386           # GLX de 32 bits
+vulkan-tools                # vulkaninfo: comprobar el driver Vulkan
+dxvk                        # DXVK (Direct3D sobre Vulkan) para Wine; lo comprueba infinity-juegos
+vulkan-validationlayers     # capas de validación de Vulkan (depurar drivers y juegos)
+gamemode                    # daemon de rendimiento (CPU, prioridad) a demanda: gamemoderun
+mangohud                    # superposición de FPS y temperaturas (MANGOHUD=1 %command%)
+steam-installer             # Steam (multiverse). Trae steam-libs-i386 y zenity/lsof como dependencias
+python3-tk                  # ventana de Juegos (tkinter estándar, sin dependencias extra)
+
 # --- Shell Infinity (dock, orbe y buscador) ----------------------------------
 python3
 python3-gi

@@ -172,8 +172,8 @@ Qué se hizo para que sea ligera, y por qué:
 - **Compresión de arranque rápida:** el sistema va en `squashfs` con **zstd** (descomprime mucho más rápido
   que xz) y el initramfs también en zstd.
 - **Menos peso muerto:** sin documentación ni traducciones que no uses (solo español/inglés), sin el firmware de
-  servidores y móviles ARM (Mellanox, Qualcomm…), sin controladores Vulkan (Hyprland no los necesita) y con un
-  solo tema de cursor. **Efecto medido: la ISO pasó de 1,38 GB a 1,09 GB (−21 %).**
+  servidores y móviles ARM (Mellanox, Qualcomm…), solo los controladores Vulkan que piden los juegos (de 32 y 64 bits; Hyprland no los necesita)
+  y con un solo tema de cursor. **Efecto medido: la ISO pasó de 1,38 GB a 1,09 GB (−21 %).**
 - **Memoria:** swap **comprimido en RAM (zram + zstd)**, `earlyoom` (evita que el equipo se cuelgue al llenarse
   la RAM, protegiendo el escritorio) y ajustes de `sysctl` pensados para zram.
 - **Arranque y apagado:** se enmascaran los temporizadores de apt, `man-db` y las esperas de red; los servicios

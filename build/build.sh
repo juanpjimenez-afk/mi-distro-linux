@@ -105,18 +105,11 @@ etapa_rootfs() {
       mkdir -p "$WORK"
       [[ -e /usr/share/debootstrap/scripts/$SUITE ]] ||
         ln -s gutsy "/usr/share/debootstrap/scripts/$SUITE"
-      debootstrap --variant=minbase --arch=amd64 --components=main,universe \
+      debootstrap --variant=minbase --arch=amd64 --components=main,universe,multiverse \
         "$SUITE" "$ROOTFS" "$MIRROR"
 
       log "Configurando apt y dpkg (instalación mínima)"
       rsync -a "$ROOT/overlay-pre/" "$ROOTFS/"
-      cat >"$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" <<EOF
-Types: deb
-URIs: $MIRROR
-Suites: $SUITE $SUITE-updates $SUITE-security
-Components: main universe
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-EOF
       rm -f "$ROOTFS/etc/apt/sources.list"
       touch "$WORK/.base-ok"
     fi
@@ -124,6 +117,16 @@ EOF
     # Que no arranquen servicios dentro del chroot mientras se instala
     printf '#!/bin/sh\nexit 101\n' >"$ROOTFS/usr/sbin/policy-rc.d"
     chmod +x "$ROOTFS/usr/sbin/policy-rc.d"
+
+    # Fuentes de apt en CADA instalación de paquetes, no solo al crear la base: así un work/ ya
+    # existente también recibe componentes nuevos (multiverse, para Steam).
+      cat >"$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" <<EOF
+Types: deb
+URIs: $MIRROR
+Suites: $SUITE $SUITE-updates $SUITE-security
+Components: main universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
 
     mount_chroot
     mkdir -p "$ROOTFS/tmp/infinity"

@@ -2,7 +2,7 @@
 Type=Application
 Name=Juegos
 Comment=Comprueba Vulkan y DXVK, instala GE-Proton y optimiza el equipo para jugar
-Exec=foot -T Juegos infinity-juegos-panel
+Exec=infinity-juegos-gui
 Icon=/usr/share/infinity/game-optimizer.png
 Terminal=false
 Categories=Game;

@@ -10,6 +10,9 @@ Solo usa la biblioteca estándar. Las descargas se reanudan si se cortan, cada a
 antes de usarlo y nada se instala a medias: la extracción va a una carpeta temporal que solo se
 renombra cuando todo ha salido bien.
 
+Los mensajes y el progreso van por un "informe": en la terminal (por defecto) o en la ventana
+de Juegos (game_gui.py la sustituye con fijar_informe). Así el mismo código sirve para los dos.
+
 Uso:
     python3 game_environment.py comprobar
     python3 game_environment.py instalar-dependencias [--simular]   (pide sudo para apt)
@@ -55,7 +58,7 @@ class ErrorEntorno(Exception):
     """Un paso no se pudo completar. El mensaje está pensado para la persona usuaria."""
 
 
-# --------------------------------------------------------------------------- progreso
+# --------------------------------------------------------------------------- informe
 def _tiempo(segundos):
     if segundos is None or segundos != segundos or segundos == float("inf"):
         return "--:--"
@@ -64,9 +67,65 @@ def _tiempo(segundos):
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
+class Informe:
+    """Salida por defecto: mensajes y barra de progreso en la terminal (stderr).
+
+    Otro informe puede sustituirlo (ver fijar_informe): debe tener mensaje(texto),
+    progreso(etiqueta, hecho, total, velocidad) y cerrar_progreso(). Si `total` es None, el
+    progreso cuenta elementos (archivos) en vez de bytes.
+    """
+
+    def __init__(self):
+        self.tty = sys.stderr.isatty()
+        self._decil = {}
+
+    def mensaje(self, texto):
+        print(texto, file=sys.stderr, flush=True)
+
+    def progreso(self, etiqueta, hecho, total, velocidad):
+        if total is None:
+            if self.tty:
+                sys.stderr.write(f"\r{etiqueta}: {hecho} archivos".ljust(100))
+                sys.stderr.flush()
+            return
+        frac = min(hecho / total, 1.0)
+        pct = int(frac * 100)
+        if not self.tty:  # sin terminal: una línea cada 10 %, para que el registro sea legible
+            decil = pct // 10
+            if self._decil.get(etiqueta) != decil or frac >= 1.0:
+                self._decil[etiqueta] = decil
+                print(f"{etiqueta}: {pct} % ({hecho / MB:.1f}/{total / MB:.1f} MB)", file=sys.stderr, flush=True)
+            return
+        ancho = 30
+        llenos = int(ancho * frac)
+        barra = "#" * llenos + "-" * (ancho - llenos)
+        eta = (total - hecho) / velocidad if velocidad > 0 else None
+        sys.stderr.write(f"\r{etiqueta} [{barra}] {pct:3d} %  "
+                         f"{hecho / MB:.1f}/{total / MB:.1f} MB  "
+                         f"{velocidad / MB:.1f} MB/s  ETA {_tiempo(eta)}".ljust(110))
+        sys.stderr.flush()
+
+    def cerrar_progreso(self):
+        if self.tty:
+            sys.stderr.write("\r" + " " * 110 + "\r")
+            sys.stderr.flush()
+
+
+_informe = Informe()
+
+
+def fijar_informe(informe):
+    """Cambia dónde van mensajes y progreso. Con None vuelve a la terminal."""
+    global _informe
+    _informe = informe or Informe()
+
+
+def _info(texto):
+    _informe.mensaje(f"[..] {texto}")
+
+
 class Barra:
-    """Barra de progreso. En una terminal se redibuja en la misma línea; sin terminal (p. ej. un
-    registro) imprime una línea cada 10 %, para que el log siga siendo legible."""
+    """Progreso de una operación larga. Reenvía al informe actual, con el ritmo de descarga."""
 
     def __init__(self, etiqueta, total=None, inicial=0):
         self.etiqueta = etiqueta
@@ -74,53 +133,21 @@ class Barra:
         self.inicial = inicial
         self.hecho = inicial
         self.t0 = self.ultimo = time.monotonic()
-        self.tty = sys.stderr.isatty()
-        self.decil = -1
 
     def avanza(self, n):
         self.hecho += n
         ahora = time.monotonic()
         completo = self.total is not None and self.hecho >= self.total
-        if not completo and ahora - self.ultimo < 0.1:  # no redibujar más de 10 veces por segundo
+        if not completo and ahora - self.ultimo < 0.1:  # no avisar más de 10 veces por segundo
             return
         self.ultimo = ahora
-        self._dibuja(ahora)
-
-    def _dibuja(self, ahora):
         transcurrido = max(ahora - self.t0, 1e-6)
         velocidad = (self.hecho - self.inicial) / transcurrido  # bytes por segundo
-        if self.total is None:
-            if self.tty:
-                sys.stderr.write(f"\r{self.etiqueta}: {self.hecho} archivos".ljust(100))
-                sys.stderr.flush()
-            return
-        frac = min(self.hecho / self.total, 1.0)
-        pct = int(frac * 100)
-        if not self.tty:
-            decil = pct // 10
-            if decil != self.decil or frac >= 1.0:
-                self.decil = decil
-                print(f"{self.etiqueta}: {pct} % ({self.hecho / MB:.1f}/{self.total / MB:.1f} MB)",
-                      file=sys.stderr, flush=True)
-            return
-        ancho = 30
-        llenos = int(ancho * frac)
-        barra = "#" * llenos + "-" * (ancho - llenos)
-        eta = (self.total - self.hecho) / velocidad if velocidad > 0 else None
-        sys.stderr.write(f"\r{self.etiqueta} [{barra}] {pct:3d} %  "
-                         f"{self.hecho / MB:.1f}/{self.total / MB:.1f} MB  "
-                         f"{velocidad / MB:.1f} MB/s  ETA {_tiempo(eta)}".ljust(110))
-        sys.stderr.flush()
+        _informe.progreso(self.etiqueta, self.hecho, self.total, velocidad)
 
     def fin(self, texto):
-        if self.tty:
-            sys.stderr.write("\r" + " " * 110 + "\r")
-            sys.stderr.flush()
-        print(f"[ok] {texto}", file=sys.stderr, flush=True)
-
-
-def _info(texto):
-    print(f"[..] {texto}", file=sys.stderr, flush=True)
+        _informe.cerrar_progreso()
+        _informe.mensaje(f"[ok] {texto}")
 
 
 # --------------------------------------------------------------------------- utilidades
@@ -208,8 +235,8 @@ def instalar_dependencias(simular=False):
     instalar = _como_root(["apt-get", "install", "-y", "--no-install-recommends", *faltan])
     if simular:
         _info("Modo simulación. Se ejecutaría:")
-        print("  " + " ".join(actualizar))
-        print("  " + " ".join(instalar))
+        _informe.mensaje("  " + " ".join(actualizar))
+        _informe.mensaje("  " + " ".join(instalar))
         return faltan
 
     _info(f"Paquetes a instalar: {', '.join(faltan)}")
@@ -222,7 +249,7 @@ def instalar_dependencias(simular=False):
             raise ErrorEntorno(f"no se pudo ejecutar '{orden[0]}': {e}")
         if r.returncode != 0:
             raise ErrorEntorno(f"'{' '.join(orden)}' terminó con código {r.returncode}.")
-    print(f"[ok] Instalado: {', '.join(faltan)}")
+    _informe.mensaje(f"[ok] Instalado: {', '.join(faltan)}")
     return faltan
 
 
@@ -381,7 +408,7 @@ def instalar_ge_proton(tag=None):
     compat = directorio_compatibilidad()
     destino = os.path.join(compat, carpeta)
     if os.path.isdir(destino):
-        print(f"[ok] {carpeta} ya está instalada en {destino}")
+        _informe.mensaje(f"[ok] {carpeta} ya está instalada en {destino}")
         return destino
 
     if not _steam_presente():
@@ -420,7 +447,7 @@ def instalar_ge_proton(tag=None):
 
     os.remove(tarball)
     os.remove(sha_ruta)
-    print(f"[ok] {carpeta} instalada en {destino}")
+    _informe.mensaje(f"[ok] {carpeta} instalada en {destino}")
     _info("Reinicia Steam para que aparezca en Propiedades → Compatibilidad.")
     return destino
 
