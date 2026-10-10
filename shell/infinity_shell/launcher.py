@@ -17,6 +17,9 @@ from .dock import asset  # noqa: E402
 from .search import calcular, normalizar  # noqa: E402
 
 MAX_FILAS = 8
+# Tras la última tecla se busca al cabo de este tiempo: al teclear deprisa no se reconstruye la
+# lista en cada letra. Enter y las flechas aplican la búsqueda pendiente antes de actuar.
+RETARDO_BUSQUEDA_MS = 60
 
 
 def _segundos_confirmacion():
@@ -39,14 +42,19 @@ class Resultado:
 
 
 def _imagen(icono, tam):
-    if icono is None:
-        img = Gtk.Image.new_from_icon_name("application-x-executable")
-    elif isinstance(icono, str):
-        img = Gtk.Image.new_from_icon_name(icono)
-    else:
-        img = Gtk.Image.new_from_gicon(icono)
+    img = Gtk.Image()
     img.set_pixel_size(tam)
+    _poner_icono(img, icono)
     return img
+
+
+def _poner_icono(img, icono):
+    if icono is None:
+        img.set_from_icon_name("application-x-executable")
+    elif isinstance(icono, str):
+        img.set_from_icon_name(icono)
+    else:
+        img.set_from_gicon(icono)
 
 
 class Launcher(Gtk.Window):
@@ -54,6 +62,8 @@ class Launcher(Gtk.Window):
         super().__init__(application=app, title="Infinity — Buscar")
         self.indice = indice
         self.resultados = []
+        self._filas = []  # filas de la lista, una por resultado; se reutilizan entre búsquedas
+        self._busqueda_pendiente = 0  # id del temporizador de búsqueda diferida (0 = ninguno)
         self._armado = None  # (accion, id_temporizador) del botón de energía armado
 
         LayerShell.init_for_window(self)
@@ -88,8 +98,8 @@ class Launcher(Gtk.Window):
         self.entrada.add_css_class("launcher-entry")
         self.entrada.set_placeholder_text("Buscar apps, calcular, escribir  > comando…")
         self.entrada.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-search-symbolic")
-        self.entrada.connect("changed", lambda *_: self._actualizar())
-        self.entrada.connect("activate", lambda *_: self._activar(self._seleccionada()))
+        self.entrada.connect("changed", lambda *_: self._programar_busqueda())
+        self.entrada.connect("activate", lambda *_: self._activar_seleccion())
         self.panel.append(self.entrada)
 
         self.lista = Gtk.ListBox()
@@ -139,15 +149,38 @@ class Launcher(Gtk.Window):
 
     def abrir(self):
         self._desarmar()
-        self.entrada.set_text("")
+        self.entrada.set_text("")  # si cambia el texto, se programa una búsqueda que aquí sobra
+        self._cancelar_busqueda()
         self._actualizar()
         self.present()
         self.entrada.grab_focus()
 
     def cerrar(self):
         self._desarmar()
+        self._cancelar_busqueda()
         self._cancelar_armados()
         self.set_visible(False)
+
+    # ------------------------------------------------------------ búsqueda diferida
+    def _programar_busqueda(self):
+        self._cancelar_busqueda()
+        self._busqueda_pendiente = GLib.timeout_add(RETARDO_BUSQUEDA_MS, self._busqueda_lista)
+
+    def _cancelar_busqueda(self):
+        if self._busqueda_pendiente:
+            GLib.source_remove(self._busqueda_pendiente)
+            self._busqueda_pendiente = 0
+
+    def _busqueda_lista(self):
+        self._busqueda_pendiente = 0
+        self._actualizar()
+        return False
+
+    def _al_dia(self):
+        """Aplica ya la búsqueda pendiente, si la hay: Enter y las flechas actúan sobre lo que se ve."""
+        if self._busqueda_pendiente:
+            self._cancelar_busqueda()
+            self._actualizar()
 
     def _cancelar_armados(self):
         for r in self.resultados:
@@ -210,44 +243,73 @@ class Launcher(Gtk.Window):
 
     def _actualizar(self):
         self._cancelar_armados()
-        while (fila := self.lista.get_first_child()) is not None:
-            self.lista.remove(fila)
         self.resultados = self._consultar(self.entrada.get_text())
-        for r in self.resultados:
-            fila = Gtk.ListBoxRow()
-            caja = Gtk.Box(spacing=12)
-            caja.add_css_class("result")
-            caja.append(_imagen(r.icono, 32))
-            textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            textos.set_valign(Gtk.Align.CENTER)
-            t = Gtk.Label(label=r.titulo, xalign=0)
-            t.add_css_class("result-title")
-            t.set_ellipsize(3)  # Pango.EllipsizeMode.END
-            textos.append(t)
-            if r.subtitulo:
-                s = Gtk.Label(label=r.subtitulo, xalign=0)
-                s.add_css_class("result-sub")
-                s.set_ellipsize(3)
-                textos.append(s)
-                r.lbl_sub = s
-            caja.append(textos)
-            fila.set_child(caja)
-            fila.resultado = r
-            self.lista.append(fila)
+        # Las filas se reutilizan: solo se crean las que faltan y se quitan las que sobran.
+        for i, r in enumerate(self.resultados):
+            if i < len(self._filas):
+                fila = self._filas[i]
+            else:
+                fila = self._nueva_fila()
+                self._filas.append(fila)
+                self.lista.append(fila)
+            self._pintar_fila(fila, r)
+        for fila in self._filas[len(self.resultados):]:
+            self.lista.remove(fila)
+        del self._filas[len(self.resultados):]
         self.scroll.set_visible(bool(self.resultados))
         primera = self.lista.get_row_at_index(0)
         if primera:
             self.lista.select_row(primera)
         self.scroll.get_vadjustment().set_value(0)
 
+    @staticmethod
+    def _nueva_fila():
+        """Fila con sus widgets vacíos; _pintar_fila pone el contenido de cada resultado."""
+        fila = Gtk.ListBoxRow()
+        caja = Gtk.Box(spacing=12)
+        caja.add_css_class("result")
+        icono = Gtk.Image()
+        icono.set_pixel_size(32)
+        textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        textos.set_valign(Gtk.Align.CENTER)
+        titulo = Gtk.Label(xalign=0)
+        titulo.add_css_class("result-title")
+        titulo.set_ellipsize(3)  # Pango.EllipsizeMode.END
+        sub = Gtk.Label(xalign=0)
+        sub.add_css_class("result-sub")
+        sub.set_ellipsize(3)
+        textos.append(titulo)
+        textos.append(sub)
+        caja.append(icono)
+        caja.append(textos)
+        fila.set_child(caja)
+        fila.partes = (icono, titulo, sub)
+        return fila
+
+    @staticmethod
+    def _pintar_fila(fila, r):
+        icono, titulo, sub = fila.partes
+        fila.resultado = r
+        _poner_icono(icono, r.icono)
+        titulo.set_text(r.titulo)
+        sub.set_text(r.subtitulo or "")
+        sub.set_visible(bool(r.subtitulo))
+        sub.remove_css_class("warn")  # una fila reutilizada no conserva el aviso de confirmación
+        r.lbl_sub = sub if r.subtitulo else None
+
     def _seleccionada(self):
         return self._resultado_de(self.lista.get_selected_row())
+
+    def _activar_seleccion(self):
+        self._al_dia()
+        self._activar(self._seleccionada())
 
     @staticmethod
     def _resultado_de(fila):
         return getattr(fila, "resultado", None) if fila else None
 
     def _mover(self, delta):
+        self._al_dia()
         n = len(self.resultados)
         if not n:
             return
