@@ -2,10 +2,11 @@
 [terminal]
 vt = 7
 
-# Al arrancar la ISO en vivo se entra directo al escritorio (solo la primera vez).
-# Si cierras sesión, aparece el login de texto (tuigreet).
+# Al arrancar la ISO en vivo se entra directo al escritorio (solo la primera vez), y empieza con la
+# pantalla de bloqueo: la variable avisa a hyprland.conf (exec-once: infinity-lock --arranque).
+# Si cierras sesión, aparece el login de texto (tuigreet), y al entrar con él no se bloquea.
 [initial_session]
-command = "infinity-session"
+command = "env INFINITY_BLOQUEO_ARRANQUE=1 infinity-session"
 user = "@LIVE_USER@"
 
 [default_session]

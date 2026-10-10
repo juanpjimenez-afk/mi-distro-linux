@@ -7,6 +7,14 @@
 #
 # OJO: "gtklock -d" devuelve 1 aunque bloquee bien, así que no se fía de su código de salida:
 # se lanza en segundo plano y se comprueba que sigue vivo.
+#
+# Uso: infinity-lock [--arranque]. Con --arranque (lo lanza hyprland.conf al empezar la sesión) solo
+# bloquea si greetd abrió la sesión como primer inicio (exporta INFINITY_BLOQUEO_ARRANQUE=1). Así, al
+# cerrar sesión y volver a entrar con tuigreet no aparece el bloqueo.
+
+if [ "${1:-}" = "--arranque" ] && [ -z "${INFINITY_BLOQUEO_ARRANQUE:-}" ]; then
+    exit 0
+fi
 
 pidof gtklock >/dev/null 2>&1 && exit 0
 pidof swaylock >/dev/null 2>&1 && exit 0
