@@ -1,9 +1,8 @@
 """Pruebas de overlay/usr/bin/infinity-lock: cuándo sale el bloqueo al arrancar.
 
 El script se ejecuta de verdad, con un gtklock y un swaylock falsos al principio del PATH. El falso
-gtklock tiene que ser un ejecutable llamado gtklock y no un script: pidof (sysvinit-utils, el que trae
-Ubuntu) busca por el ejecutable del proceso, así que no ve un script (solo lo ve con -x, que el script
-no usa). Por eso el falso gtklock hace exec de una copia de sleep llamada gtklock: dura 30 s, más que
+gtklock tiene que ser un ejecutable llamado gtklock y no un script: pidof (sysvinit-utils) busca por el
+ejecutable del proceso, así que no ve un script (solo lo ve con -x, que el script no usa). Por eso el falso gtklock hace exec de una copia de sleep llamada gtklock: dura 30 s, más que
 los 2 s de espera del script. El pidof que ve el script es un envoltorio del real que solo cuenta los
 procesos de la carpeta de este test: así no interfieren otros tests ni un gtklock real en marcha.
 """
@@ -85,8 +84,8 @@ class TestBloqueoArranque(unittest.TestCase):
         os.chmod(self.runtime, 0o700)
         self.marca = os.path.join(self.runtime, MARCA)
         self.registro_swaylock = os.path.join(self.tmp, "swaylock.llamadas")
-        # Cada Popen lidera su propio grupo de procesos (start_new_session): así se mata todo lo que
-        # cuelga de él, y solo eso.
+        # Cada Popen lidera su propio grupo (start_new_session). Al limpiar (_mata_grupos) se matan los
+        # procesos de esos grupos y los que ejecutan algo de self.tmp: nada más.
         self.lanzados = []
 
         sleeper = os.path.join(self.real, "gtklock")
