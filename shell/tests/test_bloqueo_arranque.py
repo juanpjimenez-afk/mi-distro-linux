@@ -45,8 +45,9 @@ def _subreaper(activo):
         pass
 
 
-def _en_grupos(grupos):
-    """PID de los procesos (zombis incluidos) cuyo grupo está en 'grupos', leído de /proc."""
+def _del_test(grupos, carpeta):
+    """PID de los procesos (zombis incluidos) que son de este test, leídos de /proc: los que están en
+    alguno de sus grupos o los que ejecutan algo de su carpeta temporal."""
     pids = []
     for nombre in os.listdir("/proc"):
         if not nombre.isdigit():
@@ -57,7 +58,11 @@ def _en_grupos(grupos):
             pgrp = int(datos[datos.rindex(")") + 2:].split()[2])
         except (OSError, ValueError, IndexError):
             continue
-        if pgrp in grupos:
+        try:
+            ejecutable = os.readlink("/proc/%s/exe" % nombre)
+        except OSError:
+            ejecutable = ""
+        if pgrp in grupos or ejecutable.startswith(carpeta + os.sep):
             pids.append(int(nombre))
     return pids
 
@@ -105,7 +110,8 @@ class TestBloqueoArranque(unittest.TestCase):
     def _mata_grupos(self):
         """Mata lo que quede de los procesos de este test y recoge sus huérfanos."""
         grupos = {p.pid for p in self.lanzados}
-        for pid in _en_grupos(grupos):
+        carpeta = os.path.realpath(self.tmp)
+        for pid in _del_test(grupos, carpeta):
             try:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:

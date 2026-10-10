@@ -532,7 +532,7 @@ def resumen_contrasena(estado, usuario):
         return ("Con contraseña",
                 "La pantalla de bloqueo y el inicio de sesión la piden.", True)
     if estado == "sin":
-        return ("Sin contraseña: el bloqueo acepta Enter",
+        return ("Sin contraseña: la pantalla de bloqueo y el inicio de sesión aceptan cualquier texto.",
                 "Mientras no tenga contraseña, quien esté delante del equipo entra sin ella.", True)
     if estado == "bloqueada":
         # Con la cuenta bloqueada, passwd de un usuario normal falla: solo puede hacerlo root.

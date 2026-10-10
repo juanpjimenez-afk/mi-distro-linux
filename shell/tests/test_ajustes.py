@@ -2,7 +2,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import tomllib
@@ -191,8 +190,9 @@ class TestSkelYGenerador(unittest.TestCase):
         self.assertGreater(conf.index(linea), conf.rindex("bindm ="))
 
     def test_bloqueo_al_encender_y_no_al_entrar_con_tuigreet(self):
-        # greetd marca el primer inicio; hyprland.conf lanza infinity-lock --arranque, que solo bloquea
-        # con esa marca. Super + L va como bindl (activo con la pantalla bloqueada) para relanzar el bloqueo.
+        # Solo la configuración: greetd marca el primer inicio (initial_session) y tuigreet no; hyprland.conf
+        # lanza infinity-lock --arranque y deja Super + L como bindl (activo con la pantalla bloqueada).
+        # Que infinity-lock bloquee o no según esas marcas lo comprueba test_bloqueo_arranque.py.
         with open(os.path.join(ROOT, "overlay", "etc", "greetd", "config.toml"), "rb") as f:
             greetd = tomllib.load(f)
         self.assertIn("INFINITY_BLOQUEO_ARRANQUE=1", greetd["initial_session"]["command"])
@@ -200,18 +200,6 @@ class TestSkelYGenerador(unittest.TestCase):
         conf = _leer(SKEL, "hypr", "hyprland.conf")
         self.assertIn("exec-once = infinity-lock --arranque", conf)
         self.assertRegex(conf, r"(?m)^bindl = \$mod, L,")
-        # Sin la marca, --arranque no debe lanzar gtklock (ni swaylock): la sesión de tuigreet no bloquea.
-        with tempfile.TemporaryDirectory() as tmp:
-            marca = os.path.join(tmp, "lanzado")
-            for nombre in ("gtklock", "swaylock"):
-                ruta = os.path.join(tmp, nombre)
-                with open(ruta, "w", encoding="utf-8") as f:
-                    f.write('#!/bin/sh\necho %s >> "%s"\n' % (nombre, marca))
-                os.chmod(ruta, 0o755)
-            entorno = {"PATH": tmp + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin"), "HOME": tmp}
-            subprocess.run(["sh", os.path.join(ROOT, "overlay", "usr", "bin", "infinity-lock"), "--arranque"],
-                           env=entorno, check=True, timeout=30)
-            self.assertFalse(os.path.exists(marca))
 
     def test_opacidad_por_defecto_es_la_del_css(self):
         style = _leer(STYLE)

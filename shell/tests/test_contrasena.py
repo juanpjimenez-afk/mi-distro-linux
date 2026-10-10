@@ -92,7 +92,8 @@ class TestResumen(unittest.TestCase):
     def test_textos_de_la_seccion(self):
         self.assertEqual(A.resumen_contrasena("con", "infinity")[0], "Con contraseña")
         titular, _, se_puede = A.resumen_contrasena("sin", "infinity")
-        self.assertEqual(titular, "Sin contraseña: el bloqueo acepta Enter")
+        self.assertEqual(titular,
+                         "Sin contraseña: la pantalla de bloqueo y el inicio de sesión aceptan cualquier texto.")
         self.assertTrue(se_puede)
 
     def test_bloqueada_no_deja_cambiar_y_dice_quien_puede(self):
