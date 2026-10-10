@@ -4,7 +4,8 @@ El script se ejecuta de verdad, con un gtklock y un swaylock falsos al principio
 gtklock tiene que ser un ejecutable llamado gtklock y no un script: pidof (sysvinit-utils, el que trae
 Ubuntu) busca por el ejecutable del proceso, así que no ve un script (solo lo ve con -x, que el script
 no usa). Por eso el falso gtklock hace exec de una copia de sleep llamada gtklock: dura 30 s, más que
-los 2 s de espera del script.
+los 2 s de espera del script. El pidof que ve el script es un envoltorio del real que solo cuenta los
+procesos de la carpeta de este test: así no interfieren otros tests ni un gtklock real en marcha.
 """
 
 import ctypes
@@ -22,11 +23,6 @@ ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 LOCK = os.path.join(ROOT, "overlay", "usr", "bin", "infinity-lock")
 MARCA = "infinity-bloqueo-arranque"
 PR_SET_CHILD_SUBREAPER = 36
-
-
-def _pidof(nombre):
-    r = subprocess.run(["pidof", nombre], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-    return [int(pid) for pid in r.stdout.split()]
 
 
 def _espera(condicion, segundos=3.0):
@@ -71,10 +67,6 @@ def _del_test(grupos, carpeta):
 class TestBloqueoArranque(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Un gtklock o swaylock de verdad confundiría los casos: en ese caso no se ejecuta nada.
-        for nombre in ("gtklock", "swaylock"):
-            if _pidof(nombre):
-                raise unittest.SkipTest("ya hay un %s en marcha: no se pueden aislar los falsos" % nombre)
         _subreaper(True)
 
     @classmethod
@@ -102,6 +94,19 @@ class TestBloqueoArranque(unittest.TestCase):
         self._script(os.path.join(self.bin, "gtklock"), "#!/bin/sh\nexec %s 30\n" % shlex.quote(sleeper))
         self._script(os.path.join(self.bin, "swaylock"),
                      "#!/bin/sh\necho \"$*\" >> %s\n" % shlex.quote(self.registro_swaylock))
+        # pidof real, pero solo cuenta los procesos cuyo ejecutable está en la carpeta de este test.
+        self.pidof = os.path.join(self.bin, "pidof")
+        self._script(self.pidof,
+                     "#!/bin/sh\n"
+                     "encontrados=\n"
+                     "for pid in $(%s \"$@\" 2>/dev/null); do\n"
+                     "    case \"$(readlink /proc/$pid/exe 2>/dev/null)\" in\n"
+                     "        %s/*) encontrados=\"$encontrados $pid\" ;;\n"
+                     "    esac\n"
+                     "done\n"
+                     "[ -n \"$encontrados\" ] || exit 1\n"
+                     "echo $encontrados\n"
+                     % (shlex.quote(shutil.which("pidof")), shlex.quote(os.path.realpath(self.tmp))))
 
     def tearDown(self):
         self._mata_grupos()
@@ -146,17 +151,13 @@ class TestBloqueoArranque(unittest.TestCase):
         self.lanzados.append(p)
         return p.wait(timeout=30)
 
+    def _pidof(self, nombre):
+        r = subprocess.run([self.pidof, nombre], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        return sorted(int(pid) for pid in r.stdout.split())
+
     def gtklock_vivos(self):
         """PID de los gtklock vivos que son de este test (pidof no lista los zombis)."""
-        grupos = {p.pid for p in self.lanzados}
-        vivos = []
-        for pid in _pidof("gtklock"):
-            try:
-                if os.getpgid(pid) in grupos:
-                    vivos.append(pid)
-            except ProcessLookupError:
-                pass
-        return sorted(vivos)
+        return self._pidof("gtklock")
 
     def lanza_gtklock(self):
         """Un gtklock ya en marcha, como si el bloqueo hubiera salido antes."""
