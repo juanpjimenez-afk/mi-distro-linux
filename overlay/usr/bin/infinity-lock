@@ -9,11 +9,23 @@
 # se lanza en segundo plano y se comprueba que sigue vivo.
 #
 # Uso: infinity-lock [--arranque]. Con --arranque (lo lanza hyprland.conf al empezar la sesión) solo
-# bloquea si greetd abrió la sesión como primer inicio (exporta INFINITY_BLOQUEO_ARRANQUE=1). Así, al
-# cerrar sesión y volver a entrar con tuigreet no aparece el bloqueo.
+# bloquea si greetd abrió la sesión como primer inicio (exporta INFINITY_BLOQUEO_ARRANQUE=1) y el
+# bloqueo de este arranque aún no salió. Así, al cerrar sesión y volver a entrar con tuigreet no
+# aparece el bloqueo, y si Hyprland se cae y vuelve a arrancar, tampoco sale otra vez.
+#
+# Esa marca es $XDG_RUNTIME_DIR/infinity-bloqueo-arranque. Esa carpeta es solo tuya y logind la borra
+# al cerrar la última sesión del usuario, así que la marca dura lo que la sesión de inicio. No vale
+# /tmp: otro usuario podría crear la marca y evitar el bloqueo. Sin XDG_RUNTIME_DIR no hay marca: bloquea.
 
-if [ "${1:-}" = "--arranque" ] && [ -z "${INFINITY_BLOQUEO_ARRANQUE:-}" ]; then
-    exit 0
+if [ "${1:-}" = "--arranque" ]; then
+    [ -n "${INFINITY_BLOQUEO_ARRANQUE:-}" ] || exit 0
+    if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+        [ -e "$XDG_RUNTIME_DIR/infinity-bloqueo-arranque" ] && exit 0
+        # La marca se crea al decidir bloquear, no justo antes de gtklock: las salidas de más abajo
+        # (gtklock o swaylock ya en marcha, o fallo al crear la caché, que pasa directo a swaylock)
+        # también cuentan como el bloqueo de este arranque.
+        touch "$XDG_RUNTIME_DIR/infinity-bloqueo-arranque" 2>/dev/null
+    fi
 fi
 
 pidof gtklock >/dev/null 2>&1 && exit 0

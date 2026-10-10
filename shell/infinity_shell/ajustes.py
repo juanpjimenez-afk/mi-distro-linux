@@ -15,6 +15,7 @@ gestiona la app y conservan el resto del fichero.
 import json
 import math
 import os
+import pwd
 import re
 import subprocess
 from collections import namedtuple
@@ -482,3 +483,74 @@ def ejecutar_acciones(acciones, correr=None):
             if not ok and obligatorio:
                 fallos.append((argv, salida))
     return fallos
+
+
+# ----------------------------------------------------- contraseña de la cuenta
+# Sección "Cuenta" de Sistema. Esta app NUNCA recibe, guarda ni registra una contraseña: passwd la
+# pide dentro de una terminal, y aquí solo se abre esa terminal con una lista fija de argumentos.
+#
+# `passwd -S` sin argumentos muestra el estado de la propia cuenta sin root (passwd es setuid y no
+# deja ver otras cuentas). Salida: "usuario P|NP|L fecha mín máx aviso inactividad".
+_PASSWD_S = re.compile(r"\S+ (P|NP|L) \S+ (?:-?\d+ ){3}-?\d+")
+_ESTADO_PASSWD = {"P": "con", "NP": "sin", "L": "bloqueada"}
+
+
+def parsear_passwd_s(salida):
+    """Interpreta `passwd -S`: "con", "sin" o "bloqueada". None si la salida no es la esperada."""
+    m = _PASSWD_S.fullmatch((salida or "").strip())
+    return _ESTADO_PASSWD[m.group(1)] if m else None
+
+
+def _correr_passwd_s(argv):
+    r = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                       errors="replace", timeout=5)
+    return r.returncode, r.stdout
+
+
+def leer_estado_contrasena(correr=None):
+    """Estado de la contraseña de esta cuenta, o None si no se pudo leer.
+
+    `correr(argv) -> (código, salida)` se puede sustituir en las pruebas.
+    """
+    try:
+        codigo, salida = (correr or _correr_passwd_s)(["passwd", "-S"])
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return parsear_passwd_s(salida) if codigo == 0 else None
+
+
+def usuario_actual():
+    try:
+        return pwd.getpwuid(os.getuid()).pw_name
+    except KeyError:
+        return os.environ.get("USER") or "USUARIO"
+
+
+def resumen_contrasena(estado, usuario):
+    """Lo que muestra la sección Cuenta: (titular, ayuda, se_puede_cambiar)."""
+    if estado == "con":
+        return ("Con contraseña",
+                "La pantalla de bloqueo y el inicio de sesión la piden.", True)
+    if estado == "sin":
+        return ("Sin contraseña: el bloqueo acepta Enter",
+                "Mientras no tenga contraseña, quien esté delante del equipo entra sin ella.", True)
+    if estado == "bloqueada":
+        # Con la cuenta bloqueada, passwd de un usuario normal falla: solo puede hacerlo root.
+        return ("Cuenta bloqueada: no entra ninguna contraseña",
+                f"Aquí no se puede cambiar. Un administrador puede fijar una con: sudo passwd {usuario}",
+                False)
+    return ("Estado desconocido",
+            "No se pudo leer si la cuenta tiene contraseña. Puedes cambiarla igualmente.", True)
+
+
+def argv_cambiar_contrasena():
+    """La terminal que ejecuta passwd. Lista fija: sin shell y sin nada interpolado.
+
+    --hold deja la ventana abierta al terminar, para leer el resultado de passwd.
+    """
+    return ["foot", "--hold", "--title", "Cambiar contraseña", "passwd"]
+
+
+def cambiar_contrasena(correr=None):
+    """Abre la terminal con passwd. Devuelve (ok, texto_de_error)."""
+    return (correr or correr_real)(argv_cambiar_contrasena(), True)

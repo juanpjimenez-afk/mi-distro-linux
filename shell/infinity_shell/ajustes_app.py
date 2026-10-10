@@ -128,6 +128,7 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         raiz.append(pie)
 
         self._cargar_controles(self.valores)
+        self.connect("notify::is-active", self._al_cambiar_foco)  # relee la contraseña al volver de passwd
         if avisos:
             self._estado(" ".join(avisos), error=True)
 
@@ -240,6 +241,51 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         ayuda.set_margin_top(18)
         ayuda.add_css_class("dim-label")
         caja.append(ayuda)
+        caja.append(self._bloque_cuenta())
+
+    # ---------------------------------------------------------------- cuenta
+    def _bloque_cuenta(self):
+        """Estado de la contraseña y el botón para cambiarla. passwd la pide en una terminal, no aquí."""
+        bloque = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        bloque.set_margin_top(28)
+        titulo = Gtk.Label(label="Cuenta", xalign=0)
+        titulo.add_css_class("title-4")
+        bloque.append(titulo)
+        self.cuenta_titular = Gtk.Label(xalign=0, wrap=True)
+        self.cuenta_titular.add_css_class("heading")
+        bloque.append(self.cuenta_titular)
+        self.cuenta_ayuda = Gtk.Label(xalign=0, wrap=True)
+        self.cuenta_ayuda.add_css_class("dim-label")
+        bloque.append(self.cuenta_ayuda)
+        self.boton_contrasena = Gtk.Button(label="Cambiar contraseña…", halign=Gtk.Align.START)
+        self.boton_contrasena.set_tooltip_text("Se abre una terminal con passwd: la contraseña se escribe allí.")
+        self.boton_contrasena.connect("clicked", self._cambiar_contrasena)
+        bloque.append(self.boton_contrasena)
+        if _en_vivo():
+            aviso = Gtk.Label(label="En la ISO en vivo, la contraseña se pierde al apagar el equipo.",
+                              xalign=0, wrap=True)
+            aviso.add_css_class("dim-label")
+            bloque.append(aviso)
+        self._refrescar_cuenta()
+        return bloque
+
+    def _refrescar_cuenta(self):
+        titular, ayuda, se_puede = A.resumen_contrasena(A.leer_estado_contrasena(), A.usuario_actual())
+        self.cuenta_titular.set_text(titular)
+        self.cuenta_ayuda.set_text(ayuda)
+        self.boton_contrasena.set_sensitive(se_puede)
+
+    def _al_cambiar_foco(self, *_):
+        if self.is_active():  # al volver de la terminal de passwd, el estado puede haber cambiado
+            self._refrescar_cuenta()
+
+    def _cambiar_contrasena(self, *_):
+        ok, error = A.cambiar_contrasena()
+        if ok:
+            self._estado("Se ha abierto una terminal con passwd. Escribe la contraseña allí, no aquí.")
+        else:
+            self._estado(f"No se pudo abrir la terminal ({error}). "
+                         "Puedes ejecutar «passwd» en cualquier terminal.", error=True)
 
     # ------------------------------------------------------------- estado y valores
     def _estado(self, texto, error=False):

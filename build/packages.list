@@ -50,6 +50,7 @@ xwayland
 hyprland                    # compositor Wayland: da el desenfoque "cristal"
 xdg-desktop-portal-hyprland
 xdg-desktop-portal-gtk
+policykit-1-gnome           # agente de polkit: la ventana de contraseña de gdebi (sin él, pkexec falla)
 gtklock                     # pantalla de bloqueo: hora gigante de cristal (GTK3, dibuja por CPU)
 swaylock                    # bloqueo de respaldo, por si gtklock fallara
 hypridle
@@ -94,6 +95,11 @@ gtk-update-icon-cache
 # --- Aplicaciones ------------------------------------------------------------
 foot                        # terminal ligera (con efecto cristal)
 thunar                      # archivos
+thunar-archive-plugin       # Thunar: "extraer aquí" en .zip y .tar.gz
+file-roller                 # extractor del plugin de arriba (no se instala solo: no hay recomendados)
+gdebi                       # doble clic en un .deb: lo instala, pide contraseña de administrador
+libfuse2t64                 # libfuse.so.2: sin ella no arranca un AppImage
+fuse3                       # fusermount: el AppImage monta su imagen con él (ya lo trae xdg-desktop-portal)
 xdg-utils                   # xdg-open: el buscador del orbe abre la búsqueda web
 gvfs
 epiphany-browser            # navegador (GNOME Web)
