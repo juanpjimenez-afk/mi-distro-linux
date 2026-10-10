@@ -12,7 +12,7 @@ mkdir -p "${LOG%/*}" 2>/dev/null
 avisar() {
     printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" 2>/dev/null >>"$LOG"
     if command -v notify-send >/dev/null 2>&1 &&
-       notify-send -u critical -a Juegos Juegos "$1" >/dev/null 2>&1; then
+       timeout 5 notify-send -u critical -a Juegos Juegos "$1" >/dev/null 2>&1; then
         return 0
     fi
     if command -v foot >/dev/null 2>&1; then

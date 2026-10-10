@@ -1,5 +1,6 @@
 import gc
 import os
+import queue
 import re
 import shutil
 import subprocess
@@ -266,6 +267,19 @@ class TestVentana(unittest.TestCase):
         self.assertIsNone(self.app._tarea)
         self.assertEqual(self.app._btn_ram.cget("state"), "normal")
         self.assertIn("No se pudo iniciar", self.app._estado.cget("text"))
+
+    def test_evento_que_falla_al_pintarse_no_deja_la_ventana_bloqueada(self):
+        cola = queue.Queue()
+        cola.put(("datos", [(1, "juego", "no-es-numero")]))  # {pct:.0f} lanza ValueError
+        cola.put(("fin", True, "Hecho."))
+        self.app._cola = cola
+        self.app._tarea = object()
+        self.app._fijar_ocupada(True)
+        self.app._sondear()
+        self.assertIsNone(self.app._tarea)
+        self.assertEqual(self.app._btn_ram.cget("state"), "normal")
+        with open(GG.ruta_registro(), encoding="utf-8") as f:
+            self.assertIn("ValueError", f.read())
 
     # ------------------------------------------------------------------ cierre con tarea en curso
     def test_cerrar_con_orden_root_en_curso_no_cierra(self):

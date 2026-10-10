@@ -662,7 +662,18 @@ class Juegos(tk.Tk):
                 evento = cola.get_nowait()
             except queue.Empty:
                 break
-            self._procesar(evento)
+            try:
+                self._procesar(evento)
+            except Exception as e:
+                # Un evento que no se puede pintar no debe parar el sondeo: la ventana quedaría
+                # ocupada para siempre. Si era el fin de la tarea, se libera aquí.
+                registrar(traceback.format_exc())
+                self._mostrar(f"Error inesperado: {e}. Detalles en {ruta_registro()}", error=True)
+                if evento[0] == "fin":
+                    self._tarea = None
+                    self._cola = None
+                    self._cancelable = False
+                    self._fijar_ocupada(False)
             if evento[0] == "fin":
                 return
         if self._tarea is not None:
@@ -744,7 +755,10 @@ def main(argv=None):
         ventana = Juegos()
     except Exception as e:  # p. ej. tk.TclError si el servidor gráfico no responde
         return fallo_al_abrir(f"No se pudo abrir la ventana de Juegos: {e}", traceback.format_exc())
-    ventana.mainloop()
+    try:
+        ventana.mainloop()
+    except Exception as e:  # p. ej. se cae la conexión con el servidor gráfico con la ventana abierta
+        return fallo_al_abrir(f"La ventana de Juegos se cerró por un error: {e}", traceback.format_exc())
     return 0
 
 
