@@ -21,6 +21,7 @@ import copy
 import ctypes
 import errno
 import fnmatch
+import hashlib
 import ipaddress
 import json
 import os
@@ -75,6 +76,18 @@ _PROTEGIDAS_REL = (
     ".local/share/epiphany", ".config/chromium", ".config/google-chrome", ".password-store",
     ".local/state/infinity/panki", ".aws", ".kube", ".config/gh",
 )
+# ESCRITURA PROHIBIDA (relativas a $HOME). Distinta de la lista negra de arriba: ver o listar estas rutas es
+# inocuo, pero MODIFICARLAS (mover, crear, organizar, deshacer, o un comando que escriba) da ejecución de código
+# o persistencia: arranque de shell, autoarranque, unidades de systemd, ~/.local/bin, lanzadores .desktop, la
+# configuración de Infinity (que gestiona la app de Ajustes)... Se aplica al origen y al destino, a cualquier
+# ruta DENTRO de ellas y a las carpetas que las CONTIENEN (mover ~/.config entero las arrastraría).
+_ESCRITURA_PROHIBIDA_REL = (
+    ".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zprofile", ".zshenv",
+    ".zlogin", ".xprofile", ".xsession", ".xinitrc", ".pam_environment", ".gitconfig", ".inputrc",
+    ".config/autostart", ".config/hypr", ".config/systemd", ".config/environment.d", ".config/foot",
+    ".config/gtklock", ".config/fish", ".config/infinity", ".config/user-dirs.dirs", ".config/mimeapps.list",
+    ".local/bin", ".local/share/applications", ".local/share/systemd", ".local/share/mime", ".ssh",
+)
 # Estos nombres están protegidos en CUALQUIER nivel (~/Documentos/.ssh también): defensa en profundidad.
 _DIRS_EN_CUALQUIER_NIVEL = frozenset({".ssh", ".gnupg", ".password-store"})
 # Archivos protegidos por nombre, estén donde estén (y también las carpetas que se llamen así).
@@ -82,6 +95,7 @@ _NOMBRES_PREFIJO = (".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa")
 _NOMBRES_EXACTOS = frozenset({".netrc", ".git-credentials", ".pgpass"})
 _NOMBRES_SUFIJO = (".pem", ".key")
 
+_NO_MODIFICABLE = "pAnkI no puede modificar esa ruta: sirve para iniciar programas o configurar el sistema."
 _FUERA = "Esa ruta queda fuera de tu carpeta personal. pAnkI solo trabaja dentro de ella."
 _PROTEGIDA = ("Esa ruta está protegida (claves, contraseñas o datos de programas): "
               "pAnkI no puede verla ni tocarla.")
@@ -352,10 +366,18 @@ def _categoria(nombre):
 #      perl, ruby, node, php, awk...). Mirar sus argumentos para ver qué lanzan es una carrera perdida
 #      (env -i VAR=1 sudo, sh -c, python -c "os.system(...)", find -exec...), así que se rechazan SIEMPRE,
 #      salvo la consulta inofensiva `programa --version` / `--help` / `-V` / `-h`.
+#      También entran aquí los que instalan o ejecutan código ajeno o cambian el sistema: gestores de paquetes
+#      (apt, dpkg, snap, flatpak, pip, npm, cargo, go, gem...), git y gh (los hooks y alias de un repositorio
+#      ejecutan lo que quieran), install, ln, mount/umount, chmod/chown/chgrp y crontab/at.
 #   3. Casos con argumentos peligrosos: rm/rmdir/unlink (pAnkI no borra), find con -exec/-delete..., tar con
-#      --to-command / --use-compress-program, systemctl y loginctl con apagar, reiniciar, suspender...
-#   4. Los argumentos que son rutas no pueden apuntar a la lista negra de rutas (cat ~/.ssh/id_rsa).
-#      No se analizan los recorridos recursivos (grep -r ~): es una limitación conocida.
+#      --to-command / --use-compress-program, loginctl con apagar o reiniciar, y systemctl con cualquier
+#      subcomando que no sea de solo lectura (status, is-active, is-enabled, list-units, list-unit-files, show).
+#   4. Los argumentos que son rutas: no pueden apuntar a la lista negra de lectura (cat ~/.ssh/id_rsa), y los
+#      de los programas que ESCRIBEN (cp, mv, tee, touch, mkdir, sed, curl, tar...) tampoco a la lista de
+#      ESCRITURA PROHIBIDA (~/.bashrc, ~/.config/autostart...), ni su carpeta de trabajo. Una ruta absoluta o
+#      con ~ fuera de $HOME solo vale para lecturas inocuas (/usr, /opt, /sys/class, /proc/cpuinfo,
+#      /proc/meminfo, /etc/os-release, /etc/lsb-release). No se analizan los recorridos recursivos de
+#      programas que solo muestran nombres: es una limitación conocida.
 #   5. Sin shell (argv como lista), entorno reducido (sin GEMINI_API_KEY ni nada parecido), grupo de
 #      procesos propio que se mata entero si pasa el tiempo, y salida acotada.
 _COMANDOS_BLOQUEADOS = frozenset({
@@ -381,8 +403,20 @@ _LANZADORES = frozenset({
     # programas que ejecutan lo que se les diga por una opción (-e, -o ProxyCommand, +!cmd, -P, -c, -z...)
     "ssh", "scp", "sftp", "rsync", "less", "man", "vi", "vim", "view", "vimdiff", "ex", "ed", "emacs",
     "tcpdump", "nc", "ncat", "netcat", "socat",
+    # instalan o ejecutan código ajeno, o cambian permisos y montajes (git: los hooks y alias del repositorio)
+    "apt", "apt-get", "aptitude", "dpkg", "snap", "flatpak", "pip", "pip3", "pipx", "npm", "npx", "yarn", "pnpm",
+    "cargo", "gem", "go", "install", "ln", "git", "gh", "mount", "umount", "chmod", "chown", "chgrp",
 })
-_LANZADOR_RE = re.compile(r"^(r?(ba|da|z|k|c|tc|a|fi)?sh|(python|pypy|perl|ruby|lua|php|node)[0-9.]*(-.*)?)$")
+_LANZADOR_RE = re.compile(r"^(r?(ba|da|z|k|c|tc|a|fi)?sh|(python|pypy|perl|ruby|lua|php|node)[0-9.]*(-.*)?"
+                          r"|pip[0-9.]+|dpkg-.*)$")
+_SYSTEMCTL_LECTURA = frozenset({"status", "is-active", "is-enabled", "list-units", "list-unit-files", "show"})
+# Programas que escriben en las rutas que reciben (se les aplica la lista de ESCRITURA PROHIBIDA).
+_ESCRIBEN = frozenset({"cp", "mv", "tee", "truncate", "touch", "mkdir", "sed", "curl", "wget", "tar", "unzip",
+                       "zip", "7z", "7za", "gzip", "gunzip", "bzip2", "xz", "unxz", "patch", "rename"})
+_RUTAS_LECTURA_INOCUA = ("/usr", "/opt", "/sys/class")
+_ARCHIVOS_LECTURA_INOCUA = frozenset({"/proc/cpuinfo", "/proc/meminfo", "/etc/os-release", "/etc/lsb-release"})
+_FUERA_CMD = ("El comando usa una ruta fuera de tu carpeta personal. Solo se admiten rutas de /usr, /opt, "
+              "/sys/class, /proc/cpuinfo, /proc/meminfo, /etc/os-release y /etc/lsb-release.")
 _CONSULTAS_INOFENSIVAS = frozenset({"--version", "--help", "-V", "-h"})
 _FIND_PELIGROSO = frozenset({"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0",
                              "-fprintf", "-fls"})
@@ -392,7 +426,6 @@ _TAR_PELIGROSO = ("--to-command", "--checkpoint-action", "--use-compress-program
 # nombres o tamaños, como ls -R, find -name o du, sí se admiten.)
 _LEEN_RECURSIVO = frozenset({"grep", "egrep", "fgrep", "zgrep", "rgrep", "rg", "ag", "ack", "cp", "tar", "zip",
                              "7z", "7za", "diff", "cpio"})
-_PROC_AJENO_RE = re.compile(r"^/proc/\d+/(environ|mem)$")   # el entorno de otro proceso (la app de pAnkI)
 _ENERGIA = frozenset({"poweroff", "reboot", "halt", "kexec", "suspend", "hibernate", "hybrid-sleep",
                       "suspend-then-hibernate", "rescue", "emergency", "isolate", "soft-reboot"})
 
@@ -471,28 +504,59 @@ def _correr_real(argv, carpeta, tiempo, env):
 
 
 # ------------------------------------------------------------------------------- abrir
+# Variables que NUNCA heredan los programas que lanza pAnkI (navegador, aplicaciones): claves de API, tokens,
+# contraseñas... Lo demás (DISPLAY, WAYLAND_DISPLAY, XDG_*, DBUS_SESSION_BUS_ADDRESS, HOME, PATH, LANG, LC_*...)
+# se conserva porque una aplicación gráfica lo necesita.
+_SECRETO_RE = re.compile(r"(^|_)(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|ACCESS_KEY|CREDENTIALS?)(_|$)",
+                         re.IGNORECASE)
+_VARIABLES_PRIVADAS = frozenset({"GEMINI_API_KEY", "GOOGLE_API_KEY", "SSH_AUTH_SOCK"})
+
+
+def _es_secreto(nombre):
+    return nombre.upper() in _VARIABLES_PRIVADAS or bool(_SECRETO_RE.search(nombre))
+
+
+def _entorno_limpio():
+    """El entorno actual sin claves ni tokens, para los procesos que lanzan abrir_url y abrir_app."""
+    return {k: v for k, v in os.environ.items() if not _es_secreto(k)}
+
+
+def _lanzar(argv):
+    """Lanza un programa sin shell, sin esperarlo y con el entorno limpio."""
+    subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True, env=_entorno_limpio())
+
+
 def _abrir_real(tipo, valor):
-    """Lanza una URL (xdg-open) o una aplicación (Gio). Nunca espera ni usa shell. Lanza OSError si falla."""
+    """Lanza una URL (xdg-open) o una aplicación. Nunca espera, nunca usa shell y nunca pasa claves en el entorno.
+
+    Para "app", `valor` es la ruta del .desktop que el usuario vio y aprobó (no un id: buscar un id dejaría que
+    otro .desktop con el mismo id, en la carpeta del usuario, se lanzara en su lugar). Lanza OSError si falla.
+    """
     if tipo == "url":
-        subprocess.Popen(["xdg-open", valor], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
+        _lanzar(["xdg-open", valor])
         return
     if tipo == "app":
         try:
-            from gi.repository import Gio
-        except Exception:   # sin PyGObject: se usa gtk-launch
-            Gio = None
-        if Gio is not None:
-            info = Gio.DesktopAppInfo.new(valor)
-            if info is None:
-                raise OSError(errno.ENOENT, f"No se encontró la aplicación {valor}")
-            try:
-                info.launch([], None)
-            except Exception as e:
-                raise OSError(errno.EIO, str(e)) from None
+            _lanzar(["gio", "launch", valor])
             return
-        subprocess.Popen(["gtk-launch", valor], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
+        except FileNotFoundError:
+            pass
+        try:   # sin gio: Gio en este proceso, quitando las variables privadas del lanzamiento
+            from gi.repository import Gio
+        except Exception:
+            raise OSError(errno.ENOENT, "no se encontró gio para abrir la aplicación") from None
+        info = Gio.DesktopAppInfo.new_from_filename(valor)
+        if info is None:
+            raise OSError(errno.ENOENT, f"No se pudo leer {valor}")
+        contexto = Gio.AppLaunchContext()
+        for nombre in os.environ:
+            if _es_secreto(nombre):
+                contexto.unsetenv(nombre)
+        try:
+            info.launch([], contexto)
+        except Exception as e:
+            raise OSError(errno.EIO, str(e)) from None
         return
     raise OSError(errno.EINVAL, f"tipo de apertura desconocido: {tipo}")
 
@@ -602,8 +666,21 @@ def _leer_desktop(ruta, locales):
         return None
     desc = traducido("Comment") or traducido("GenericName")
     palabras = traducido("Keywords").replace(";", " ")
+    exec_crudo = datos.get("Exec", "")
+    real = os.path.realpath(ruta)
+    # La firma ata el permiso "en esta conversación" a ESTE archivo y a lo que ejecuta: si cambia el Exec, el
+    # lugar donde está o cómo se lanza, el permiso anterior deja de valer.
+    huella = "\0".join([real, exec_crudo, datos.get("Path", ""), datos.get("Terminal", ""),
+                        datos.get("DBusActivatable", "")])
     return {"nombre": _sin_control(nombre, 100), "descripcion": _sin_control(desc, 200),
-            "palabras": _sin_control(palabras, 200)}
+            "palabras": _sin_control(palabras, 200), "exec": _limpiar_exec(exec_crudo), "ruta": ruta,
+            "real": real, "firma": hashlib.sha256(huella.encode("utf-8", "replace")).hexdigest()[:12]}
+
+
+def _limpiar_exec(exec_crudo):
+    """El Exec= sin los códigos de campo (%f, %U...), en una línea. Es lo que se enseña al usuario."""
+    sin_codigos = re.sub(r"%[fFuUdDnNickvm]", "", exec_crudo.replace("%%", "\0")).replace("\0", "%")
+    return " ".join(sin_codigos.split())
 
 
 def _norm(s):
@@ -676,13 +753,16 @@ class Ejecutor:
         self._estado_dir = os.path.abspath(estado_dir) if estado_dir else \
             os.path.join(hogar, ".local", "state", "infinity", "panki")
         self._protegidas = [tuple(p.casefold() for p in rel.split("/")) for rel in _PROTEGIDAS_REL]
+        self._escritura = [tuple(p.casefold() for p in rel.split("/")) for rel in _ESCRITURA_PROHIBIDA_REL]
         partes_estado = self._partes(os.path.realpath(self._estado_dir), self._hogar_real)
         if partes_estado:
             self._protegidas.append(tuple(p.casefold() for p in partes_estado))
         self._planes = OrderedDict()
         self.tiempo_comando = TIEMPO_COMANDO
+        # Solo carpetas del SISTEMA (de menos a más prioridad). Nunca ~/.local/share/applications: ahí puede
+        # escribir cualquiera que tenga acceso a tu cuenta, y un .desktop es una orden que se ejecuta.
         self.dirs_apps = ["/usr/share/applications", "/usr/local/share/applications",
-                          os.path.join(hogar, ".local", "share", "applications")]
+                          "/var/lib/flatpak/exports/share/applications", "/var/lib/snapd/desktop/applications"]
 
     # ------------------------------------------------------------------ contrato público
     def declaraciones(self):
@@ -758,6 +838,25 @@ class Ejecutor:
             if p in _DIRS_EN_CUALQUIER_NIVEL or _nombre_protegido(p):
                 return True
         return any(cf[:len(pref)] == pref for pref in self._protegidas)
+
+    def _escritura_prohibida(self, partes, ancestros=True):
+        """¿Modificar esta ruta está prohibido? Dentro de una zona (o ella misma) o, con `ancestros`, una carpeta
+        que la contiene (incluido $HOME entero)."""
+        cf = tuple(p.casefold() for p in partes)
+        for pref in self._escritura:
+            if cf[:len(pref)] == pref:
+                return True
+            if ancestros and len(cf) < len(pref) and pref[:len(cf)] == cf:
+                return True
+        return False
+
+    def _validar_escritura(self, rutas, ancestros=True):
+        """Lanza ErrorHerramienta si alguna de estas rutas absolutas (la escrita y la resuelta) no se puede modificar."""
+        for ruta in rutas:
+            for base in (self._hogar, self._hogar_real):
+                partes = self._partes(ruta, base)
+                if partes is not None and self._escritura_prohibida(partes, ancestros):
+                    raise ErrorHerramienta(_NO_MODIFICABLE)
 
     def _ancestro_protegido(self, partes):
         """True si mover esta ruta arrastraría una zona protegida (~/.config, ~/.local, el propio $HOME...)."""
@@ -852,6 +951,8 @@ class Ejecutor:
         Las dos carpetas se abren sin seguir enlaces y se comprueba (por /proc) que son las esperadas y que
         cumplen la política; el movimiento va relativo a esos descriptores.
         """
+        self._validar_escritura([os.path.join(carpeta_o, nombre_o), os.path.join(carpeta_d, nombre_d)],
+                                ancestros=False)
         fd_o = fd_d = None
         try:
             fd_o = self._abrir_dir(carpeta_o, carpeta_o)
@@ -887,6 +988,7 @@ class Ejecutor:
         partes = self._partes(objeto, self._hogar_real)
         if not partes or self._protegida(partes) or self._ancestro_protegido(partes):
             raise ErrorHerramienta(_PROTEGIDA)
+        self._validar_escritura([lex, objeto, os.path.realpath(lex)], ancestros=True)
         try:
             st = os.lstat(objeto)
         except OSError as e:
@@ -896,6 +998,7 @@ class Ejecutor:
     def _resolver_destino(self, destino, nombre_origen):
         """Devuelve (carpeta_real, nombre). Si `destino` es una carpeta existente, se mueve dentro de ella."""
         lex = self._expandir(destino)
+        self._validar_escritura([lex], ancestros=False)      # antes que "la carpeta no existe": mensaje claro
         real = os.path.realpath(lex)
         if os.path.isdir(real):
             self._validar_real(lex, real, permitir_hogar=True)
@@ -914,6 +1017,7 @@ class Ejecutor:
             raise ErrorHerramienta(_FUERA)
         if self._protegida(partes):
             raise ErrorHerramienta(_PROTEGIDA)
+        self._validar_escritura([os.path.join(carpeta, nombre), lex, os.path.join(lex, nombre)], ancestros=True)
         return carpeta, nombre
 
     # ------------------------------------------------------------------ info_sistema
@@ -1095,7 +1199,8 @@ class Ejecutor:
         if errores:
             msg = " ".join(m for _, m in errores)
             if a.tipo == "choice":
-                msg += " " + self._describir_validos(a).capitalize() + "."
+                valid = self._describir_validos(a)
+                msg += " " + valid[0].upper() + valid[1:] + "."
             raise ErrorHerramienta(msg)
         if normal[id_] == actuales.get(id_):
             raise ErrorHerramienta(f"«{a.etiqueta}» ya vale {_visible(self._texto_valor(normal[id_]))}; no hay "
@@ -1152,6 +1257,8 @@ class Ejecutor:
         locales = _locales()
         apps = {}
         for carpeta in self.dirs_apps:
+            if self._partes(os.path.realpath(carpeta), self._hogar_real) is not None:
+                continue   # nunca una carpeta de tu cuenta, aunque alguien la añada a la lista
             try:
                 nombres = sorted(os.listdir(carpeta))
             except OSError:
@@ -1160,6 +1267,8 @@ class Ejecutor:
                 if not _ID_APP_RE.fullmatch(n):
                     continue
                 info = _leer_desktop(os.path.join(carpeta, n), locales)
+                if info is not None and self._partes(info["real"], self._hogar_real) is not None:
+                    info = None   # un enlace que sale de la carpeta del sistema hacia tu cuenta
                 if info is None:
                     apps.pop(n, None)   # un NoDisplay/Hidden del usuario oculta el del sistema
                 else:
@@ -1207,14 +1316,22 @@ class Ejecutor:
 
     def _preparar_abrir_app(self, args):
         id_, info = self._id_app(args)
-        sol = self._solicitud("abrir_app", f"Abrir {info['nombre']}",
-                              [f"Aplicación: {info['nombre']} ({id_})"], "bajo", f"app:{id_}")
-        return Preparada("abrir_app", {"app": id_}, sol, {})
+        if len(info["exec"]) > 1000:
+            raise ErrorHerramienta("Esa aplicación tiene una orden de lanzamiento demasiado larga para mostrarla "
+                                   "entera, así que no se abre.")
+        orden = info["exec"] or "(se activa por D-Bus; no tiene orden propia)"
+        sol = self._solicitud("abrir_app", f"Abrir {info['nombre']} ({id_})",
+                              [f"Aplicación: {info['nombre']} ({id_})", f"Ejecutará: {orden}",
+                               f"Archivo: {self._mostrar(info['real'])}"],
+                              "bajo", f"app:{id_}:{info['firma']}")
+        return Preparada("abrir_app", {"app": id_}, sol, {"firma": info["firma"]})
 
     def _ejecutar_abrir_app(self, p):
         id_, info = self._id_app(p.args)
+        if p.interno.get("firma") not in (None, info["firma"]):
+            raise ErrorHerramienta(_CAMBIO)    # el .desktop cambió desde que el usuario lo vio
         try:
-            self._abrir("app", id_)
+            self._abrir("app", info["ruta"])
         except (OSError, ValueError) as e:
             raise ErrorHerramienta(f"No se pudo abrir {info['nombre']}: {_motivo(e)}.") from None
         return Resultado(True, {"abierta": id_, "nombre": info["nombre"]}, f"Abierta {info['nombre']}.")
@@ -1315,7 +1432,7 @@ class Ejecutor:
         sol = self._solicitud("buscar_archivos", f"Buscar archivos por nombre en {m}",
                               [f"Carpeta: {m} (y sus subcarpetas)", f"Patrón: {patron}",
                                "Los nombres que coincidan se envían a Google (Gemini). No se lee ningún contenido."],
-                              "bajo", f"carpeta:{r.real}")
+                              "bajo", f"busqueda:{r.real}")
         return Preparada("buscar_archivos", {"carpeta": carpeta, "patron": patron}, sol, {"real": r.real})
 
     def _ejecutar_buscar_archivos(self, p):
@@ -1433,6 +1550,7 @@ class Ejecutor:
         r = self._resolver(carpeta)
         if not os.path.isdir(r.real):
             raise ErrorHerramienta("Esa carpeta no existe.")
+        self._validar_escritura([r.lexica, r.real], ancestros=False)
         m = self._mostrar(r.real)
         sol = self._solicitud("proponer_organizacion", f"Mirar los archivos de {m} para proponer cómo organizarlos",
                               [f"Carpeta: {m}", f"Criterio: por {criterio}",
@@ -1443,6 +1561,7 @@ class Ejecutor:
 
     def _ejecutar_proponer_organizacion(self, p):
         r = self._resolver(p.args.get("carpeta"))
+        self._validar_escritura([r.lexica, r.real], ancestros=False)
         self._igual_que_al_preparar(p, "real", r.real)
         criterio = p.args.get("criterio")
         if criterio not in ("tipo", "fecha"):
@@ -1457,7 +1576,8 @@ class Ejecutor:
                     if vistos > LIMITE_ESCANEO:
                         break
                     nombre = e.name
-                    if self._protegida(r.partes + (nombre,)):
+                    if self._protegida(r.partes + (nombre,)) or \
+                            self._escritura_prohibida(r.partes + (nombre,), ancestros=False):
                         omitidos["protegidos"] += 1
                     elif nombre.startswith("."):
                         omitidos["ocultos"] += 1
@@ -1533,6 +1653,7 @@ class Ejecutor:
         r = self._resolver(plan.carpeta)
         if r.real != plan.carpeta:
             raise ErrorHerramienta(_CAMBIO)
+        self._validar_escritura([r.lexica, r.real], ancestros=False)
         detalle, ocupados, ausentes = [], set(), 0
         for nombre, sub in plan.movs:
             try:
@@ -1590,6 +1711,7 @@ class Ejecutor:
         r = self._resolver(plan.carpeta)
         if r.real != plan.carpeta:
             raise ErrorHerramienta(_CAMBIO)
+        self._validar_escritura([r.lexica, r.real], ancestros=False)
         self._igual_que_al_preparar(p, "real", r.real)
         self._asegurar_estado()
         try:
@@ -1654,6 +1776,7 @@ class Ejecutor:
         """
         if nombre.startswith(".") or self._protegida(r.partes + (nombre,)):
             raise ErrorHerramienta("El archivo está protegido u oculto y no se toca.")
+        self._validar_escritura([os.path.join(r.real, nombre), os.path.join(r.real, sub, nombre)], ancestros=False)
         try:
             modo = os.lstat(nombre, dir_fd=fd_base).st_mode
         except OSError as e:
@@ -1766,6 +1889,7 @@ class Ejecutor:
         partes_d = self._partes(os.path.join(carpeta, nombre), self._hogar_real)
         if not partes_d or self._protegida(partes_d):
             raise ErrorHerramienta(_PROTEGIDA)
+        self._validar_escritura([objeto, os.path.join(carpeta, nombre)], ancestros=False)
         return objeto, carpeta, nombre
 
     def _preparar_deshacer_ultima_organizacion(self, args):
@@ -1849,6 +1973,7 @@ class Ejecutor:
     def _preparar_crear_carpeta(self, args):
         ruta = _arg_texto(args, "ruta")
         r = self._resolver(ruta, permitir_hogar=False)
+        self._validar_escritura([r.lexica, r.real], ancestros=False)
         m = self._mostrar(r.real)
         if os.path.lexists(r.real):
             if os.path.isdir(r.real):
@@ -1859,6 +1984,7 @@ class Ejecutor:
 
     def _ejecutar_crear_carpeta(self, p):
         r = self._resolver(p.args.get("ruta"), permitir_hogar=False)
+        self._validar_escritura([r.lexica, r.real], ancestros=False)
         self._igual_que_al_preparar(p, "real", r.real)
         m = self._mostrar(r.real)
         if os.path.lexists(r.real):
@@ -1939,15 +2065,13 @@ class Ejecutor:
             raise ErrorHerramienta("find no puede usar -exec, -delete ni similares.")
         if base == "tar" and any(a.startswith(_TAR_PELIGROSO) for a in argv[1:]):
             raise ErrorHerramienta("tar no puede ejecutar otros programas.")
-        if base in ("systemctl", "loginctl") and any(a in _ENERGIA for a in argv[1:]):
+        if base == "loginctl" and any(a in _ENERGIA for a in argv[1:]):
             raise ErrorHerramienta("No se puede apagar, reiniciar ni suspender el equipo.")
-        if base == "git" and any(a == "-c" or a.startswith(("--exec-path", "--config-env", "--upload-pack",
-                                                            "--receive-pack", "--ext-diff", "--textconv"))
-                                 for a in argv[1:]):
-            raise ErrorHerramienta("git no puede recibir configuración ni programas externos por la línea de "
-                                   "comandos.")
-        if base == "flatpak" and any(a.startswith("--command") for a in argv[1:]):
-            raise ErrorHerramienta("flatpak no puede ejecutar un programa distinto del de la aplicación.")
+        if base == "systemctl":
+            sub = next((a for a in argv[1:] if not a.startswith("-")), None)
+            if sub is not None and sub not in _SYSTEMCTL_LECTURA:
+                raise ErrorHerramienta("systemctl solo puede consultar (status, is-active, is-enabled, list-units, "
+                                       "list-unit-files, show); no puede cambiar nada.")
 
     def _comprobar_comando(self, argv, cwd):
         exe = argv[0]
@@ -1960,18 +2084,28 @@ class Ejecutor:
             nombres.add(self._base(os.path.realpath(candidata)))
         for n in sorted(nombres):
             self._rechazar_programa(n, argv)
-        # Argumentos que sean rutas: no pueden apuntar a la lista negra (cat ~/.ssh/id_rsa).
+        # Argumentos que sean rutas (ver el criterio de arriba).
         recorre = bool(nombres & _LEEN_RECURSIVO)
+        if nombres & {"cp", "diff"} and not any(     # cp y diff solo recorren carpetas con -r / -a
+                a in ("--recursive", "--archive") or (a.startswith("-") and not a.startswith("--") and
+                                                      any(c in a for c in "rRa")) for a in argv[1:]):
+            recorre = False
+        escribe = bool(nombres & _ESCRIBEN)
+        mueve = "mv" in nombres
         hay_rutas = False
+        if escribe:   # tar x, unzip, curl -O, wget... escriben en la carpeta de trabajo si no se les dice otra
+            self._validar_escritura([cwd], ancestros=False)
         for a in argv[1:]:
-            for cand in self._rutas_posibles(a):
+            for cand in self._rutas_posibles(a, adjuntas=escribe):
                 if cand == "~" or cand.startswith("~/"):
                     cand = os.path.join(self._hogar, cand[2:])
                 absoluta = cand if os.path.isabs(cand) else os.path.join(cwd, cand)
                 hay_rutas = hay_rutas or os.path.lexists(absoluta)   # «AIza» en grep -r AIza no es una ruta
-                if _PROC_AJENO_RE.match(os.path.normpath(absoluta)):
-                    raise ErrorHerramienta("No se puede leer el entorno ni la memoria de otro proceso.")
-                for ruta in {os.path.normpath(absoluta), os.path.realpath(absoluta)}:
+                norm = os.path.normpath(absoluta)
+                if (self._partes(norm, self._hogar) is None and self._partes(norm, self._hogar_real) is None
+                        and not self._lectura_inocua(norm)):
+                    raise ErrorHerramienta(_FUERA_CMD)
+                for ruta in {norm, os.path.realpath(absoluta)}:
                     for base in (self._hogar, self._hogar_real):
                         partes = self._partes(ruta, base)
                         if partes is None:
@@ -1981,6 +2115,8 @@ class Ejecutor:
                                                    "de programas) y no se puede ejecutar.")
                         if recorre and self._ancestro_protegido(partes):
                             raise ErrorHerramienta(_RECORRER)
+                        if escribe and (partes or mueve) and self._escritura_prohibida(partes, ancestros=True):
+                            raise ErrorHerramienta(_NO_MODIFICABLE)
         # Sin ninguna ruta que recorrer, rg/ag/ack y grep -r recorren la carpeta de trabajo.
         recorre_cwd = bool(nombres & {"rg", "ag", "ack", "rgrep"}) or (
             bool(nombres & _LEEN_RECURSIVO) and any(
@@ -1990,13 +2126,21 @@ class Ejecutor:
             raise ErrorHerramienta(_RECORRER)
 
     @staticmethod
-    def _rutas_posibles(arg):
+    def _lectura_inocua(ruta):
+        if ruta in _ARCHIVOS_LECTURA_INOCUA:
+            return True
+        return any(ruta == pref or ruta.startswith(pref + "/") for pref in _RUTAS_LECTURA_INOCUA)
+
+    @staticmethod
+    def _rutas_posibles(arg, adjuntas=False):
         """Trozos de un argumento que podrían ser una ruta: él mismo, lo que va tras «=», tras «@» (curl -d
         @archivo) o tras «file://». Las opciones sueltas (-l, --color) no son rutas."""
         candidatos = []
         pendientes = [] if arg.startswith("-") else [arg]
         if "=" in arg:
             pendientes.append(arg.split("=", 1)[1])
+        if adjuntas and arg.startswith("-") and not arg.startswith("--") and len(arg) > 2:
+            pendientes.append(arg[2:])   # -tDIR, -o/ruta: la ruta pegada a la opción corta
         while pendientes:
             c = pendientes.pop()
             if not c or c.startswith("-"):

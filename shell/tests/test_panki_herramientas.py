@@ -259,6 +259,14 @@ class TestRutas(Base):
             self.assertRechaza("mover_archivo", origen=origen, destino="~/Publico")
         self.assertTrue(os.path.exists(self.h(".config", "infinity", "panki", "clave")))
 
+    def test_padres_de_zonas_protegidas_que_no_estan_en_la_lista_de_escritura(self):
+        # ~/.local/state contiene ~/.local/state/infinity/panki (el registro de deshacer), que solo está en la
+        # lista de lectura: moverlo lo sacaría de la protección.
+        self.crear(".local/state/infinity/panki/registro-x.jsonl", "x")
+        for origen in ("~/.local/state", "~/.local/state/infinity"):
+            self.assertRechaza("mover_archivo", origen=origen, destino="~/Publico")
+        self.assertTrue(os.path.exists(self.h(".local", "state", "infinity", "panki")))
+
     def test_ocultos_solo_con_mostrar_ocultos(self):
         self.crear("visible.txt")
         self.crear(".oculto")
@@ -533,7 +541,8 @@ class TestSolicitudes(Base):
         buscar = self.prep("buscar_archivos", carpeta="~/Docs", patron="a").solicitud
         leer = self.prep("leer_archivo", ruta="~/Docs/a.txt").solicitud
         self.assertEqual(listar.recordable, f"carpeta:{self.h('Docs')}")
-        self.assertEqual(buscar.recordable, listar.recordable)
+        self.assertEqual(buscar.recordable, f"busqueda:{self.h('Docs')}")   # puede recorrer subcarpetas
+        self.assertNotEqual(buscar.recordable, listar.recordable)
         self.assertEqual(leer.recordable, f"contenido:{self.h('Docs')}")
         self.assertNotEqual(leer.recordable, listar.recordable)     # ver nombres no da acceso al contenido
 
@@ -1560,7 +1569,7 @@ class TestComandos(Base):
             self.rechazado(argv, carpeta="~")
         ej = self.activo()
         ej.preparar("ejecutar_comando", {"argv": ["cat", "Docs/otro.txt"], "carpeta": "~"})
-        ej.preparar("ejecutar_comando", {"argv": ["cat", "/etc/hostname"], "carpeta": "~"})
+        ej.preparar("ejecutar_comando", {"argv": ["cat", "/etc/os-release"], "carpeta": "~"})
 
     def test_rutas_escondidas_tras_file_arroba_o_igual(self):
         self.crear(".ssh/id_rsa", "clave")
@@ -1585,7 +1594,7 @@ class TestComandos(Base):
             self.rechazado(argv, carpeta=carpeta)
         ej = self.activo()
         for argv, carpeta in ((["grep", "-r", "hola", "~/Docs"], "~"), (["grep", "-r", "hola"], "~/Docs"),
-                              (["rg", "hola"], "~/Docs"), (["cp", "-r", "Docs", "/tmp/panki-copia"], "~"),
+                              (["rg", "hola"], "~/Docs"), (["cp", "-r", "Docs", "Copia"], "~"),
                               (["du", "-sh", "~"], "~"), (["ls", "-R", "~"], "~"), (["find", "~", "-name", "x"], "~"),
                               (["tar", "tf", "a.tar"], "~/Docs")):
             ej.preparar("ejecutar_comando", {"argv": argv, "carpeta": carpeta})
@@ -1595,7 +1604,7 @@ class TestComandos(Base):
                      ["cat", "/proc/self/../1234/environ"], ["strings", "/proc/4242/mem"]):
             self.rechazado(argv)
         ej = self.activo()
-        ej.preparar("ejecutar_comando", {"argv": ["cat", "/proc/self/environ"]})
+        self.rechazado(["cat", "/proc/self/environ"])        # solo se leen /proc/cpuinfo y /proc/meminfo
         ej.preparar("ejecutar_comando", {"argv": ["cat", "/proc/cpuinfo"]})
 
     def test_mas_programas_que_ejecutan_otros_programas(self):
@@ -1610,8 +1619,7 @@ class TestComandos(Base):
     def test_no_se_confunde_un_programa_inocente_con_uno_prohibido(self):
         ej = self.activo()
         for argv in (["sudoku"], ["gnome-sudoku"], ["suspender"], ["mkfsx"], ["summary"], ["shellcheck", "x"],
-                     ["ls"], ["git", "status"], ["git", "-C", ".", "log"],
-                     ["flatpak", "list"]):
+                     ["ls"], ["apt-cache", "policy"], ["gitk"], ["pipe-viewer"], ["goland"]):
             ej.preparar("ejecutar_comando", {"argv": argv})
 
     def test_ejecutar_pasa_los_datos_al_inyectado_y_envuelve_la_salida(self):
@@ -1654,7 +1662,7 @@ class TestComandos(Base):
 
     def test_codigo_de_salida_distinto_de_cero(self):
         ej = self.activo(correr=CorrerFalso(2, b"ls: no se puede acceder\n"))
-        r = ej.ejecutar(ej.preparar("ejecutar_comando", {"argv": ["ls", "/nada"]}))
+        r = ej.ejecutar(ej.preparar("ejecutar_comando", {"argv": ["ls", "nada"]}))
         self.assertFalse(r.ok)
         self.assertEqual(r.datos["codigo"], 2)
 
@@ -1991,18 +1999,21 @@ class TestApps(Base):
 
     def test_las_carpetas_por_defecto(self):
         ej = H.Ejecutor(hogar=self.hogar)
-        self.assertEqual(ej.dirs_apps, ["/usr/share/applications", "/usr/local/share/applications",
-                                        os.path.join(self.hogar, ".local", "share", "applications")])
+        self.assertEqual(ej.dirs_apps[:2], ["/usr/share/applications", "/usr/local/share/applications"])
+        for carpeta in ej.dirs_apps:      # solo carpetas del sistema, nunca la de la cuenta del usuario
+            self.assertTrue(carpeta.startswith(("/usr/", "/var/lib/")), carpeta)
+            self.assertNotIn(".local", carpeta)
 
     def test_abrir_app(self):
         self.llenar()
         p = self.prep("abrir_app", app="firefox.desktop")
-        self.assertEqual(p.solicitud.recordable, "app:firefox.desktop")
+        self.assertRegex(p.solicitud.recordable, r"^app:firefox\.desktop:[0-9a-f]{12}$")
         self.assertEqual(p.solicitud.riesgo, "bajo")
         self.assertIn("Firefox", p.solicitud.titulo)
         r = self.ej.ejecutar(p)
         self.assertTrue(r.ok)
-        self.assertEqual(self.abrir.llamadas, [("app", "firefox.desktop")])
+        # se lanza el archivo que el usuario vio (su ruta), no "lo que tenga ese id"
+        self.assertEqual(self.abrir.llamadas, [("app", os.path.join(self.sistema, "firefox.desktop"))])
         self.assertEqual(self.prep("abrir_app", app="firefox").args["app"], "firefox.desktop")       # sin sufijo
 
     def test_abrir_app_desconocida_o_peligrosa(self):
@@ -2211,6 +2222,447 @@ class TestDeclaraciones(Base):
         for ruta in ("/etc", "x", "~/../x"):
             msg = self.assertRechaza("listar_directorio", ruta=ruta)
             self.assertNotRegex(msg, r"\b(the|not|denied|outside|permission)\b")
+
+
+# ====================================================== regresiones de la auditoría ofensiva (H1-H8)
+ESCRITURA_PROHIBIDA = (
+    ".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zprofile", ".zshenv",
+    ".zlogin", ".xprofile", ".xsession", ".xinitrc", ".pam_environment", ".gitconfig", ".inputrc",
+    ".config/autostart", ".config/hypr", ".config/systemd", ".config/environment.d", ".config/foot",
+    ".config/gtklock", ".config/fish", ".config/infinity", ".config/user-dirs.dirs", ".config/mimeapps.list",
+    ".local/bin", ".local/share/applications", ".local/share/systemd", ".local/share/mime", ".ssh",
+)
+NO_MODIFICA = "pAnkI no puede modificar esa ruta"
+
+
+class TestH1EscrituraProhibida(Base):
+    def test_ni_crear_ni_mover_hacia_las_rutas_de_arranque_o_configuracion(self):
+        self.crear("Descargas/payload", "x")
+        for rel in ESCRITURA_PROHIBIDA:
+            # crear la propia ruta y algo dentro de ella
+            for ruta in (f"~/{rel}", f"~/{rel}/nueva"):
+                self.assertRechaza("crear_carpeta", ruta=ruta)
+            # mover un archivo hacia ella: como carpeta (si existe) y como ruta completa
+            self.assertRechaza("mover_archivo", origen="~/Descargas/payload", destino=f"~/{rel}")
+            if "/" in rel:
+                os.makedirs(self.h(os.path.dirname(rel)), exist_ok=True)
+            self.assertRechaza("mover_archivo", origen="~/Descargas/payload", destino=f"~/{rel}/payload")
+        self.assertEqual(self.leer(self.h("Descargas", "payload")), "x")
+        self.assertFalse(os.path.exists(self.h(".bashrc")))
+        self.assertFalse(os.path.exists(self.h(".config", "autostart")))
+
+    def test_el_mensaje_explica_por_que(self):
+        self.crear("a.txt")
+        for rel in (".bashrc", ".config/autostart", ".local/bin", ".config/hypr", ".local/share/applications",
+                    ".config/infinity", ".profile"):
+            msg = self.assertRechaza("mover_archivo", origen="~/a.txt", destino=f"~/{rel}")
+            self.assertIn(NO_MODIFICA, msg, rel)
+            self.assertIn("iniciar programas o configurar el sistema", msg)
+
+    def test_ni_sacar_archivos_de_esas_rutas(self):
+        for rel in (".config/autostart/x.desktop", ".bashrc", ".config/hypr/hyprland.conf", ".local/bin/herramienta",
+                    ".config/infinity/ajustes.json", ".config/foot/foot.ini", ".config/mimeapps.list",
+                    ".local/share/applications/a.desktop"):
+            self.crear(rel, "contenido")
+            self.assertRechaza("mover_archivo", origen=f"~/{rel}", destino="~/Libre.txt")
+            self.assertTrue(os.path.exists(self.h(rel)), rel)
+
+    def test_una_carpeta_que_las_contiene_tampoco_se_mueve(self):
+        self.crear(".config/autostart/x.desktop")
+        self.crear(".local/bin/x")
+        for origen in ("~/.config", "~/.local", "~/.local/share", "~"):
+            self.assertRechaza("mover_archivo", origen=origen, destino="~/Otro")
+        ej = self.ej
+        self.assertTrue(ej._escritura_prohibida((".config",)))
+        self.assertTrue(ej._escritura_prohibida((".local", "share")))
+        self.assertTrue(ej._escritura_prohibida(()))
+        self.assertFalse(ej._escritura_prohibida((".config",), ancestros=False))
+        self.assertFalse(ej._escritura_prohibida(("Documentos",)))
+        self.assertFalse(ej._escritura_prohibida((".config", "otra_app")))
+
+    def test_sin_distinguir_mayusculas(self):
+        self.assertRechaza("crear_carpeta", ruta="~/.Config/AutoStart")
+        self.assertRechaza("crear_carpeta", ruta="~/.LOCAL/BIN/x")
+
+    def test_un_enlace_con_otro_nombre_no_las_salta(self):
+        # ~/.config/hypr es un enlace a ~/dotfiles/hypr: se protege por el nombre escrito Y por el destino real
+        self.crear("dotfiles/hypr/hyprland.conf", "x")
+        os.makedirs(self.h(".config"))
+        os.symlink(self.h("dotfiles", "hypr"), self.h(".config", "hypr"))
+        self.crear("a.txt")
+        self.assertRechaza("mover_archivo", origen="~/a.txt", destino="~/.config/hypr")
+        self.assertRechaza("mover_archivo", origen="~/a.txt", destino="~/.config/hypr/a.txt")
+        # y el enlace de un atajo cualquiera hacia una de esas rutas
+        os.symlink(self.h(".local", "bin"), self.h("atajo_bin"))
+        os.makedirs(self.h(".local", "bin"))
+        self.assertRechaza("mover_archivo", origen="~/a.txt", destino="~/atajo_bin")
+        self.assertRechaza("crear_carpeta", ruta="~/atajo_bin/nueva")
+        self.assertTrue(os.path.exists(self.h("a.txt")))
+
+    def test_la_lectura_de_esas_rutas_sigue_permitida(self):
+        self.crear(".bashrc", "alias ll=ls")
+        self.crear(".config/autostart/x.desktop", "[Desktop Entry]")
+        self.assertTrue(self.hacer("leer_archivo", ruta="~/.bashrc").ok)
+        self.assertTrue(self.hacer("listar_directorio", ruta="~/.config/autostart").ok)
+
+    def test_organizar_no_entra_en_ellas(self):
+        self.crear(".config/autostart/a.desktop")
+        self.assertRechaza("proponer_organizacion", carpeta="~/.config/autostart", criterio="tipo")
+        self.assertRechaza("proponer_organizacion", carpeta="~/.local/bin", criterio="tipo")
+        self.assertRechaza("proponer_organizacion", carpeta="~/.config/infinity", criterio="tipo")
+
+    def test_organizar_una_carpeta_que_las_contiene_omite_los_archivos_prohibidos(self):
+        self.crear(".config/mimeapps.list", "x")
+        self.crear(".config/user-dirs.dirs", "x")
+        self.crear(".config/notas.txt", "x")
+        r = self.hacer("proponer_organizacion", carpeta="~/.config", criterio="tipo")
+        self.assertEqual(r.datos["total_archivos"], 1)
+        self.assertEqual(r.datos["omitidos"]["protegidos"], 2)
+        self.assertTrue(self.hacer("aplicar_organizacion", id_plan=r.datos["id_plan"]).ok)
+        self.assertTrue(os.path.exists(self.h(".config", "mimeapps.list")))
+        self.assertTrue(os.path.exists(self.h(".config", "user-dirs.dirs")))
+
+    def test_un_plan_manipulado_tampoco_mueve_archivos_prohibidos(self):
+        self.crear(".config/mimeapps.list", "x")
+        self.ej._planes["plan-deadbeef"] = H._Plan("plan-deadbeef", self.h(".config"), "tipo",
+                                                   [("mimeapps.list", "Documentos")])
+        r = self.hacer("aplicar_organizacion", id_plan="plan-deadbeef")
+        self.assertFalse(r.ok)
+        self.assertEqual((r.datos["movidos"], r.datos["fallidos"]), (0, 1))
+        self.assertTrue(os.path.exists(self.h(".config", "mimeapps.list")))
+        self.assertFalse(os.path.exists(self.h(".config", "Documentos")))
+
+    def test_deshacer_con_un_registro_falso_no_escribe_en_ellas(self):
+        self.crear("Docs/a.txt", "A")
+        os.makedirs(self.h(".config", "autostart"))
+        st = os.stat(self.h("Docs", "a.txt"))
+        os.makedirs(self.estado, mode=0o700)
+        lineas = [{"t": "mov", "desde": self.h(".config", "autostart", "a.desktop"), "hasta": self.h("Docs", "a.txt"),
+                   "dev": st.st_dev, "ino": st.st_ino, "tam": st.st_size, "mtime_ns": st.st_mtime_ns},
+                  {"t": "mov", "desde": self.h(".bashrc"), "hasta": self.h("Docs", "a.txt"),
+                   "dev": st.st_dev, "ino": st.st_ino, "tam": st.st_size, "mtime_ns": st.st_mtime_ns}]
+        ruta = os.path.join(self.estado, f"registro-{time.time_ns():020d}-abcdef.jsonl")
+        with open(ruta, "w") as f:
+            f.write("\n".join(json.dumps(x) for x in lineas) + "\n")
+        os.chmod(ruta, 0o600)
+        r = self.ej.ejecutar(H.Preparada("deshacer_ultima_organizacion", {}, None))
+        self.assertFalse(r.ok)
+        self.assertEqual(os.listdir(self.h(".config", "autostart")), [])
+        self.assertFalse(os.path.exists(self.h(".bashrc")))
+        self.assertEqual(self.leer(self.h("Docs", "a.txt")), "A")
+
+    def test_deshacer_comprueba_cada_movimiento_contra_la_lista(self):
+        self.crear("Docs/a.txt", "A")
+        os.makedirs(self.h(".config", "autostart"))
+        st = os.stat(self.h("Docs", "a.txt"))
+        base = {"hasta": self.h("Docs", "a.txt"), "dev": st.st_dev, "ino": st.st_ino, "tam": st.st_size,
+                "mtime_ns": st.st_mtime_ns}
+        for desde in (self.h(".bashrc"), self.h(".config", "autostart", "a.desktop"), self.h(".local", "bin", "a")):
+            with self.assertRaises(H.ErrorHerramienta, msg=desde):
+                self.ej._comprobar_deshacer(dict(base, desde=desde))
+        os.makedirs(self.h(".local", "bin"))
+        self.crear(".local/bin/hecho", "x")
+        st2 = os.stat(self.h(".local", "bin", "hecho"))
+        with self.assertRaises(H.ErrorHerramienta):        # sacar algo DE una de esas rutas
+            self.ej._comprobar_deshacer({"desde": self.h("Docs", "hecho"), "hasta": self.h(".local", "bin", "hecho"),
+                                         "dev": st2.st_dev, "ino": st2.st_ino, "tam": st2.st_size,
+                                         "mtime_ns": st2.st_mtime_ns})
+        # y una ruta normal sí pasa
+        self.ej._comprobar_deshacer(dict(base, desde=self.h("Docs", "otra.txt")))
+
+    def test_ejecutar_sin_pasar_por_preparar_tambien_las_rechaza(self):
+        self.crear("a.txt")
+        for nombre, args in (("crear_carpeta", {"ruta": "~/.config/autostart"}),
+                             ("mover_archivo", {"origen": "~/a.txt", "destino": "~/.bashrc"})):
+            self.assertFalse(self.ej.ejecutar(H.Preparada(nombre, args, None)).ok)
+        self.assertTrue(os.path.exists(self.h("a.txt")))
+        self.assertFalse(os.path.exists(self.h(".bashrc")))
+
+    def test_el_movimiento_de_bajo_nivel_comprueba_la_lista_ultima_vez(self):
+        self.crear("a.txt")
+        with self.assertRaises(H.ErrorHerramienta):
+            self.ej._mover_seguro(self.hogar, "a.txt", self.hogar, ".bashrc")
+        self.assertTrue(os.path.exists(self.h("a.txt")))
+
+
+class TestH2H8AbrirApp(Base):
+    def setUp(self):
+        super().setUp()
+        self.sistema = os.path.join(self.tmp, "sistema")
+        os.makedirs(self.sistema)
+        self.ej.dirs_apps = [self.sistema]
+
+    def desktop(self, carpeta, nombre, exec_, extra=""):
+        os.makedirs(carpeta, exist_ok=True)
+        ruta = os.path.join(carpeta, nombre)
+        with open(ruta, "w", encoding="utf-8") as f:
+            f.write(f"[Desktop Entry]\nType=Application\nName=Editor de texto\nExec={exec_}\n{extra}")
+        return ruta
+
+    def test_el_valor_por_defecto_no_incluye_la_carpeta_del_usuario(self):
+        ej = H.Ejecutor(hogar=self.hogar)
+        for carpeta in ej.dirs_apps:
+            self.assertFalse(carpeta.startswith(self.hogar))
+            self.assertNotIn(".local/share/applications", carpeta)
+
+    def test_un_desktop_del_usuario_no_se_ve_ni_se_abre(self):
+        self.desktop(self.h(".local", "share", "applications"), "falso.desktop", "/bin/sh -c 'id'")
+        ej = H.Ejecutor(hogar=self.hogar, estado_dir=self.estado, abrir=self.abrir)
+        ej.dirs_apps = [self.h(".local", "share", "applications")]          # aunque alguien lo añada a la lista
+        self.assertEqual(ej.ejecutar(ej.preparar("buscar_apps", {})).datos["apps"], [])
+        with self.assertRaises(H.ErrorHerramienta):
+            ej.preparar("abrir_app", {"app": "falso.desktop"})
+        self.assertEqual(self.abrir.llamadas, [])
+
+    def test_un_enlace_del_sistema_hacia_la_cuenta_del_usuario_se_ignora(self):
+        real = self.desktop(self.h("trampa"), "x.desktop", "/bin/sh")
+        os.symlink(real, os.path.join(self.sistema, "enlace.desktop"))
+        self.assertEqual(self.hacer("buscar_apps").datos["apps"], [])
+
+    def test_sustituir_el_desktop_en_la_cuenta_no_cambia_lo_que_se_lanza(self):
+        sistema = self.desktop(self.sistema, "editor.desktop", "/usr/bin/gedit %F")
+        self.desktop(self.h(".local", "share", "applications"), "editor.desktop", "/tmp/payload")
+        self.ej.dirs_apps = [self.sistema, self.h(".local", "share", "applications")]
+        p = self.prep("abrir_app", app="editor.desktop")
+        self.assertIn("Ejecutará: /usr/bin/gedit", "\n".join(p.solicitud.detalle))
+        self.assertTrue(self.ej.ejecutar(p).ok)
+        self.assertEqual(self.abrir.llamadas, [("app", sistema)])
+
+    def test_la_tarjeta_muestra_el_exec_real_sin_codigos_de_campo_y_el_id(self):
+        self.desktop(self.sistema, "editor.desktop", "/usr/bin/gedit --new-window %F %u %%", "Terminal=false\n")
+        sol = self.prep("abrir_app", app="editor.desktop").solicitud
+        self.assertIn("Ejecutará: /usr/bin/gedit --new-window %", sol.detalle)
+        self.assertIn("editor.desktop", sol.titulo)
+        self.assertIn("Editor de texto", sol.titulo)
+        self.assertTrue(any("editor.desktop" in linea for linea in sol.detalle))
+        self.assertFalse(any("%F" in linea or "%u" in linea for linea in sol.detalle))
+
+    def test_el_exec_se_escapa_y_no_puede_ser_enorme(self):
+        self.desktop(self.sistema, "raro.desktop", "/usr/bin/x ‮--seguro")
+        sol = self.prep("abrir_app", app="raro.desktop").solicitud
+        self.assertNotIn("‮", "\n".join(sol.detalle))
+        self.assertIn("\\u202e", "\n".join(sol.detalle))
+        self.desktop(self.sistema, "largo.desktop", "/usr/bin/x " + "a" * 1500)
+        self.assertRechaza("abrir_app", app="largo.desktop")
+
+    def test_sin_exec_se_dice_que_se_activa_por_dbus(self):
+        with open(os.path.join(self.sistema, "dbus.desktop"), "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Servicio\nDBusActivatable=true\n")
+        self.assertIn("D-Bus", "\n".join(self.prep("abrir_app", app="dbus.desktop").solicitud.detalle))
+
+    def test_la_clave_recordable_cambia_si_cambia_el_archivo_o_su_exec(self):
+        ruta = self.desktop(self.sistema, "editor.desktop", "/usr/bin/gedit")
+        k1 = self.prep("abrir_app", app="editor.desktop").solicitud.recordable
+        self.assertEqual(k1, self.prep("abrir_app", app="editor.desktop").solicitud.recordable)
+        self.assertRegex(k1, r"^app:editor\.desktop:[0-9a-f]{12}$")
+        self.desktop(self.sistema, "editor.desktop", "/usr/bin/otra-cosa")
+        k2 = self.prep("abrir_app", app="editor.desktop").solicitud.recordable
+        self.assertNotEqual(k1, k2)
+        # el mismo Exec en otro archivo (otra carpeta del sistema) tampoco vale
+        otra = os.path.join(self.tmp, "otra")
+        self.desktop(otra, "editor.desktop", "/usr/bin/otra-cosa")
+        self.ej.dirs_apps = [otra]
+        self.assertNotEqual(k2, self.prep("abrir_app", app="editor.desktop").solicitud.recordable)
+        self.assertTrue(os.path.exists(ruta))
+
+    def test_toctou_el_desktop_cambia_entre_preparar_y_ejecutar(self):
+        self.desktop(self.sistema, "editor.desktop", "/usr/bin/gedit")
+        p = self.prep("abrir_app", app="editor.desktop")
+        self.desktop(self.sistema, "editor.desktop", "/tmp/payload")
+        r = self.ej.ejecutar(p)
+        self.assertFalse(r.ok)
+        self.assertEqual(self.abrir.llamadas, [])
+
+
+class TestH3EntornoLimpio(Base):
+    SECRETAS = {"GEMINI_API_KEY": "AIzaSECRETA", "GOOGLE_API_KEY": "g", "OPENAI_API_KEY": "o", "GITHUB_TOKEN": "t",
+                "MI_TOKEN_PRIVADO": "t", "AWS_SECRET_ACCESS_KEY": "s", "DB_PASSWORD": "p", "FOO_SECRET": "s",
+                "SSH_AUTH_SOCK": "/tmp/agent"}
+    NECESARIAS = {"DISPLAY": ":0", "WAYLAND_DISPLAY": "wayland-1", "XDG_RUNTIME_DIR": "/run/user/1000",
+                  "XDG_SESSION_TYPE": "wayland", "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+                  "LANG": "es_ES.UTF-8", "LC_ALL": "es_ES.UTF-8", "HOME": "/home/u", "KEYBOARD_LAYOUT": "latam"}
+
+    def entorno(self):
+        return mock.patch.dict(os.environ, {**self.SECRETAS, **self.NECESARIAS})
+
+    def test_funcion_de_entorno_limpio(self):
+        with self.entorno():
+            env = H._entorno_limpio()
+        for k in self.SECRETAS:
+            self.assertNotIn(k, env)
+        for k, v in self.NECESARIAS.items():
+            self.assertEqual(env[k], v)
+        self.assertIn("PATH", env)
+
+    def test_abrir_url_y_abrir_app_pasan_el_entorno_limpio_a_popen(self):
+        for tipo, valor, programa in (("url", "https://example.com", "xdg-open"),
+                                      ("app", "/usr/share/applications/x.desktop", "gio")):
+            with self.entorno(), mock.patch.object(subprocess, "Popen") as popen:
+                H._abrir_real(tipo, valor)
+            args, kw = popen.call_args
+            self.assertEqual(args[0][0], programa)
+            self.assertNotIn("GEMINI_API_KEY", kw["env"])
+            self.assertNotIn("MI_TOKEN_PRIVADO", kw["env"])
+            self.assertEqual(kw["env"]["WAYLAND_DISPLAY"], "wayland-1")
+            self.assertFalse(kw.get("shell", False))
+
+    def test_un_proceso_real_no_recibe_la_clave(self):
+        # xdg-open y gio falsos que vuelcan su entorno: lo que recibiría un navegador o una aplicación de verdad
+        bin_ = os.path.join(self.tmp, "bin")
+        os.makedirs(bin_)
+        salida = os.path.join(self.tmp, "entorno_{}.txt")
+        for programa in ("xdg-open", "gio"):
+            ruta = os.path.join(bin_, programa)
+            with open(ruta, "w") as f:
+                f.write(f"#!/bin/sh\nenv > '{salida.format(programa)}.tmp' && mv '{salida.format(programa)}.tmp' "
+                        f"'{salida.format(programa)}'\n")
+            os.chmod(ruta, 0o755)
+        with self.entorno(), mock.patch.dict(os.environ, {"PATH": bin_ + ":" + os.environ.get("PATH", "")}):
+            H._abrir_real("url", "https://example.com")
+            H._abrir_real("app", "/usr/share/applications/x.desktop")
+        for programa in ("xdg-open", "gio"):
+            archivo = salida.format(programa)
+            for _ in range(100):
+                if os.path.exists(archivo):
+                    break
+                time.sleep(0.05)
+            texto = self.leer(archivo)
+            self.assertIn("WAYLAND_DISPLAY=wayland-1", texto, programa)
+            for k in self.SECRETAS:
+                self.assertNotIn(k + "=", texto, programa)
+            self.assertNotIn("AIzaSECRETA", texto)
+
+
+class TestH4H6FiltroDeComandos(Base):
+    def activo(self):
+        return self.nuevo(permitir_comandos=True)
+
+    def rechazado(self, argv, mensaje=None, **extra):
+        with self.assertRaises(H.ErrorHerramienta, msg=str(argv)) as cm:
+            self.activo().preparar("ejecutar_comando", dict({"argv": argv}, **extra))
+        if mensaje:
+            self.assertIn(mensaje, str(cm.exception), str(argv))
+        self.assertEqual(self.correr.llamadas, [])
+
+    def permitido(self, argv, **extra):
+        return self.activo().preparar("ejecutar_comando", dict({"argv": argv}, **extra))
+
+    def test_gestores_de_paquetes_git_permisos_y_montajes(self):
+        for argv in (["apt", "install", "x"], ["apt-get", "update"], ["aptitude", "x"], ["dpkg", "-i", "x.deb"],
+                     ["dpkg-deb", "-x", "a", "b"], ["snap", "install", "x"], ["flatpak", "run", "x"],
+                     ["pip", "install", "x"], ["pip3", "install", "x"], ["pip3.12", "install", "x"],
+                     ["pipx", "run", "x"], ["npm", "i"], ["npx", "x"], ["yarn"], ["pnpm", "i"], ["cargo", "build"],
+                     ["gem", "install", "x"], ["go", "run", "x.go"], ["install", "-m", "4755", "a", "b"],
+                     ["ln", "-s", "a", "b"], ["git", "status"], ["git", "commit", "-m", "x"], ["/usr/bin/git", "log"],
+                     ["gh", "repo", "clone", "x"], ["mount", "x", "y"], ["umount", "x"], ["chmod", "+x", "a"],
+                     ["chown", "u", "a"], ["chgrp", "g", "a"], ["crontab", "-e"], ["at", "now"]):
+            self.rechazado(argv)
+
+    def test_la_consulta_de_version_o_ayuda_sigue_pasando(self):
+        for argv in (["git", "--version"], ["pip3", "--version"], ["apt", "--help"]):
+            self.permitido(argv)
+
+    def test_systemctl_solo_para_consultar(self):
+        for argv in (["systemctl", "status", "ssh"], ["systemctl", "--user", "list-units"], ["systemctl", "show", "x"],
+                     ["systemctl", "is-active", "x"], ["systemctl", "is-enabled", "x"],
+                     ["systemctl", "list-unit-files"], ["systemctl"], ["journalctl", "-n", "5"],
+                     ["systemctl", "--no-pager", "status", "x"]):
+            self.permitido(argv)
+        for argv in (["systemctl", "enable", "x"], ["systemctl", "--user", "enable", "--now", "x"],
+                     ["systemctl", "start", "x"], ["systemctl", "restart", "x"], ["systemctl", "daemon-reload"],
+                     ["systemctl", "mask", "x"], ["systemctl", "edit", "x"], ["systemctl", "--user", "link", "x"],
+                     ["systemctl", "poweroff"]):
+            self.rechazado(argv)
+
+    def test_los_que_escriben_no_tocan_la_lista_de_escritura_prohibida(self):
+        for argv in (["cp", "a", "~/.bashrc"], ["cp", "a", self.h(".bashrc")], ["mv", "a", "~/.config/autostart/x.desktop"],
+                     ["tee", "~/.profile"], ["touch", "~/.zshrc"], ["mkdir", "-p", "~/.config/systemd/user"],
+                     ["mkdir", ".local/bin"], ["truncate", "-s", "0", ".bashrc"],
+                     ["cp", "--target-directory=~/.local/bin", "a"], ["cp", "-t", "~/.local/bin", "a"],
+                     ["cp", "-t~/.local/bin", "a"], ["cp", "--target-directory", ".local/bin", "a"],
+                     ["mv", "~/.config", "x"], ["mv", "~/.local/share", "x"], ["mv", "~", "x"],
+                     ["curl", "-o", "~/.bashrc", "https://example.com/x"],
+                     ["curl", "-o" + "~/.bashrc", "https://example.com/x"],
+                     ["curl", "--output=.profile", "https://example.com/x"],
+                     ["wget", "-O", ".profile", "https://example.com/x"],
+                     ["sed", "-i", "s/a/b/", "~/.bashrc"], ["cp", "a", ".config/infinity/ajustes.json"],
+                     ["cp", "a", "./.config/./hypr/hyprland.conf"], ["touch", "Docs/../.bashrc"]):
+            self.rechazado(argv, NO_MODIFICA, carpeta="~")
+
+    def test_la_carpeta_de_trabajo_tambien_cuenta_para_los_que_escriben(self):
+        os.makedirs(self.h(".config", "autostart"))
+        os.makedirs(self.h(".config", "hypr"))
+        for argv, carpeta in ((["touch", "evil.desktop"], "~/.config/autostart"),
+                              (["tar", "xf", "a.tar"], "~/.config/hypr"),
+                              (["curl", "-O", "https://example.com/x"], "~/.config/autostart"),
+                              (["wget", "https://example.com/x"], "~/.config/hypr"),
+                              (["unzip", "a.zip"], "~/.config/autostart")):
+            self.rechazado(argv, NO_MODIFICA, carpeta=carpeta)
+
+    def test_sin_rutas_pero_con_la_carpeta_de_trabajo_prohibida(self):
+        os.makedirs(self.h(".config", "hypr"))
+        for argv in (["tar", "-x"], ["unzip"], ["touch"], ["curl", "-O"]):
+            self.rechazado(argv, NO_MODIFICA, carpeta="~/.config/hypr")
+        self.permitido(["tar", "-x"], carpeta="~")
+
+    def test_lo_que_sigue_permitido(self):
+        self.crear(".bashrc", "x")
+        self.crear(".config/hypr/hyprland.conf", "x")
+        self.crear("Docs/a.txt", "x")
+        for argv in (["cp", "Docs/a.txt", "Docs/b.txt"], ["touch", "Docs/nuevo"], ["mkdir", "Docs/sub"],
+                     ["cp", "Docs/a.txt", "~"], ["mv", "Docs/a.txt", "~/Docs/c.txt"], ["tee", "Docs/salida.txt"],
+                     ["curl", "-o", "Docs/x", "https://example.com/x"], ["sed", "-n", "1p", "Docs/a.txt"],
+                     # leer esas rutas es inocuo
+                     ["cat", "~/.bashrc"], ["ls", "-la", "~/.config/hypr"], ["cat", ".config/hypr/hyprland.conf"],
+                     ["grep", "x", ".bashrc"]):
+            self.permitido(argv, carpeta="~")
+
+
+class TestH5RutasFueraDeHome(Base):
+    def activo(self):
+        return self.nuevo(permitir_comandos=True)
+
+    def test_rutas_absolutas_fuera_de_home_se_rechazan(self):
+        os.makedirs(self.h("Docs"))
+        for argv in (["cat", "/etc/hostname"], ["cat", "/etc/passwd"], ["ls", "/"], ["ls", "/tmp"], ["ls", "/home"],
+                     ["cat", "/var/log/syslog"], ["cat", "--file=/etc/passwd"], ["cat", "/usr/../etc/passwd"],
+                     ["cat", "/proc/self/environ"], ["cat", "/proc/1/cmdline"], ["ls", "/sys/kernel"],
+                     ["cat", self.secreto], ["ls", self.hogar2], ["cat", "../../fuera/secreto.txt"],
+                     ["cat", "~/../u2/x"], ["cat", "file:///etc/passwd"], ["ls", "/etc/os-release.d"],
+                     ["ls", "/usrx"], ["ls", "/optional"]):
+            with self.assertRaises(H.ErrorHerramienta, msg=str(argv)) as cm:
+                self.activo().preparar("ejecutar_comando", {"argv": argv, "carpeta": "~/Docs"})
+            self.assertIn("fuera de tu carpeta personal", str(cm.exception), str(argv))
+
+    def test_lecturas_inocuas_fuera_de_home_se_admiten(self):
+        for argv in (["cat", "/etc/os-release"], ["cat", "/etc/lsb-release"], ["cat", "/proc/cpuinfo"],
+                     ["cat", "/proc/meminfo"], ["ls", "/sys/class/power_supply"], ["ls", "/usr/share"],
+                     ["ls", "/opt"], ["cat", "/usr/share/doc/x/copyright"], ["ls", "/usr"],
+                     ["/bin/ls", "-la"], ["/usr/bin/uname", "-a"]):
+            self.activo().preparar("ejecutar_comando", {"argv": argv})
+
+
+class TestH7ClavesRecordables(Base):
+    def test_listar_buscar_y_proponer_no_comparten_clave(self):
+        self.crear("Docs/a.txt")
+        listar = self.prep("listar_directorio", ruta="~/Docs").solicitud.recordable
+        proponer = self.prep("proponer_organizacion", carpeta="~/Docs", criterio="tipo").solicitud.recordable
+        buscar = self.prep("buscar_archivos", carpeta="~/Docs", patron="a").solicitud.recordable
+        self.assertEqual(listar, f"carpeta:{self.h('Docs')}")
+        self.assertEqual(proponer, f"carpeta:{self.h('Docs')}")       # ambas, solo los nombres de ESA carpeta
+        self.assertEqual(buscar, f"busqueda:{self.h('Docs')}")        # recorre subcarpetas: concesión aparte
+        self.assertNotIn(buscar, (listar, proponer))
+        leer = self.prep("leer_archivo", ruta="~/Docs/a.txt").solicitud.recordable
+        self.assertEqual(len({listar, buscar, leer}), 3)
+
+
+class TestErroresDeAjustes(Base):
+    def test_el_mensaje_de_opciones_no_cambia_mayusculas_de_los_valores(self):
+        with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": os.path.join(self.tmp, "config")}):
+            ej = self.nuevo(ajustes=AjustesFalso())
+            with self.assertRaises(H.ErrorHerramienta) as cm:
+                ej.preparar("cambiar_ajuste", {"id": "bloqueo.hora", "valor": "nada"})
+        self.assertIn("%H", str(cm.exception))
 
 
 if __name__ == "__main__":
