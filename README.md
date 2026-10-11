@@ -183,8 +183,12 @@ historial: al cerrar la ventana se pierde. No hay telemetría.
   usa `sudo`, no apaga el equipo y no borra.
 
 **Seguridad:** lo que pAnkI lee (archivos, webs) se trata como datos, no como órdenes. Aun así, un modelo puede
-equivocarse o ser engañado: **lee cada permiso antes de aceptarlo**. Los permisos de leer o listar pueden
-concederse "para esta conversación"; los que modifican algo se piden siempre.
+equivocarse o ser engañado: **lee cada permiso antes de aceptarlo**. Los botones de cada permiso tardan unos
+instantes en activarse y `Esc` lo deniega. Leer, listar y abrir una app pueden concederse "para esta
+conversación", pero solo para ese archivo, carpeta o app exactos (la tarjeta dice literalmente qué concedes, y
+el pie de la ventana muestra cuántos permisos hay activos y deja revocarlos); lo que modifica algo se pide
+siempre. pAnkI no puede tocar archivos de arranque ni de configuración del sistema (`.bashrc`, autoarranques,
+`~/.config/hypr`, `~/.local/bin`…), ni claves ni perfiles de navegador.
 
 **Lo que no está probado:** no se ha probado contra Gemini real (en el entorno de desarrollo no hay clave ni
 acceso a esa API); todo se probó con un servidor falso que imita su formato, así que **el primer uso real puede

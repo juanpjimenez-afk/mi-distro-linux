@@ -67,7 +67,13 @@ pueden contener instrucciones maliciosas (inyección de prompt). Por eso:
 
 - Todo lo que cambia algo o expone datos pasa por una **aprobación** que muestra la acción exacta.
 - Las acciones que modifican (mover, crear, cambiar ajustes, abrir una URL, comandos) **nunca** se recuerdan:
-  se preguntan siempre. Solo las lecturas y las aperturas de apps pueden "permitirse en esta conversación".
+  se preguntan siempre. Solo las lecturas y las aperturas de apps pueden "permitirse en esta conversación", y
+  el permiso es **por objeto exacto**, no por familia: `listar:<ruta>:<ocultos 0|1>`, `buscar:<ruta>`,
+  `organizar:<ruta>` (solo la propuesta, no el movimiento), `leer:<archivo>` y `app:<id>:<hash>` (el hash cambia
+  si cambia el archivo `.desktop`). Aprobar leer `leeme.txt` no concede leer otro archivo de esa carpeta. La
+  tarjeta lleva el texto literal de lo que concede (`Solicitud.alcance`) y la ventana lo repite en el botón.
+- Los permisos concedidos "en esta conversación" se ven siempre en el pie de la ventana («N permisos activos ·
+  Revocar»), se pierden al ocultar la ventana o al empezar una conversación nueva, y se pueden revocar.
 - Los resultados de las herramientas son **datos**, nunca órdenes. El contenido de archivos llega al modelo
   dentro de un campo `contenido_no_confiable` y el prompt del sistema le dice que no obedezca instrucciones
   que aparezcan ahí.
@@ -84,7 +90,20 @@ pueden contener instrucciones maliciosas (inyección de prompt). Por eso:
   `.local/share/keyrings`, `.config/infinity/panki`, `.mozilla`, `.config/epiphany`, `.local/share/epiphany`,
   `.config/chromium`, `.config/google-chrome`, `.password-store`, y cualquier archivo cuyo nombre empiece por
   `.env` o sea `id_rsa`, `id_ed25519`, `*.pem`, `*.key`.
-- Los archivos ocultos no se listan salvo `mostrar_ocultos=true`; la lista negra se aplica siempre.
+- Lista de **escritura prohibida** (aparte, más amplia): no se crea, mueve, renombra ni se mueve nada hacia/desde
+  rutas que sirven para iniciar programas o configurar el sistema (`.bashrc`, `.profile`, `.zshrc` y afines,
+  `.config/autostart`, `.config/hypr`, `.config/systemd`, `.config/infinity`, `.config/foot`, `.local/bin`,
+  `.local/share/applications`, `.local/share/systemd`, `.ssh`, `.gitconfig`, etc.). Así una conversación
+  manipulada no puede plantar un autoarranque.
+- Los archivos ocultos no se listan salvo `mostrar_ocultos=true` (que tiene su propia tarjeta de riesgo medio
+  y su propio permiso); la lista negra se aplica siempre.
+- Los nombres que se muestran al usuario se normalizan (NFC) y los caracteres invisibles o de control se
+  escriben como `\uXXXX`; si un nombre mezcla alfabetos (homógrafos) la tarjeta avisa. Los nombres largos se
+  recortan por el medio, no por el final.
+- `mover_archivo` a un nombre ejecutable (`.desktop`, `.sh`, `.py`, `.service`, `.appimage`… o con bit de
+  ejecución) es riesgo alto; el título dice «Renombrar» cuando solo cambia el nombre.
+- La comprobación se repite al ejecutar: si el sistema de archivos cambió entre la tarjeta y la acción, no se
+  hace nada.
 - Límites: lista 200 entradas, búsqueda 100, lectura 20 000 bytes (solo texto UTF-8; los binarios se
   rechazan), salida de comando 8 000 bytes.
 
@@ -97,18 +116,18 @@ Todas devuelven un objeto JSON-serializable. Los errores van como `{"error": "me
 | `info_sistema()` | ninguna | SO, kernel, tiempo encendido, carga, RAM, disco, batería. Solo lectura de `/proc`, `/sys`, `os.statvfs` |
 | `ver_ajustes(prefijo)` | ninguna | Ajustes de Infinity (id, etiqueta, valor actual, valores válidos) desde `ajustes.SCHEMA` |
 | `buscar_apps(consulta)` | ninguna | Apps instaladas (archivos `.desktop`): id, nombre, descripción |
-| `listar_directorio(ruta, mostrar_ocultos)` | por carpeta, "esta conversación" | Nombres, tipo y tamaño |
+| `listar_directorio(ruta, mostrar_ocultos)` | por carpeta y por ocultos sí/no, "esta conversación" | Nombres, tipo y tamaño |
 | `buscar_archivos(carpeta, patron)` | por carpeta, "esta conversación" | Coincidencias por nombre (glob), sin leer contenido |
-| `leer_archivo(ruta)` | por archivo, "esta conversación" por carpeta | Texto UTF-8 hasta 20 000 bytes |
+| `leer_archivo(ruta)` | por archivo, "esta conversación" solo para ese archivo | Texto UTF-8 hasta 20 000 bytes |
 | `proponer_organizacion(carpeta, criterio)` | por carpeta (nombres) | Calcula un plan de movimientos (criterio `tipo` o `fecha`), **no mueve nada**; devuelve `id_plan` y resumen |
 | `aplicar_organizacion(id_plan)` | siempre, con el detalle completo | Mueve según el plan guardado. No sobrescribe: si el destino existe, añade ` (1)`, ` (2)`… Guarda un registro para deshacer |
 | `deshacer_ultima_organizacion()` | siempre | Revierte los movimientos del último registro, solo los que sigan donde se dejaron |
 | `crear_carpeta(ruta)` | siempre | Crea una carpeta dentro de `$HOME` |
 | `mover_archivo(origen, destino)` | siempre | Mueve o renombra un archivo; no sobrescribe |
-| `abrir_app(app)` | por app, "esta conversación" | Lanza un `.desktop` por id (de `buscar_apps`) |
+| `abrir_app(app)` | por app, "esta conversación" | Lanza un `.desktop` **del sistema** por id (de `buscar_apps`), con `gio launch` y el entorno limpio; ignora los `.desktop` del directorio del usuario |
 | `abrir_url(url)` | siempre | Solo `http` y `https`, sin usuario ni contraseña, hasta 2 000 caracteres. Riesgo alto si la URL lleva consulta larga (puede enviar datos) |
 | `cambiar_ajuste(id, valor)` | siempre, muestra valor viejo y nuevo | Valida con el esquema de Ajustes; aplica con las mismas acciones de recarga que la app de Ajustes |
-| `ejecutar_comando(argv, carpeta)` | siempre, riesgo alto, **solo si `panki.comandos` está activo** | Lista `argv` sin shell, tiempo máximo 30 s, salida recortada. Rechaza `sudo`, `su`, `pkexec`, `doas`, `chroot`, `dd`, `mkfs*`, `shred`, `wipefs`, `fdisk`, `parted`, `shutdown`, `reboot`, `poweroff`, `halt` y `rm -r`/`rm -rf` |
+| `ejecutar_comando(argv, carpeta)` | siempre, riesgo alto, **solo si `panki.comandos` está activo** | Lista `argv` sin shell, tiempo máximo 30 s, salida recortada. Rechaza `sudo`, `su`, `pkexec`, `doas`, `chroot`, `dd`, `mkfs*`, `shred`, `wipefs`, `fdisk`, `parted`, `shutdown`, `reboot`, `poweroff`, `halt`, `rm -r`/`rm -rf` y también `apt`, `dpkg`, `pip`, `git`, `chmod`, `ln`, `install` y las órdenes de `systemctl` que cambian algo. Máximo 20 argumentos; la tarjeta separa «Programa», «Destino» (si hay URL o host) y un argumento por línea; entorno limpio |
 
 Categorías de `proponer_organizacion` con criterio `tipo`: Imágenes, Vídeos, Música, Documentos, Hojas de
 cálculo, Presentaciones, Comprimidos, Programas, Código, Otros. Solo mueve archivos sueltos de la carpeta
@@ -205,9 +224,15 @@ def crear_agente(aprobar, valores=None, hogar=None) -> Agente
 - Burbujas: usuario a la derecha, pAnkI a la izquierda. El texto de pAnkI pasa por `panki_texto` (Pango, escapado).
 - Entrada abajo: Intro envía, Mayús+Intro nueva línea. Botón "Parar" mientras trabaja. Botón "Nueva
   conversación".
-- Tarjeta de aprobación **en línea**: título, detalle desplazable, riesgo con color, botones "Permitir",
-  "Permitir en esta conversación" (solo si es recordable) y "Denegar". El hilo del agente espera con un
-  `threading.Event`; la interfaz se actualiza con `GLib.idle_add`.
+- Tarjeta de aprobación **en línea**: título, detalle desplazable (lo único en monoespaciada, para ver los
+  nombres exactos), riesgo con color, botones "Permitir" y "Denegar", y debajo, si es recordable, el texto
+  literal de lo que se concedería «en esta conversación». Los botones no responden hasta pasados 700 ms
+  (un clic o tecla que ya venía en camino no puede aprobar por accidente); `Esc` deniega; sin respuesta en
+  3 minutos se deniega sola. El hilo del agente espera con un `threading.Event`; la interfaz se actualiza
+  con `GLib.idle_add`.
+- Interfaz minimalista: cabecera con solo el nombre y unos iconos discretos (nueva conversación, clave, controles de ventana), la
+  conversación sin burbujas pesadas, una línea de estado discreta, entrada de una línea y el pie «Se envía a
+  Google (Gemini)». Ventana de 460×640 anclada abajo a la derecha, encima de la burbuja.
 - Primera vez sin clave: tarjeta con el aviso de privacidad, un campo para pegar la clave (oculto) y "Guardar".
   Un botón "Clave…" permite cambiarla o borrarla.
 - Errores visibles en la propia conversación (nunca solo por consola).
@@ -228,7 +253,9 @@ def crear_agente(aprobar, valores=None, hogar=None) -> Agente
 
 - Llamadas reales a Gemini: no hay clave ni salida a esa API desde la sandbox. Todo se prueba contra un
   servidor HTTP falso que imita el formato de `generateContent` con `functionCall`.
-- La ventana en Hyprland real y el atajo: solo en VM.
+- La ventana en Hyprland real, el atajo, el desenfoque y la posición exacta de la burbuja y de la ventana: solo en VM.
+- Los iconos simbólicos de la cabecera dependen de `adwaita-icon-theme` (está en `packages.list`); el logo SVG de
+  la burbuja, de `librsvg2-common` (también). Ninguno de los dos se ha visto en una ISO real.
 - Los nombres de modelo vigentes: por eso el modelo es un texto editable.
 
 ## Pruebas que debe haber
