@@ -23,6 +23,7 @@ from .ajustes import valor as ajuste  # noqa: E402
 ALTO = 60  # alto común de las tres islas (px)
 ORBE = 48  # diámetro de las esferas de cristal (el logo y la burbuja de pAnkI), más pequeñas que el dock
 LOGO_ORBE = 26  # lado del símbolo dentro de la esfera
+ELEVACION_ORBE = 10  # el ∞ queda este tanto más arriba que la fila del dock y del estado (px)
 MARGEN = 14  # separación con el borde de la pantalla
 
 RUTAS_ASSETS = [
@@ -94,8 +95,8 @@ class Orbe(Gtk.Window):
         super().__init__(application=app, title="Infinity — Orbe")
         _capa(self, "infinity-orb", [LayerShell.Edge.BOTTOM, LayerShell.Edge.LEFT],
               (LayerShell.Edge.LEFT, MARGEN + 4))
-        # La esfera es más baja que el dock: se sube lo justo para que quede centrada con él
-        LayerShell.set_margin(self, LayerShell.Edge.BOTTOM, MARGEN + (ALTO - ORBE) // 2)
+        # La esfera es más baja que el dock: se centra con él y se eleva un poco más
+        LayerShell.set_margin(self, LayerShell.Edge.BOTTOM, MARGEN + (ALTO - ORBE) // 2 + ELEVACION_ORBE)
         boton = Gtk.Button()
         boton.add_css_class("orb")
         boton.set_size_request(ORBE, ORBE)
