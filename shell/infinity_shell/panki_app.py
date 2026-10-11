@@ -13,16 +13,21 @@ Reglas que esta ventana cumple (docs/panki-diseno.md):
     nunca se queda colgado esperando a alguien que ya no está.
   * El texto del usuario se muestra SIEMPRE como texto plano. El de pAnkI pasa por panki_texto.a_pango
     (escapado) y además se valida con Pango antes de usarlo como marcado.
-  * La clave de Gemini no se muestra ni se escribe en ningún registro.
+  * Nada que escriba el modelo se pinta como si fuera de la interfaz: lo suyo es texto que fluye, sin marcos
+    ni reglas, y todo lo que viene de él (nombres de herramienta, argumentos, resúmenes) se limpia antes.
+  * La tarjeta de permiso (borde fino de acento y la etiqueta fija "Permiso") es lo único con aspecto de
+    tarjeta. Sus botones nacen desactivados y se arman a los 700 ms; Escape deniega; si nadie contesta en
+    3 minutos se deniega sola.
+  * La clave de Gemini no se muestra ni se escribe en ningún registro, ni se envía por el chat.
 
 Ocultar y cerrar (decisión de esta ventana, el documento no la fija):
-  * La acción `alternar` (la burbuja y Super + N) muestra u oculta la ventana SIN tocar la conversación: es
-    como minimizarla. Si hay una aprobación pendiente no se oculta, porque el agente estaría esperando una
-    respuesta que nadie ve; y si llega una aprobación con la ventana oculta, se muestra sola.
+  * `alternar` (la burbuja y Super + N) con la ventana visible la OCULTA: se revocan los permisos "en esta
+    conversación" y se deniega lo que esté pendiente de aprobar; la conversación sigue. Con la ventana oculta
+    la muestra. Si llega una tarjeta de permiso con la ventana oculta, se muestra sola.
   * La X con el agente TRABAJANDO cancela, responde "no" a lo pendiente y cierra de verdad (la aplicación
     termina; el hilo es daemon y no la retiene).
   * La X SIN trabajo en curso oculta la ventana y deja la aplicación viva para que la burbuja la abra al
-    instante, pero la conversación se descarta (el documento promete que no se guarda nada al cerrar).
+    instante, pero la conversación y sus permisos se descartan (no se guarda nada al cerrar).
 """
 import os
 import re
@@ -30,6 +35,7 @@ import sys
 import threading
 import time
 import traceback
+import unicodedata
 
 import gi
 
@@ -41,10 +47,37 @@ from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 APP_ID = "org.infinity.Panki"
 MAX_PREGUNTA = 4000  # caracteres de --preguntar; más es casi seguro un error del llamador
 ALTO_MAX_DETALLE = 170  # px del detalle de una aprobación antes de que se desplace
-ANCHO_DETALLE = 390  # px que tiene el detalle en una ventana de 460 de ancho (para medir su alto)
+ALTO_MAX_DETALLE_ALTO = 280  # ... cuando el riesgo es alto: se quiere ver más antes de decidir
+ANCHO_DETALLE = 368  # px que tiene el detalle en una ventana de 460 de ancho (para medir su alto)
 MAX_COLA = 5  # mensajes que esperan su turno (la ventana ocupada, o sin clave todavía)
 RIESGOS = ("bajo", "medio", "alto")
 ETIQUETA_REGISTRO = "~/.cache/infinity/panki.log"
+RETARDO_ARMADO_MS = 700  # los botones de una tarjeta de permiso no responden hasta pasado este tiempo
+ANTIGUEDAD_S = 30  # a partir de aquí la tarjeta dice cuánto lleva esperando
+CADUCIDAD_S = 180  # sin respuesta en este tiempo, se deniega sola
+
+# Lo que hace cada herramienta, en una palabra para la línea de actividad. Todo nombre que no esté aquí
+# (lo escribe el modelo) se muestra como "herramienta desconocida".
+VERBOS = {
+    "info_sistema": "Mirando el equipo",
+    "ver_ajustes": "Mirando los ajustes",
+    "buscar_apps": "Buscando apps",
+    "listar_directorio": "Mirando",
+    "buscar_archivos": "Buscando archivos",
+    "leer_archivo": "Leyendo",
+    "proponer_organizacion": "Preparando un plan",
+    "aplicar_organizacion": "Organizando",
+    "deshacer_ultima_organizacion": "Deshaciendo la última organización",
+    "crear_carpeta": "Creando",
+    "mover_archivo": "Moviendo",
+    "abrir_app": "Abriendo",
+    "abrir_url": "Abriendo",
+    "cambiar_ajuste": "Cambiando",
+    "ejecutar_comando": "Ejecutando",
+}
+DESCONOCIDA = "herramienta desconocida"
+# Estas no piden permiso nunca (leen datos del equipo y se los envían a Google): sin tarjeta no es "permiso previo".
+SIN_APROBACION = ("info_sistema", "ver_ajustes", "buscar_apps")
 
 USO = """Uso: infinity-panki [--preguntar TEXTO]
 
@@ -54,25 +87,33 @@ USO = """Uso: infinity-panki [--preguntar TEXTO]
 """
 
 # Lo que el usuario tiene que saber antes de pegar su clave (docs/panki-diseno.md, apartado Privacidad).
+# Frases cortas y exactas: lo que se envía, lo que se hace sin preguntar y lo que se guarda.
 AVISO_PRIVACIDAD = (
-    "pAnkI usa Gemini, el modelo de Google, con tu propia clave. Antes de empezar, ten en cuenta:",
-    "•  Cada mensaje, y lo que pAnkI vea con sus herramientas, se envía a Google (Gemini). "
-    "pAnkI no funciona sin conexión ni sin tu clave.",
-    "•  pAnkI ve los nombres de los archivos de una carpeta solo si tú lo permites (por carpeta), y el "
-    "contenido de un archivo solo si tú lo permites (por archivo o por carpeta, nunca en general).",
-    "•  Tu clave se guarda solo en este equipo (~/.config/infinity/panki/clave, con permisos privados) o se "
-    "toma de la variable GEMINI_API_KEY. Nunca va en los ajustes ni en ningún registro.",
-    "•  La conversación no se guarda: al cerrar la ventana se pierde.",
-    "•  No hay telemetría. Solo salen del equipo la llamada a Gemini y lo que tú apruebes "
-    "(abrir una dirección web, ejecutar un comando).",
-    "Puedes conseguir una clave en aistudio.google.com/apikey.",
+    "pAnkI usa Gemini, el modelo de Google, con tu propia clave.",
+    "Se envía a Google (Gemini): cada mensaje, lo que pAnkI ve con sus herramientas, tu nombre de usuario, "
+    "tu carpeta personal y la fecha.",
+    "Sin pedirte permiso, pAnkI puede leer y enviar a Google datos del equipo: sistema operativo, memoria, "
+    "disco, batería, tus ajustes y las apps instaladas.",
+    "Los nombres de los archivos de una carpeta y el contenido de un archivo solo los ve si tú lo permites. "
+    "«En esta conversación» amplía ese permiso hasta que lo revoques, ocultes la ventana o empieces otra "
+    "conversación.",
+    "Abrir una app o una web, o ejecutar un comando, puede lanzar programas. Se te pide permiso antes, salvo "
+    "lo que ya hayas permitido en esta conversación.",
+    "La conversación no se guarda: al cerrar la ventana se pierde. El registro para deshacer guarda en "
+    "disco las rutas de los archivos movidos.",
+    "Tu clave se guarda solo en este equipo (~/.config/infinity/panki/clave, con permisos privados) o se toma "
+    "de GEMINI_API_KEY. pAnkI nunca te pedirá la clave por el chat.",
+    "No hay telemetría. Fuera del equipo solo sale lo anterior.",
+    "Consigue una clave en aistudio.google.com/apikey.",
 )
 
-# Para cambiar la clave o cuando Gemini la rechaza: el resumen de lo importante.
-AVISO_CORTO = (AVISO_PRIVACIDAD[1], AVISO_PRIVACIDAD[3], AVISO_PRIVACIDAD[6])
+# Para cambiar la clave o cuando Gemini la rechaza: lo esencial.
+AVISO_CORTO = (AVISO_PRIVACIDAD[1], AVISO_PRIVACIDAD[6])
 
-BIENVENIDA = ("Pregúntame lo que quieras de tu equipo, o pídeme que organice tus archivos o cambie un "
-              "ajuste del escritorio. Antes de tocar nada, te pregunto.")
+BIENVENIDA = ("Pregúntame por tu equipo, o pídeme que ordene archivos o cambie un ajuste. Antes de cambiar "
+              "algo te pido permiso. Lo que veo con mis herramientas se envía a Google.")
+PIE_GOOGLE = "Se envía a Google (Gemini)"
+AVISO_CLAVE_EN_ENTRADA = "Eso parece una clave de API: pégala solo en el botón Clave…"
 
 
 # ------------------------------------------------------------------------------- registro de fallos
@@ -83,6 +124,12 @@ def ruta_registro():
 
 
 _CLAVE_API = re.compile(r"AIza[0-9A-Za-z_\-]{20,}")
+_CLAVE_EN_ENTRADA = re.compile(r"AIza[0-9A-Za-z_\-]{30,}")
+
+
+def parece_clave(texto):
+    """¿Contiene el texto algo con forma de clave de Gemini? Entonces no se envía por el chat."""
+    return bool(_CLAVE_EN_ENTRADA.search(texto or ""))
 
 
 def sin_secretos(texto):
@@ -115,22 +162,56 @@ def registrar(texto):
 
 
 # ------------------------------------------------------------------------------- texto
-# Lo que no se puede ver o que cambia el orden en que se lee: en una tarjeta de aprobación, un nombre de
-# archivo con un carácter de dirección (U+202E) podría hacer pasar una ruta por otra.
-_INVISIBLES = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f؜​‎‏‪-‮"
-                         "⁠-⁩﻿]")
+# Lo que no se ve o cambia el orden en que se lee: controles, direcciones de escritura (U+202E y compañía),
+# espacios de ancho cero, rellenos que parecen un hueco (braille en blanco, hangul) y selectores de variación.
+_INVISIBLES = re.compile(
+    "[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f؜ᅟᅠ᠎​‎‏‪-‮"
+    "⁠-⁯⠀ㅤ︀-️﻿ﾠ￹-￻\U000e0100-\U000e01ef]")
+# Marcas combinantes de diacríticos: tras NFC, las que quedan son las que tapan el carácter de al lado.
+_COMBINANTES = re.compile("[̀-ͯ҃-҉᪰-᫿᷀-᷿⃐-⃿︠-︯]")
 
 
 def texto_visible(texto):
-    """El texto con los caracteres invisibles o de dirección sustituidos por su código, visible."""
-    return _INVISIBLES.sub(lambda m: f"‹U+{ord(m.group()):04X}›", str(texto))
+    """El texto con lo invisible, lo que invierte el orden y lo que tapa a otros caracteres sustituido por su código.
+
+    Se normaliza a NFC antes, así las tildes normales (á) no se tocan. Los saltos de línea y los tabuladores
+    se respetan.
+    """
+    texto = unicodedata.normalize("NFC", str(texto))
+    return _COMBINANTES.sub(lambda m: f"‹U+{ord(m.group()):04X}›",
+                            _INVISIBLES.sub(lambda m: f"‹U+{ord(m.group()):04X}›", texto))
 
 
-def es_error_de_clave(mensaje):
-    """¿El mensaje de error habla de la clave (falta, no vale, sin permiso)? Entonces se vuelve a pedir."""
-    m = mensaje.lower()
-    return "clave" in m and any(p in m for p in ("válid", "valid", "falta", "permiso", "rechaz",
-                                                   "incorrect", "caduc", "revoc"))
+def una_linea(texto, maximo=80):
+    """Una línea sin trucos para la zona de actividad del sistema: limpia, sin saltos de línea y recortada por el medio.
+
+    Recorta por el medio para que se vea tanto el principio como el final (la extensión de un archivo, el destino).
+    """
+    t = re.sub(r"\s+", " ", texto_visible(texto).replace("\n", " ⏎ ")).strip()
+    if len(t) > maximo:
+        cabeza = (maximo - 1) // 2
+        t = t[:cabeza] + "…" + t[len(t) - (maximo - 1 - cabeza):]
+    return t
+
+
+_RESTOS_DE_MARCO = re.compile("[─-▟]")
+_REGLA = re.compile(r"[-*_=─-╿ ]{3,}")
+
+
+def filtrar_texto_modelo(texto):
+    """El texto del modelo, sin lo que podría hacerse pasar por la interfaz del sistema.
+
+    Fuera las reglas horizontales, las vallas de código y las marcas de cita (que dibujan marcos y barras), y los
+    caracteres de dibujo de cajas. Queda texto que fluye, con negrita, cursiva, listas y código en línea.
+    """
+    lineas = []
+    for linea in texto_visible(texto).split("\n"):
+        s = linea.strip()
+        if s.startswith("```") or s.startswith("~~~") or _REGLA.fullmatch(s):
+            continue
+        lineas.append(re.sub(r"^\s{0,3}>+\s?", "", linea))
+    t = _RESTOS_DE_MARCO.sub("", "\n".join(lineas))
+    return re.sub(r"\n{3,}", "\n\n", t).strip()
 
 
 def interpretar_argumentos(args):
@@ -167,97 +248,124 @@ def juntar_pregunta(argv):
 
 
 # ------------------------------------------------------------------------------- estilo
+# Minimalista: una sola tipografía (la del sistema) en dos tamaños (14 y 12 px), un solo color de acento (el
+# violeta de la burbuja de pAnkI) y nada de sombras ni avatares. El riesgo es una palabra y un punto de color.
 ESTILO = """
-window.panki-ventana { background-color: #0f1226; }
-.panki-conversacion { padding: 14px 14px 6px 14px; }
+window.panki-ventana { background-color: rgba(18, 22, 44, 0.94); color: #e9ebf7; }
 
-.panki-bienvenida { padding: 36px 18px 10px 18px; }
-.panki-bienvenida-titulo { font-size: 20px; font-weight: 700; color: #f2f3ff; }
-.panki-bienvenida-texto { font-size: 13px; color: rgba(236, 238, 255, 0.72); }
+headerbar.panki-cabecera {
+  min-height: 30px;
+  padding: 0 6px 0 16px;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+headerbar.panki-cabecera windowcontrols button { opacity: 0.5; }
+headerbar.panki-cabecera windowcontrols button:hover { opacity: 1; }
+label.panki-marca { color: #b9a8ff; font-size: 14px; font-weight: 600; }
+button.panki-icono {
+  background: none;
+  border: none;
+  box-shadow: none;
+  min-height: 0;
+  min-width: 0;
+  padding: 4px 7px;
+  opacity: 0.4;
+}
+button.panki-icono:hover { opacity: 1; }
+button.panki-icono:disabled { opacity: 0.2; }
 
-.panki-burbuja { padding: 9px 13px; border-radius: 18px; }
-.panki-burbuja label { color: #eef0ff; font-size: 14px; }
-.panki-burbuja-usuario {
-  background-image: linear-gradient(135deg, #5468ff, #7a4dff);
-  border-bottom-right-radius: 5px;
-}
-.panki-burbuja-pa {
-  background-color: #1f2548;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-bottom-left-radius: 5px;
-}
-.panki-burbuja-error {
-  background-color: #3a1a26;
-  border: 1px solid #ff6b81;
-  border-bottom-left-radius: 5px;
-}
-.panki-error-titulo { font-size: 11px; font-weight: 700; color: #ff9aa8; }
+.panki-conversacion { padding: 10px 20px 8px 20px; }
+.panki-bienvenida { padding: 48px 4px 0 4px; }
+.panki-bienvenida label { color: rgba(233, 235, 247, 0.6); }
 
-.panki-actividad { font-size: 12px; color: rgba(236, 238, 255, 0.62); }
-.panki-actividad-ok { color: #7fe0ae; }
-.panki-actividad-fallo { color: #ff9aa8; }
-.panki-nota { font-size: 12px; font-style: italic; color: rgba(236, 238, 255, 0.58); }
+.panki-usuario { padding-left: 10px; border-left: 1px solid rgba(233, 235, 247, 0.2); }
+.panki-usuario label { color: rgba(233, 235, 247, 0.6); }
+label.panki-actividad, label.panki-nota { font-size: 12px; color: rgba(233, 235, 247, 0.45); }
+label.panki-actividad-fallo { color: rgba(255, 140, 140, 0.8); }
+.panki-error label { color: #ff9b9b; }
+label.panki-error-titulo { font-size: 12px; font-weight: 600; }
 
 .panki-tarjeta {
-  background-color: #1a1f3f;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-left-width: 6px;
-  border-radius: 14px;
-  padding: 12px;
-}
-.panki-riesgo-bajo { border-left-color: #4cc38a; }
-.panki-riesgo-medio { border-left-color: #f5b942; }
-.panki-riesgo-alto { border-left-color: #ff5c6c; }
-.panki-tarjeta-titulo { font-size: 14px; font-weight: 700; color: #f2f3ff; }
-.panki-tarjeta-texto { font-size: 12px; color: rgba(236, 238, 255, 0.80); }
-.panki-insignia { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
-.panki-insignia-bajo { background-color: rgba(76, 195, 138, 0.20); color: #7fe0ae; }
-.panki-insignia-medio { background-color: rgba(245, 185, 66, 0.20); color: #ffd37a; }
-.panki-insignia-alto { background-color: rgba(255, 92, 108, 0.22); color: #ffa3ae; }
-.panki-detalle {
-  font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace;
-  font-size: 12px;
-  color: #dfe3ff;
-  background-color: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(185, 168, 255, 0.55);
   border-radius: 8px;
+  padding: 12px 14px;
+  background-color: rgba(255, 255, 255, 0.03);
+}
+label.panki-permiso { font-size: 12px; font-weight: 700; color: #b9a8ff; }
+label.panki-riesgo-texto, label.panki-estado-tarjeta, label.panki-resuelta { font-size: 12px; color: rgba(233, 235, 247, 0.7); }
+label.panki-punto { font-size: 12px; color: rgba(233, 235, 247, 0.55); }
+.panki-riesgo-medio label.panki-punto { color: #f2b84b; }
+.panki-riesgo-alto label.panki-punto { color: #ff6b6b; }
+label.panki-tarjeta-titulo { font-weight: 600; }
+label.panki-tarjeta-texto { font-size: 12px; color: rgba(233, 235, 247, 0.75); }
+label.panki-mas { font-size: 12px; color: #b9a8ff; }
+label.panki-detalle {
+  font-family: monospace;
+  font-size: 12px;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
   padding: 8px;
 }
-.panki-resuelta { font-size: 12px; font-weight: 700; color: rgba(236, 238, 255, 0.78); }
+scrolledwindow.panki-desplazable scrollbar { opacity: 1; }
+scrolledwindow.panki-desplazable scrollbar slider { background-color: rgba(185, 168, 255, 0.6); min-width: 6px; }
 
-button.panki-boton {
+button.panki-decision {
   background-image: none;
-  background-color: rgba(255, 255, 255, 0.10);
-  color: #f2f3ff;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
+  background-color: transparent;
+  border: 1px solid rgba(233, 235, 247, 0.4);
+  border-radius: 6px;
   box-shadow: none;
-  padding: 5px 14px;
+  padding: 6px 12px;
   min-height: 0;
 }
-button.panki-boton:hover { background-color: rgba(255, 255, 255, 0.20); }
-button.panki-boton:disabled { opacity: 0.5; }
-button.panki-permitir { background-color: #2a8f63; border-color: #2a8f63; color: #ffffff; }
-button.panki-permitir:hover { background-color: #33a574; }
-button.panki-denegar { background-color: transparent; }
-button.panki-parar { background-color: #b8374a; border-color: #b8374a; color: #ffffff; }
-button.panki-parar:hover { background-color: #cf4559; }
-button.panki-enviar { background-color: #5468ff; border-color: #5468ff; color: #ffffff; }
-button.panki-enviar:hover { background-color: #6679ff; }
+button.panki-decision label { font-size: 14px; }
+button.panki-decision:hover { background-color: rgba(233, 235, 247, 0.1); }
+button.panki-decision:disabled { opacity: 0.4; }
+button.panki-concesion {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 2px 0;
+  min-height: 0;
+}
+button.panki-concesion label { font-size: 12px; color: rgba(233, 235, 247, 0.65); }
+button.panki-concesion:hover label { color: #e9ebf7; }
+button.panki-concesion:disabled { opacity: 0.4; }
+button.panki-texto {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0 4px;
+  min-height: 0;
+}
+button.panki-texto label { font-size: 12px; color: rgba(233, 235, 247, 0.7); }
+button.panki-texto:hover label { color: #b9a8ff; }
 
-.panki-pie { background-color: #12163a; border-top: 1px solid rgba(255, 255, 255, 0.10); padding: 10px 12px; }
-.panki-estado { font-size: 12px; color: rgba(236, 238, 255, 0.70); }
-.panki-marcador { color: rgba(236, 238, 255, 0.45); font-size: 14px; }
+.panki-pie { padding: 4px 20px 10px 20px; }
+label.panki-estado, label.panki-pie-google, label.panki-pie-permisos { font-size: 12px; color: rgba(233, 235, 247, 0.45); }
+label.panki-aviso { font-size: 12px; color: #b9a8ff; }
+label.panki-marcador { color: rgba(233, 235, 247, 0.4); }
 textview.panki-entrada, textview.panki-entrada text {
-  background-color: #1b2046;
-  color: #f2f3ff;
-  caret-color: #ffffff;
+  background: none;
+  color: #e9ebf7;
+  caret-color: #b9a8ff;
   font-size: 14px;
 }
 scrolledwindow.panki-caja-entrada {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 14px;
+  border: none;
+  border-bottom: 1px solid rgba(233, 235, 247, 0.22);
+  border-radius: 0;
+  background: none;
 }
-entry.panki-clave, entry.panki-clave text { background-color: #1b2046; color: #f2f3ff; }
+scrolledwindow.panki-caja-entrada:focus-within { border-bottom-color: #b9a8ff; }
+entry.panki-clave, entry.panki-clave text {
+  background: none;
+  color: #e9ebf7;
+  border-radius: 0;
+  box-shadow: none;
+}
+entry.panki-clave { border: none; border-bottom: 1px solid rgba(233, 235, 247, 0.3); }
 """
 
 _estilos_cargados = set()
@@ -276,15 +384,6 @@ def _cargar_estilo(pantalla):
     _estilos_cargados.add(id(pantalla))
 
 
-def _ruta_icono():
-    for base in (os.environ.get("INFINITY_ASSETS", ""), "/usr/share/infinity",
-                 os.path.join(os.path.dirname(__file__), "..", "..", "branding")):
-        ruta = os.path.join(base, "panki.png") if base else ""
-        if ruta and os.path.exists(ruta):
-            return os.path.abspath(ruta)
-    return None
-
-
 # ------------------------------------------------------------------------------- módulos del agente
 def _nucleo_real():
     from . import panki_nucleo
@@ -300,9 +399,13 @@ def _a_pango_real():
 
 
 def _clases_de_error(nucleo):
-    """La clase de error del núcleo: ErrorPanki."""
-    c = getattr(nucleo, "ErrorPanki", None)
-    return (c,) if isinstance(c, type) and issubclass(c, Exception) else ()
+    """La clase de error del núcleo (ErrorPanki). Se aceptan también las grafías anteriores."""
+    clases = []
+    for nombre in ("ErrorPanki", "ErrorpAnkI", "ErrorPankI", "ErrorPAnkI"):
+        c = getattr(nucleo, nombre, None)
+        if isinstance(c, type) and issubclass(c, Exception) and c not in clases:
+            clases.append(c)
+    return tuple(clases)
 
 
 class _Espera:
@@ -316,6 +419,10 @@ class _Espera:
         self.solicitud = solicitud
         self.respuesta = None
         self.tarjeta = None
+        self.armada = False  # los botones solo valen cuando ha pasado RETARDO_ARMADO_MS
+        self.creada = time.monotonic()
+        self.id_armado = 0
+        self.id_reloj = 0
         self._evento = threading.Event()
         self._candado = threading.Lock()
 
@@ -337,9 +444,9 @@ class VentanaPanki(Gtk.ApplicationWindow):
     """La ventana de chat.
 
     `fabrica_agente(aprobar) -> agente` crea el agente (por defecto, panki_nucleo.crear_agente); el agente
-    tiene `enviar(texto, alevento)`, `cancelar()` y `reiniciar()`. Las pruebas pasan un agente falso.
-    `nucleo` aporta existe_clave, guardar_clave, borrar_clave y la clase de error; `a_pango` convierte el
-    texto de pAnkI en marcado.
+    tiene `enviar(texto, alevento)`, `cancelar()` y `reiniciar()`, y opcionalmente `permisos_activos()` y
+    `revocar_permisos()`. Las pruebas pasan un agente falso. `nucleo` aporta existe_clave, guardar_clave,
+    borrar_clave y la clase de error; `a_pango` convierte el texto de pAnkI en marcado.
     """
 
     def __init__(self, app, fabrica_agente=None, nucleo=None, a_pango=None):
@@ -350,7 +457,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
         self._candado = threading.Lock()
         self._cerrada = False  # la ventana se destruye: nada más debe tocar widgets
         self._cancelado = False  # Parar pulsado en la ejecución actual
-        self._trabajando = False  # hay una ejecución en marcha (desde Enviar hasta que su resultado llega a la vista)
+        self._trabajando = False  # hay una ejecución en marcha (desde enviar hasta que su resultado llega a la vista)
         self._en_enviar = False  # el hilo del agente está DENTRO de agente.enviar (solo entonces vale cancelar)
         self._espera = None  # la _Espera de la aprobación pendiente (compartida con el hilo del agente)
         self._agente = None
@@ -362,6 +469,8 @@ class VentanaPanki(Gtk.ApplicationWindow):
         self._ultimo_envio = ""  # lo último que se mandó al agente (vuelve a la entrada si falla)
         self._hay_mensajes = False
         self._actividad = []  # [(nombre, etiqueta)] de herramientas aún sin resultado
+        self._tarjeta_en_llamada = False  # ¿salió una tarjeta de permiso desde el último evento "herramienta"?
+        self._previo_avisado = False  # el núcleo avisó de que esta llamada va con un permiso previo
         self.tarjeta_aprobacion = None
         self.tarjeta_clave = None
 
@@ -387,23 +496,41 @@ class VentanaPanki(Gtk.ApplicationWindow):
         self._actualizar_controles()
 
     # --------------------------------------------------------------------- construcción
+    @staticmethod
+    def _boton_icono(icono, ayuda):
+        boton = Gtk.Button.new_from_icon_name(icono)
+        boton.set_has_frame(False)
+        boton.add_css_class("panki-icono")
+        boton.set_tooltip_text(ayuda)
+        boton.update_property([Gtk.AccessibleProperty.LABEL], [ayuda])
+        return boton
+
     def _construir(self):
         cabecera = Gtk.HeaderBar()
-        self.boton_nueva = Gtk.Button(label="Nueva conversación")
-        self.boton_nueva.set_tooltip_text("Empieza de cero: pAnkI olvida lo anterior")
-        self.boton_nueva.connect("clicked", lambda *_: self.nueva_conversacion())
-        cabecera.pack_start(self.boton_nueva)
-        self.boton_clave = Gtk.Button(label="Clave…")
-        self.boton_clave.set_tooltip_text("Cambiar o borrar tu clave de Gemini")
+        cabecera.add_css_class("panki-cabecera")
+        cabecera.set_title_widget(Gtk.Box())  # sin título centrado: la marca va a la izquierda
+        marca = Gtk.Label(label="pAnkI")
+        marca.add_css_class("panki-marca")
+        cabecera.pack_start(marca)
+        self.boton_clave = self._boton_icono("dialog-password-symbolic", "Clave de Gemini…: cambiarla o borrarla")
         self.boton_clave.connect("clicked", lambda *_: self._mostrar_tarjeta_clave("cambiar"))
         cabecera.pack_end(self.boton_clave)
+        self.boton_nueva = self._boton_icono("list-add-symbolic",
+                                             "Nueva conversación: pAnkI olvida lo anterior y los permisos")
+        self.boton_nueva.connect("clicked", lambda *_: self.nueva_conversacion())
+        cabecera.pack_end(self.boton_nueva)
         self.set_titlebar(cabecera)
+
+        teclas_ventana = Gtk.EventControllerKey()
+        teclas_ventana.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        teclas_ventana.connect("key-pressed", self._tecla_ventana)
+        self.add_controller(teclas_ventana)
 
         raiz = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.set_child(raiz)
 
         self.scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
-        self.conversacion = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.conversacion = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=22)
         self.conversacion.add_css_class("panki-conversacion")
         self.scroll.set_child(self.conversacion)
         raiz.append(self.scroll)
@@ -414,22 +541,29 @@ class VentanaPanki(Gtk.ApplicationWindow):
         self.bienvenida = self._crear_bienvenida()
         self.conversacion.append(self.bienvenida)
 
-        pie = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        pie = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         pie.add_css_class("panki-pie")
         raiz.append(pie)
 
         fila_estado = Gtk.Box(spacing=8)
-        self.ocupado = Gtk.Spinner()
-        self.ocupado.set_visible(False)
-        fila_estado.append(self.ocupado)
         self.estado = Gtk.Label(xalign=0, hexpand=True, wrap=True)
         self.estado.add_css_class("panki-estado")
         fila_estado.append(self.estado)
+        self.boton_parar = Gtk.Button(label="Parar")
+        self.boton_parar.set_has_frame(False)
+        self.boton_parar.add_css_class("panki-texto")
+        self.boton_parar.connect("clicked", lambda *_: self.parar())
+        self.boton_parar.set_visible(False)
+        fila_estado.append(self.boton_parar)
         pie.append(fila_estado)
 
-        fila_entrada = Gtk.Box(spacing=8)
+        self.aviso_entrada = Gtk.Label(xalign=0, wrap=True)
+        self.aviso_entrada.add_css_class("panki-aviso")
+        self.aviso_entrada.set_visible(False)
+        pie.append(self.aviso_entrada)
+
         self.entrada = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False,
-                                    top_margin=8, bottom_margin=8, left_margin=10, right_margin=10)
+                                    top_margin=6, bottom_margin=6, left_margin=0, right_margin=0)
         self.entrada.add_css_class("panki-entrada")
         self.entrada.set_tooltip_text("Intro envía · Mayús + Intro, nueva línea")
         teclas = Gtk.EventControllerKey()
@@ -437,48 +571,41 @@ class VentanaPanki(Gtk.ApplicationWindow):
         teclas.connect("key-pressed", self._tecla)
         self.entrada.add_controller(teclas)
         caja = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, hexpand=True,
-                                  min_content_height=40, max_content_height=140,
+                                  min_content_height=30, max_content_height=110,  # de 1 a 5 líneas
                                   propagate_natural_height=True)
         caja.add_css_class("panki-caja-entrada")
         caja.set_child(self.entrada)
         superpuesto = Gtk.Overlay(hexpand=True)
         superpuesto.set_child(caja)
         self.marcador = Gtk.Label(label="Escribe a pAnkI…", xalign=0, halign=Gtk.Align.START,
-                                  valign=Gtk.Align.START, margin_start=12, margin_top=10)
+                                  valign=Gtk.Align.START, margin_top=6)
         self.marcador.add_css_class("panki-marcador")
         self.marcador.set_can_target(False)
         superpuesto.add_overlay(self.marcador)
         self.entrada.get_buffer().connect("changed", self._al_cambiar_entrada)
-        fila_entrada.append(superpuesto)
+        pie.append(superpuesto)
 
-        botones = Gtk.Box(valign=Gtk.Align.END)
-        self.boton_enviar = Gtk.Button(label="Enviar")
-        self.boton_enviar.add_css_class("panki-boton")
-        self.boton_enviar.add_css_class("panki-enviar")
-        self.boton_enviar.connect("clicked", lambda *_: self._enviar_desde_entrada())
-        botones.append(self.boton_enviar)
-        self.boton_parar = Gtk.Button(label="Parar")
-        self.boton_parar.add_css_class("panki-boton")
-        self.boton_parar.add_css_class("panki-parar")
-        self.boton_parar.connect("clicked", lambda *_: self.parar())
-        self.boton_parar.set_visible(False)
-        botones.append(self.boton_parar)
-        fila_entrada.append(botones)
-        pie.append(fila_entrada)
+        fila_pie = Gtk.Box(spacing=8)
+        self.pie_google = Gtk.Label(label=PIE_GOOGLE, xalign=0, hexpand=True)
+        self.pie_google.add_css_class("panki-pie-google")
+        fila_pie.append(self.pie_google)
+        self.pie_permisos = Gtk.Box(spacing=2)
+        self.etiqueta_permisos = Gtk.Label()
+        self.etiqueta_permisos.add_css_class("panki-pie-permisos")
+        self.pie_permisos.append(self.etiqueta_permisos)
+        self.boton_revocar = Gtk.Button(label="Revocar")
+        self.boton_revocar.set_has_frame(False)
+        self.boton_revocar.add_css_class("panki-texto")
+        self.boton_revocar.connect("clicked", lambda *_: self.revocar_permisos())
+        self.pie_permisos.append(self.boton_revocar)
+        self.pie_permisos.set_visible(False)
+        fila_pie.append(self.pie_permisos)
+        pie.append(fila_pie)
 
     def _crear_bienvenida(self):
-        caja = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, halign=Gtk.Align.CENTER)
+        caja = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         caja.add_css_class("panki-bienvenida")
-        ruta = _ruta_icono()
-        if ruta:
-            imagen = Gtk.Image.new_from_file(ruta)
-            imagen.set_pixel_size(84)
-            caja.append(imagen)
-        titulo = Gtk.Label(label="Hola, soy pAnkI")
-        titulo.add_css_class("panki-bienvenida-titulo")
-        caja.append(titulo)
-        texto = Gtk.Label(label=BIENVENIDA, wrap=True, justify=Gtk.Justification.CENTER, max_width_chars=40)
-        texto.add_css_class("panki-bienvenida-texto")
+        texto = Gtk.Label(label=BIENVENIDA, wrap=True, xalign=0, max_width_chars=48)
         caja.append(texto)
         return caja
 
@@ -529,6 +656,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
             marcado = self._a_pango(texto)
             if not isinstance(marcado, str):
                 return None
+            marcado = _RESTOS_DE_MARCO.sub("", marcado)  # sin caracteres de dibujo de cajas, vengan de donde vengan
             Pango.parse_markup(marcado, -1, "\0")  # lanza GLib.Error si no está bien formado
             return marcado
         except Exception:
@@ -536,25 +664,38 @@ class VentanaPanki(Gtk.ApplicationWindow):
             return None
 
     def _anadir_burbuja(self, texto, tipo):
-        """Una burbuja. tipo: "usuario" (texto plano, a la derecha), "pa" (pAnkI, con marcado) o "error"."""
-        fila = Gtk.Box(halign=Gtk.Align.END if tipo == "usuario" else Gtk.Align.START)
-        burbuja = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        burbuja.add_css_class("panki-burbuja")
-        burbuja.add_css_class(f"panki-burbuja-{tipo}")
-        if tipo == "error":
-            titulo = Gtk.Label(label="Error", xalign=0)
-            titulo.add_css_class("panki-error-titulo")
-            burbuja.append(titulo)
-        etiqueta = Gtk.Label(xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
-                             selectable=True, max_width_chars=42)
-        marcado = self._marcado(texto) if tipo == "pa" else None
-        if marcado is not None:
-            etiqueta.set_markup(marcado)
-        else:
+        """Un turno de la conversación. tipo: "usuario" (texto plano, a la derecha), "pa" (pAnkI) o "error".
+
+        Sin burbujas de color: el texto de pAnkI fluye a la izquierda, el del usuario va a la derecha un tono más
+        apagado con una línea fina a su izquierda, y el error es una línea propia con la palabra "Error".
+        """
+        turno = Gtk.Box(halign=Gtk.Align.END if tipo == "usuario" else Gtk.Align.START, spacing=8)
+        turno.add_css_class(f"panki-burbuja-{tipo}")  # el nombre de clase solo identifica el tipo de turno
+        if tipo == "usuario":
+            turno.add_css_class("panki-usuario")
+            etiqueta = Gtk.Label(xalign=1, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True,
+                                 max_width_chars=38, justify=Gtk.Justification.RIGHT)
             etiqueta.set_text(texto)  # texto plano: nunca se interpreta como marcado
-        burbuja.append(etiqueta)
-        fila.append(burbuja)
-        self._anadir(fila)
+        elif tipo == "error":
+            turno.add_css_class("panki-error")
+            titulo = Gtk.Label(label="Error", xalign=0, valign=Gtk.Align.START)
+            titulo.add_css_class("panki-error-titulo")
+            turno.append(titulo)
+            etiqueta = Gtk.Label(xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True,
+                                 max_width_chars=50)
+            etiqueta.set_text(texto_visible(texto))
+        else:
+            turno.add_css_class("panki-pa")
+            etiqueta = Gtk.Label(xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True,
+                                 max_width_chars=56)
+            limpio = filtrar_texto_modelo(texto)
+            marcado = self._marcado(limpio)
+            if marcado is not None:
+                etiqueta.set_markup(marcado)
+            else:
+                etiqueta.set_text(limpio)
+        turno.append(etiqueta)
+        self._anadir(turno)
         return etiqueta
 
     def _anadir_nota(self, texto):
@@ -563,24 +704,62 @@ class VentanaPanki(Gtk.ApplicationWindow):
         self._anadir(etiqueta)
         return etiqueta
 
-    def _anadir_actividad(self, nombre, resumen):
-        texto = f"▸ {nombre}" + (f" — {resumen}" if resumen else "")
-        etiqueta = Gtk.Label(label=texto, xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR)
+    @staticmethod
+    def _verbo(nombre):
+        return VERBOS.get(nombre) if isinstance(nombre, str) else None
+
+    @staticmethod
+    def _destino(args):
+        """`ruta="~/x"` -> `~/x`; con varios argumentos se deja el resumen entero. Siempre limpio y recortado."""
+        m = re.fullmatch(r'\w+="(.*)"', args or "")
+        return una_linea(m.group(1) if m else (args or ""), 70)
+
+    def _linea_actividad(self, nombre, args=None, resultado=None, etiquetas=""):
+        verbo = self._verbo(nombre)
+        if verbo is None:
+            return "· " + DESCONOCIDA
+        texto = "· " + verbo
+        if args:
+            texto += " " + self._destino(args)
+        if resultado:
+            texto += " — " + una_linea(resultado, 110)
+        return texto + etiquetas
+
+    def _nueva_etiqueta_actividad(self, texto):
+        etiqueta = Gtk.Label(label=texto, xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE, single_line_mode=True)
         etiqueta.add_css_class("panki-actividad")
+        etiqueta.set_tooltip_text(texto)
         self._anadir(etiqueta)
-        self._actividad.append((nombre, etiqueta))
+        return etiqueta
+
+    def _anadir_actividad(self, nombre, resumen):
+        self._tarjeta_en_llamada = False
+        self._previo_avisado = False
+        etiqueta = self._nueva_etiqueta_actividad(self._linea_actividad(nombre, resumen))
+        self._actividad.append((nombre, etiqueta, resumen))
 
     def _cerrar_actividad(self, nombre, ok, resumen):
-        for i, (n, etiqueta) in enumerate(self._actividad):
+        for i, (n, etiqueta, args) in enumerate(self._actividad):
             if n == nombre:
                 del self._actividad[i]
                 break
         else:
-            etiqueta = Gtk.Label(xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR)
-            etiqueta.add_css_class("panki-actividad")
-            self._anadir(etiqueta)
-        etiqueta.set_text(("✓ " if ok else "✕ ") + f"{nombre}" + (f" — {resumen}" if resumen else ""))
-        etiqueta.add_css_class("panki-actividad-ok" if ok else "panki-actividad-fallo")
+            etiqueta, args = self._nueva_etiqueta_actividad("·"), None
+        # Sin tarjeta entre la llamada y su resultado: lo ha hecho un permiso anterior (o no pedía ninguno).
+        # Lo que el modelo lee se envía a Google; se dice en la propia línea.
+        previo = bool(ok) and (self._previo_avisado or (not self._tarjeta_en_llamada and nombre in VERBOS
+                                                          and nombre not in SIN_APROBACION))
+        etiquetas = ""
+        if self._verbo(nombre) is not None and ok:
+            etiquetas = (" (permiso previo)" if previo else "") + " · se envía a Google"
+        texto = self._linea_actividad(nombre, args, (resumen if ok else "no se pudo: " + resumen), etiquetas)
+        if self._verbo(nombre) is None:
+            texto = "· " + DESCONOCIDA
+        etiqueta.set_text(texto)
+        etiqueta.set_tooltip_text(texto)
+        if not ok:
+            etiqueta.add_css_class("panki-actividad-fallo")
+        self._actualizar_permisos()
 
     def _poner_estado(self, texto):
         self.estado.set_text(texto)
@@ -590,23 +769,49 @@ class VentanaPanki(Gtk.ApplicationWindow):
         pendiente = self.tarjeta_aprobacion is not None or self.tarjeta_clave is not None
         libre = not self._trabajando and not pendiente and self._nucleo is not None
         self.entrada.set_sensitive(libre)
-        self.boton_enviar.set_sensitive(libre)
-        self.boton_enviar.set_visible(not self._trabajando)
         self.boton_parar.set_visible(self._trabajando)
         self.boton_parar.set_sensitive(self._trabajando and not self._cancelado)
         self.boton_nueva.set_sensitive(not self._trabajando)
         self.boton_clave.set_sensitive(not self._trabajando and self.tarjeta_clave is None
                                        and self._nucleo is not None)
-        if self._trabajando:
-            self.ocupado.set_visible(True)
-            self.ocupado.start()
-        else:
-            self.ocupado.stop()
-            self.ocupado.set_visible(False)
+
+    # --------------------------------------------------------------------- permisos "en esta conversación"
+    def _permisos_activos(self):
+        agente = self._agente
+        try:
+            lista = list(agente.permisos_activos()) if agente is not None and hasattr(agente, "permisos_activos") else []
+        except Exception:  # el hilo del agente puede estar tocando la lista: se vuelve a mirar en el próximo suceso
+            return None
+        return [str(a) for a in lista]
+
+    def _actualizar_permisos(self):
+        """El pie «N permisos activos · Revocar», con el alcance literal de cada uno en la ayuda emergente."""
+        lista = self._permisos_activos()
+        if lista is None:
+            return
+        n = len(lista)
+        self.pie_permisos.set_visible(n > 0)
+        if n:
+            self.etiqueta_permisos.set_text(f"{n} permiso activo · " if n == 1 else f"{n} permisos activos · ")
+            self.pie_permisos.set_tooltip_text("\n".join(texto_visible(a) for a in lista))
+
+    def revocar_permisos(self):
+        """El pie «Revocar»: el agente vuelve a pedir permiso para todo. Devuelve cuántos revocó."""
+        agente = self._agente
+        n = 0
+        revocar = getattr(agente, "revocar_permisos", None)
+        if callable(revocar):
+            try:
+                n = revocar() or 0
+            except Exception:
+                registrar("agente.revocar_permisos() falló:\n" + traceback.format_exc())
+        self._actualizar_permisos()
+        return n
 
     # --------------------------------------------------------------------- entrada de texto
     def _al_cambiar_entrada(self, buffer):
         self.marcador.set_visible(buffer.get_char_count() == 0)
+        self.aviso_entrada.set_visible(False)
 
     def _tecla(self, _ctrl, keyval, _code, estado):
         if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
@@ -616,9 +821,22 @@ class VentanaPanki(Gtk.ApplicationWindow):
             return True
         return False
 
+    def _tecla_ventana(self, _ctrl, keyval, _code, _estado):
+        """Escape deniega la solicitud de permiso pendiente (a cualquier hora: denegar nunca es peligroso)."""
+        if keyval == Gdk.KEY_Escape and self.tarjeta_aprobacion is not None:
+            espera = getattr(self.tarjeta_aprobacion, "espera", None)
+            if espera is not None:
+                self._responder(espera, "no", "Denegado", forzar=True)
+                return True
+        return False
+
     def texto_de_entrada(self):
         buffer = self.entrada.get_buffer()
         return buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), False)
+
+    def _avisar_en_la_entrada(self, texto):
+        self.aviso_entrada.set_text(texto)
+        self.aviso_entrada.set_visible(True)
 
     def _enviar_desde_entrada(self):
         if not self.entrada.get_sensitive():
@@ -626,6 +844,9 @@ class VentanaPanki(Gtk.ApplicationWindow):
         texto = self.texto_de_entrada().strip()
         if not texto:
             return  # una entrada vacía no envía
+        if parece_clave(texto):  # una clave por el chat viajaría a Google y quedaría en el historial
+            self._avisar_en_la_entrada(AVISO_CLAVE_EN_ENTRADA)
+            return  # el texto se queda en la entrada, sin enviar
         self.entrada.get_buffer().set_text("")
         self.preguntar(texto)
 
@@ -637,6 +858,10 @@ class VentanaPanki(Gtk.ApplicationWindow):
         """
         texto = (texto or "").strip()
         if not texto or self._cerrada:
+            return
+        if parece_clave(texto):
+            self._devolver_a_la_entrada(texto)
+            self._avisar_en_la_entrada(AVISO_CLAVE_EN_ENTRADA)
             return
         if self._trabajando or self.tarjeta_aprobacion is not None or self.tarjeta_clave is not None:
             if len(self._cola) < MAX_COLA:
@@ -705,10 +930,15 @@ class VentanaPanki(Gtk.ApplicationWindow):
             GLib.idle_add(self._al_terminar, respuesta)
 
     def _describir_error(self, e):
-        """(mensaje para el usuario, ¿es un problema de la clave?). Se puede llamar desde cualquier hilo."""
+        """(mensaje para el usuario, ¿Gemini rechazó la clave?). Se puede llamar desde cualquier hilo.
+
+        La tarjeta de la clave solo se reabre por lo que el núcleo MARCA (`clave_invalida`, o el código HTTP
+        real 401/403), nunca por las palabras del mensaje: un texto con la palabra «clave» no puede forzarla.
+        """
         if self._errores and isinstance(e, self._errores):
             mensaje = sin_secretos(str(e)) or "pAnkI no pudo completar la petición."
-            return mensaje, getattr(e, "codigo", None) in (401, 403) or es_error_de_clave(mensaje)
+            es_clave = bool(getattr(e, "clave_invalida", False)) or getattr(e, "codigo", None) in (401, 403)
+            return mensaje, es_clave
         registrar("Fallo inesperado del agente:\n" + traceback.format_exc())
         return (f"Algo ha fallado dentro de pAnkI. El detalle está en {ETIQUETA_REGISTRO}.", False)
 
@@ -719,11 +949,13 @@ class VentanaPanki(Gtk.ApplicationWindow):
         try:
             tipo = evento[0]
             if tipo == "estado":
-                self._poner_estado(str(evento[1]))
+                self._poner_estado(una_linea(evento[1], 100))
             elif tipo == "herramienta":
-                self._anadir_actividad(str(evento[1]), str(evento[2]) if len(evento) > 2 else "")
+                self._anadir_actividad(evento[1], str(evento[2]) if len(evento) > 2 else "")
+            elif tipo == "permiso_previo":  # si el núcleo lo avisa, no hace falta deducirlo
+                self._previo_avisado = True
             elif tipo == "resultado":
-                self._cerrar_actividad(str(evento[1]), bool(evento[2]), str(evento[3]) if len(evento) > 3 else "")
+                self._cerrar_actividad(evento[1], bool(evento[2]), str(evento[3]) if len(evento) > 3 else "")
             elif tipo == "texto" and not self._cancelado:  # tras Parar, el texto es "Cancelado.": basta la nota
                 self._mostrar_respuesta(str(evento[1]))
         except Exception:
@@ -742,6 +974,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
             cancelado, self._cancelado = self._cancelado, False
         self._poner_estado("")
         self._actualizar_controles()
+        self._actualizar_permisos()
         return cancelado
 
     def _al_terminar(self, respuesta):
@@ -802,7 +1035,8 @@ class VentanaPanki(Gtk.ApplicationWindow):
     def aprobar(self, solicitud):
         """Callback `aprobar` del agente. Se llama DESDE EL HILO DEL AGENTE y bloquea hasta que el usuario responde.
 
-        Devuelve "no", "una_vez" o "conversacion". Si se pulsa Parar o se cierra la ventana, responde "no".
+        Devuelve "no", "una_vez" o "conversacion". Si se pulsa Parar, se oculta o se cierra la ventana, o pasan
+        3 minutos sin respuesta, responde "no".
         """
         espera = _Espera(solicitud)
         with self._candado:
@@ -823,14 +1057,18 @@ class VentanaPanki(Gtk.ApplicationWindow):
             return GLib.SOURCE_REMOVE  # ya se respondió "no" (Parar o cierre) antes de que llegara aquí
         tarjeta = self._crear_tarjeta_aprobacion(espera)
         espera.tarjeta = tarjeta
+        tarjeta.espera = espera
         self.tarjeta_aprobacion = tarjeta
+        self._tarjeta_en_llamada = True
         self._anadir(tarjeta)
         self._ajustar_detalle(tarjeta)
-        self._poner_estado("Esperando tu aprobación…")
+        espera.creada = time.monotonic()
+        espera.id_armado = GLib.timeout_add(RETARDO_ARMADO_MS, self._armar, espera)
+        espera.id_reloj = GLib.timeout_add(1000, self._reloj, espera)
+        self._poner_estado("Esperando tu permiso…")
         self._actualizar_controles()
         self._ir_al_final()
-        if not self.get_visible():
-            self.present()  # el agente está parado esperando: el usuario tiene que verlo
+        self.present()  # el agente está parado esperando: se trae a la vista siempre (oculta, minimizada o tapada)
         return GLib.SOURCE_REMOVE
 
     def _crear_tarjeta_aprobacion(self, espera):
@@ -841,87 +1079,165 @@ class VentanaPanki(Gtk.ApplicationWindow):
         tarjeta = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         tarjeta.add_css_class("panki-tarjeta")
         tarjeta.add_css_class(f"panki-riesgo-{riesgo}")
+        tarjeta.riesgo = riesgo
 
-        cabecera = Gtk.Box(spacing=8)
-        titulo = Gtk.Label(label=texto_visible(getattr(sol, "titulo", "")), xalign=0, hexpand=True,
-                           wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True)
-        titulo.add_css_class("panki-tarjeta-titulo")
-        cabecera.append(titulo)
-        insignia = Gtk.Label(label=f"Riesgo {riesgo}", valign=Gtk.Align.START)
-        insignia.add_css_class("panki-insignia")
-        insignia.add_css_class(f"panki-insignia-{riesgo}")
-        cabecera.append(insignia)
+        cabecera = Gtk.Box(spacing=6)
+        permiso = Gtk.Label(label="Permiso", xalign=0, hexpand=True)  # etiqueta fija: solo la interfaz la pone
+        permiso.add_css_class("panki-permiso")
+        cabecera.append(permiso)
+        punto = Gtk.Label(label="●")
+        punto.add_css_class("panki-punto")
+        cabecera.append(punto)
+        texto_riesgo = Gtk.Label(label=f"Riesgo {riesgo}")
+        texto_riesgo.add_css_class("panki-riesgo-texto")
+        cabecera.append(texto_riesgo)
         tarjeta.append(cabecera)
 
-        pregunta = Gtk.Label(label="pAnkI quiere hacer esto. ¿La dejas?", xalign=0)
-        pregunta.add_css_class("panki-tarjeta-texto")
-        tarjeta.append(pregunta)
+        titulo = Gtk.Label(label=texto_visible(getattr(sol, "titulo", "")), xalign=0, wrap=True,
+                           wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True)
+        titulo.add_css_class("panki-tarjeta-titulo")
+        tarjeta.append(titulo)
+
+        tarjeta.antiguedad = Gtk.Label(xalign=0)
+        tarjeta.antiguedad.add_css_class("panki-estado-tarjeta")
+        tarjeta.antiguedad.set_visible(False)
+        tarjeta.append(tarjeta.antiguedad)
 
         lineas = [texto_visible(linea) for linea in (getattr(sol, "detalle", None) or [])]
+        tarjeta.detalle = tarjeta.desplazable = None
+        tarjeta.mas = Gtk.Label(xalign=0)
+        tarjeta.mas.add_css_class("panki-mas")
+        tarjeta.mas.set_visible(False)
         if lineas:
             detalle = Gtk.Label(label="\n".join(lineas), xalign=0, yalign=0, wrap=True,
                                 wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True)
             detalle.add_css_class("panki-detalle")
+            # La barra de desplazamiento se ve siempre que haga falta (no es de las que aparecen al mover el ratón).
             desplazable = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, min_content_height=36,
-                                             max_content_height=ALTO_MAX_DETALLE)
+                                             max_content_height=ALTO_MAX_DETALLE, overlay_scrolling=False)
+            desplazable.add_css_class("panki-desplazable")
             desplazable.set_child(detalle)
             tarjeta.append(desplazable)
             tarjeta.detalle, tarjeta.desplazable = detalle, desplazable
+        tarjeta.append(tarjeta.mas)
 
-        fila1 = Gtk.Box(spacing=8)
-        permitir = self._boton("Permitir", "panki-permitir")
+        # Permitir y Denegar: mismo tamaño, mismo peso, posición fija. Nacen desactivados y con "…".
+        fila = Gtk.Box(spacing=8, homogeneous=True)
+        permitir = self._boton("…", "panki-decision")
         permitir.connect("clicked", lambda *_: self._responder(espera, "una_vez", "Permitido"))
-        denegar = self._boton("Denegar", "panki-denegar")
+        denegar = self._boton("…", "panki-decision")
         denegar.connect("clicked", lambda *_: self._responder(espera, "no", "Denegado"))
-        fila1.append(permitir)
-        fila1.append(denegar)
-        botones = [fila1]
+        for b in (permitir, denegar):
+            b.set_sensitive(False)
+            fila.append(b)
+        tarjeta.append(fila)
+        filas = [fila]
         tarjeta.permitir, tarjeta.denegar, tarjeta.conversacion = permitir, denegar, None
         if getattr(sol, "recordable", None) is not None:
-            conversacion = self._boton("Permitir en esta conversación", "panki-permitir-conversacion")
+            alcance = getattr(sol, "alcance", None) or getattr(sol, "titulo", "")
+            conversacion = Gtk.Button()
+            conversacion.set_has_frame(False)
+            conversacion.add_css_class("panki-concesion")
+            conversacion.etiqueta = Gtk.Label(label="Permitir en esta conversación: " + texto_visible(alcance),
+                                              xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR)
+            conversacion.set_child(conversacion.etiqueta)  # el alcance entero, en las líneas que haga falta
             conversacion.set_halign(Gtk.Align.START)
-            conversacion.connect("clicked",
-                                 lambda *_: self._responder(espera, "conversacion", "Permitido en esta conversación"))
+            conversacion.set_sensitive(False)
+            conversacion.connect("clicked", lambda *_: self._responder(
+                espera, "conversacion", "Permitido en esta conversación"))
             tarjeta.conversacion = conversacion
-            botones.append(conversacion)
-        for fila in botones:
-            tarjeta.append(fila)
-        tarjeta.filas_botones = botones
+            tarjeta.append(conversacion)
+            filas.append(conversacion)
+        tarjeta.filas_botones = filas
         return tarjeta
 
-    @staticmethod
-    def _ajustar_detalle(tarjeta):
-        """Da al detalle su alto real, hasta ALTO_MAX_DETALLE; más allá se desplaza.
+    def _ajustar_detalle(self, tarjeta):
+        """Da al detalle su alto real y avisa de cuántas líneas quedan fuera.
 
         Un Gtk.ScrolledWindow dentro de otro recibe solo su alto mínimo, así que el mínimo se iguala al alto que
-        necesita el texto (medido con el ancho que tiene en una ventana normal).
+        necesita el texto, hasta el máximo (mayor si el riesgo es alto). Si no cabe, «+N líneas más».
         """
-        detalle = getattr(tarjeta, "detalle", None)
+        detalle = tarjeta.detalle
         if detalle is None:
             return
-        natural = detalle.measure(Gtk.Orientation.VERTICAL, ANCHO_DETALLE)[1]
-        alto = max(36, min(ALTO_MAX_DETALLE, natural + 2))
+        maximo = ALTO_MAX_DETALLE_ALTO if tarjeta.riesgo == "alto" else ALTO_MAX_DETALLE
+        capa = detalle.create_pango_layout(detalle.get_text())
+        capa.set_wrap(Pango.WrapMode.WORD_CHAR)
+        capa.set_width((ANCHO_DETALLE - 16) * Pango.SCALE)
+        total = max(1, capa.get_line_count())
+        alto_texto = capa.get_pixel_size()[1]
+        alto = max(36, min(maximo, alto_texto + 18))
         tarjeta.desplazable.set_min_content_height(alto)
         tarjeta.desplazable.set_max_content_height(alto)
+        por_linea = alto_texto / total
+        visibles = int((alto - 16) / por_linea) if por_linea > 0 else total
+        if alto_texto + 18 > alto and total > visibles:
+            tarjeta.mas.set_text(f"+{total - visibles} líneas más: desplaza el detalle para verlas")
+            tarjeta.mas.set_visible(True)
 
     @staticmethod
     def _boton(texto, clase):
         boton = Gtk.Button(label=texto)
-        boton.add_css_class("panki-boton")
-        boton.add_css_class(clase)
+        boton.add_css_class("panki-decision")
+        if clase != "panki-decision":
+            boton.add_css_class(clase)
         return boton
 
-    def _responder(self, espera, valor, etiqueta):
-        """El usuario pulsó un botón de la tarjeta. La primera respuesta gana; las demás se ignoran."""
+    def _armar(self, espera):
+        """Pasados RETARDO_ARMADO_MS la tarjeta admite respuesta. Antes, un clic o una tecla no hacen nada."""
+        espera.id_armado = 0
+        if self._cerrada or espera.respuesta is not None or espera.tarjeta is None:
+            return GLib.SOURCE_REMOVE
+        espera.armada = True
+        t = espera.tarjeta
+        t.permitir.set_label("Permitir")
+        t.denegar.set_label("Denegar")
+        for b in (t.permitir, t.denegar, t.conversacion):
+            if b is not None:
+                b.set_sensitive(True)
+        return GLib.SOURCE_REMOVE
+
+    def _reloj(self, espera):
+        """Cada segundo, mientras la tarjeta espera: su antigüedad (pasados 30 s) y su caducidad (a los 3 min)."""
+        if self._cerrada or espera.respuesta is not None or espera.tarjeta is None:
+            espera.id_reloj = 0
+            return GLib.SOURCE_REMOVE
+        edad = time.monotonic() - espera.creada
+        if edad >= CADUCIDAD_S:
+            espera.id_reloj = 0
+            if espera.responder("no"):
+                self._resolver_tarjeta(espera, "Caducada sin respuesta: denegado")
+                self._anadir_nota("Una solicitud de permiso caducó sin respuesta y se denegó.")
+            return GLib.SOURCE_REMOVE
+        if edad >= ANTIGUEDAD_S:
+            t = espera.tarjeta
+            t.antiguedad.set_text(f"Esperando desde hace {int(edad)} s · caduca a los {CADUCIDAD_S // 60} min")
+            t.antiguedad.set_visible(True)
+        return GLib.SOURCE_CONTINUE
+
+    @staticmethod
+    def _cancelar_temporizadores(espera):
+        for atributo in ("id_armado", "id_reloj"):
+            identificador = getattr(espera, atributo)
+            if identificador:
+                setattr(espera, atributo, 0)
+                GLib.source_remove(identificador)
+
+    def _responder(self, espera, valor, etiqueta, forzar=False):
+        """El usuario pulsó un botón (o Escape). La primera respuesta gana. Antes del armado no hace nada."""
+        if not espera.armada and not forzar:
+            return
         if espera.responder(valor):
             self._resolver_tarjeta(espera, etiqueta)
 
     def _resolver_tarjeta(self, espera, etiqueta):
+        self._cancelar_temporizadores(espera)
         tarjeta = espera.tarjeta
         if tarjeta is None:
             return
         for fila in tarjeta.filas_botones:
             tarjeta.remove(fila)
+        tarjeta.antiguedad.set_visible(False)
         resuelta = Gtk.Label(label=etiqueta, xalign=0)
         resuelta.add_css_class("panki-resuelta")
         tarjeta.append(resuelta)
@@ -933,6 +1249,12 @@ class VentanaPanki(Gtk.ApplicationWindow):
             if self._trabajando and not self._cancelado:
                 self._poner_estado("Pensando…")
             self._actualizar_controles()
+            self._actualizar_permisos_tras(espera)
+
+    def _actualizar_permisos_tras(self, espera):
+        # El núcleo anota el permiso al volver aquí la respuesta; se mira cuando ya haya pasado.
+        if espera.respuesta == "conversacion":
+            GLib.timeout_add(150, lambda: self._actualizar_permisos() or GLib.SOURCE_REMOVE)
 
     def _soltar_aprobacion(self, etiqueta="Cancelado"):
         """Responde "no" a la aprobación pendiente, si la hay, y deja la tarjeta como cancelada."""
@@ -979,6 +1301,8 @@ class VentanaPanki(Gtk.ApplicationWindow):
                 registrar("agente.reiniciar() falló:\n" + traceback.format_exc())
         self._cola = []
         self._actividad = []
+        if self.tarjeta_aprobacion is not None and getattr(self.tarjeta_aprobacion, "espera", None) is not None:
+            self._cancelar_temporizadores(self.tarjeta_aprobacion.espera)
         self.tarjeta_aprobacion = None
         self.tarjeta_clave = None
         hijo = self.conversacion.get_first_child()
@@ -990,6 +1314,8 @@ class VentanaPanki(Gtk.ApplicationWindow):
         self.bienvenida.set_visible(True)
         self._hay_mensajes = False
         self._poner_estado("")
+        self.aviso_entrada.set_visible(False)
+        self._actualizar_permisos()
         if self._nucleo is not None and not self._nucleo.existe_clave():
             self._mostrar_tarjeta_clave("primera")
         self._actualizar_controles()
@@ -1000,13 +1326,17 @@ class VentanaPanki(Gtk.ApplicationWindow):
             self.entrada.grab_focus()
 
     def alternar(self):
-        """La burbuja y Super + N: muestra la ventana si está oculta; si está visible, la oculta (sin tocar la conversación)."""
+        """La burbuja y Super + N: muestra la ventana si está oculta; si está visible, la OCULTA.
+
+        Al ocultarla se revocan los permisos "en esta conversación" y se deniega lo que esté pendiente de
+        aprobar (nadie lo está mirando); la conversación sigue ahí al volver.
+        """
         if not self.get_visible():
             self.mostrar()
-        elif self.tarjeta_aprobacion is not None:
-            self.present()  # hay un permiso pendiente: no se oculta hasta que se decida
-        else:
-            self.set_visible(False)
+            return
+        self._soltar_aprobacion("Denegado al ocultar la ventana")
+        self.revocar_permisos()
+        self.set_visible(False)
 
     def liberar(self):
         """La ventana se cierra o la aplicación se apaga: nadie va a responder.
@@ -1024,7 +1354,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
         if self._trabajando or self._espera is not None:
             self.liberar()
             return False  # cierra de verdad: la aplicación termina
-        self.nueva_conversacion()  # lo que se habló se descarta al cerrar
+        self.nueva_conversacion()  # lo que se habló y sus permisos se descartan al cerrar
         self.set_visible(False)
         return True  # y se queda oculta, viva, para que la burbuja la abra al instante
 
@@ -1040,7 +1370,9 @@ class VentanaPanki(Gtk.ApplicationWindow):
         }
         tarjeta = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         tarjeta.add_css_class("panki-tarjeta")
-        tarjeta.add_css_class("panki-riesgo-medio")
+        etiqueta_fija = Gtk.Label(label="Clave", xalign=0)
+        etiqueta_fija.add_css_class("panki-permiso")
+        tarjeta.append(etiqueta_fija)
         titulo = Gtk.Label(label=titulos.get(motivo, titulos["cambiar"]), xalign=0, wrap=True)
         titulo.add_css_class("panki-tarjeta-titulo")
         tarjeta.append(titulo)
@@ -1064,16 +1396,16 @@ class VentanaPanki(Gtk.ApplicationWindow):
         mensaje.set_visible(False)
         tarjeta.append(mensaje)
 
-        fila = Gtk.Box(spacing=8)
-        guardar = self._boton("Guardar", "panki-permitir")
+        fila = Gtk.Box(spacing=8, homogeneous=True)
+        guardar = self._boton("Guardar", "panki-decision")
         guardar.connect("clicked", lambda *_: self._guardar_clave(tarjeta, campo, mensaje))
         campo.connect("activate", lambda *_: self._guardar_clave(tarjeta, campo, mensaje))
         fila.append(guardar)
         if motivo != "primera" and self._nucleo.existe_clave():
-            borrar = self._boton("Borrar clave", "panki-denegar")
+            borrar = self._boton("Borrar clave", "panki-decision")
             borrar.connect("clicked", lambda *_: self._borrar_clave(tarjeta, campo))
             fila.append(borrar)
-        cancelar = self._boton("Cancelar", "panki-denegar")
+        cancelar = self._boton("Cancelar", "panki-decision")
         cancelar.connect("clicked", lambda *_: self._cerrar_tarjeta_clave(tarjeta, campo))
         fila.append(cancelar)
         tarjeta.append(fila)
@@ -1119,6 +1451,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
         habia_conversacion = self._hay_mensajes
         self._agente = None  # el cliente de Gemini lleva la clave dentro: hay que crear otro
         self._cerrar_tarjeta_clave(tarjeta, campo, volver_a_la_entrada=False)
+        self._actualizar_permisos()
         self._anadir_nota("Clave guardada." + (" pAnkI empieza esta conversación de cero." if habia_conversacion else ""))
         self._siguiente_en_cola()
 
@@ -1131,6 +1464,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
             return
         self._agente = None
         self._cerrar_tarjeta_clave(tarjeta, campo)
+        self._actualizar_permisos()
         extra = " Se sigue usando GEMINI_API_KEY." if os.environ.get("GEMINI_API_KEY") else ""
         self._anadir_nota("Clave borrada de este equipo." + extra)
 

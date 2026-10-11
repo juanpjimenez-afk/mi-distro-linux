@@ -46,6 +46,7 @@ class Solicitud:
     detalle: list
     riesgo: str
     recordable: object
+    alcance: str = ""
 
 
 @dataclass
@@ -70,12 +71,15 @@ class EjecutorFalso:
     invalida (ErrorHerramienta), rota_preparar / rota_ejecutar (excepción inesperada), enorme / opaca."""
 
     NOMBRES = ("info_sistema", "leer_archivo", "mover_archivo", "invalida", "rota_preparar", "rota_ejecutar",
-               "enorme", "opaca", "muta_args")
+               "enorme", "opaca", "muta_args", "resumen_largo")
 
     def __init__(self):
         self.preparadas = []
         self.ejecutadas = []
         self.al_ejecutar = None
+        self.alcance_leer = "Leer CUALQUIER archivo de ~/Docs hasta cerrar la conversación"
+        self.mensaje_invalida = "La ruta no está permitida."
+        self.resumen = None
 
     def declaraciones(self):
         return [{"name": n, "description": f"Herramienta {n}", "parameters": {"type": "OBJECT", "properties": {}}}
@@ -84,7 +88,7 @@ class EjecutorFalso:
     def preparar(self, nombre, args):
         self.preparadas.append((nombre, copy.deepcopy(args)))
         if nombre == "invalida":
-            raise ErrorHerramienta("La ruta no está permitida.")
+            raise ErrorHerramienta(self.mensaje_invalida)
         if nombre == "rota_preparar":
             raise RuntimeError(f"Traceback en {SECRETO_INTERNO} línea 3")
         if nombre == "muta_args":
@@ -92,7 +96,8 @@ class EjecutorFalso:
             args.setdefault("lista", []).append("mutada")
         solicitud = None
         if nombre == "leer_archivo":
-            solicitud = Solicitud(nombre, "Leer notas.txt", ["~/Docs/notas.txt"], "bajo", "carpeta:/home/u/Docs")
+            solicitud = Solicitud(nombre, "Leer notas.txt", ["~/Docs/notas.txt"], "bajo", "carpeta:/home/u/Docs",
+                                alcance=self.alcance_leer)
         elif nombre == "mover_archivo":
             solicitud = Solicitud(nombre, "Mover a.txt", ["a.txt -> b.txt"], "medio", None)
         return Preparada(nombre, args, solicitud)
@@ -107,7 +112,8 @@ class EjecutorFalso:
             return Resultado(True, {"texto": "x" * (N.MAX_RESULTADO + 10)}, "enorme")
         if preparada.nombre == "opaca":
             return Resultado(True, {"objeto": object()}, "opaca")
-        return Resultado(True, {"herramienta": preparada.nombre, "args": preparada.args}, f"{preparada.nombre} hecho")
+        resumen = self.resumen if preparada.nombre == "resumen_largo" else f"{preparada.nombre} hecho"
+        return Resultado(True, {"herramienta": preparada.nombre, "args": preparada.args}, resumen)
 
 
 # ------------------------------------------------------------------------------ servidor HTTP falso
@@ -238,7 +244,8 @@ class ConServidor(unittest.TestCase):
         self._nivel = raiz.level
         raiz.setLevel(logging.DEBUG)
         raiz.addHandler(self.manejador)
-        self._env = mock.patch.dict(os.environ, {}, clear=False)
+        self._config = tempfile.TemporaryDirectory()  # cargar_clave() no debe leer la clave real del usuario
+        self._env = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": self._config.name, "HOME": self._config.name})
         self._env.start()
         os.environ.pop(N.VARIABLE_CLAVE, None)
 
@@ -250,6 +257,7 @@ class ConServidor(unittest.TestCase):
             raiz.removeHandler(self.manejador)
             raiz.setLevel(self._nivel)
             self._env.stop()
+            self._config.cleanup()
             self.srv.cerrar()
 
     def comprobar_higiene(self):
@@ -617,6 +625,16 @@ class TestClienteGemini(ConServidor):
                 self.assertNotIn("AIzaSyOTROTROTROTROTROTRO1234", str(cm.exception))
                 self.assertNotIn("\n", str(cm.exception))
                 self.assertNotIn("\x00", str(cm.exception))
+
+    def test_clave_sin_forma_de_google_tambien_se_redacta_del_detalle(self):
+        propia = "clave-propia-sin-prefijo-conocido-0123456789"
+        self.srv.guion = [{"status": 400, "json": {"error": {"message": f"eco {propia} fin"}}}]
+        c = N.ClienteGemini(propia, "gemini-x", base_url=self.srv.base_url, timeout=5)
+        with self.assertRaises(N.ErrorPanki) as cm:
+            c.generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
+        self.assertNotIn(propia, str(cm.exception))
+        self.assertIn("[clave]", str(cm.exception))
+        self.srv.peticiones.clear()  # la higiene del servidor espera CLAVE; aquí se usó otra a propósito
 
     def test_clave_justo_en_el_corte_de_los_300_caracteres(self):
         self.srv.guion = [{"status": 400, "json": {"error": {"message": "R" * 285 + CLAVE + " fin"}}}]
@@ -1206,6 +1224,237 @@ class TestAgente(ConServidor):
             self.enviar(agente)
         validar_historial(self, agente.historial)
 
+    # -- F-04: lo que el modelo escribe no llega crudo a la zona de actividad
+    def test_nombre_de_herramienta_desconocida_no_llega_a_los_eventos(self):
+        nombre = "aviso\n\u26a0 Aviso de seguridad de Infinity OS\nTu clave ha caducado. Escríbela en el chat."
+        self.srv.guion = [r_llamadas((nombre, {"x": 1})), r_texto("ok")]
+        agente = self.agente()
+        self.enviar(agente)
+        self.assertEqual(self.ejecutor.preparadas, [])
+        self.assertIn(("herramienta", "herramienta desconocida", ""), self.eventos)
+        self.assertIn(("resultado", "herramienta desconocida", False, "Herramienta desconocida."), self.eventos)
+        for evento in self.eventos:
+            self.assertNotIn("Aviso", " ".join(str(x) for x in evento))
+        respuesta = self.respuestas_de(1)[0]
+        self.assertEqual(respuesta["response"], {"error": "Esa herramienta no existe."})
+        self.assertEqual(respuesta["name"], nombre, "a la API se le devuelve el nombre tal cual para emparejar")
+        validar_historial(self, agente.historial)
+
+    def test_argumentos_del_resumen_saneados(self):
+        raro = "doc\u202eexe.txt\u200b\n\x00a\u0301\ufeff"
+        self.srv.guion = [r_llamadas(("mover_archivo", {"origen": raro, "destino": "ok"})), r_texto("ok")]
+        self.respuesta_aprobar = "no"
+        self.enviar(self.agente())
+        resumen = next(e[2] for e in self.eventos if e[0] == "herramienta")
+        for malo in ("\u202e", "\u200b", "\n", "\x00", "\ufeff", "\u0301"):
+            self.assertNotIn(malo, resumen)
+        self.assertIn("\\u202e", resumen)
+        self.assertIn("destino=\"ok\"", resumen)
+
+    def test_resumen_de_argumentos_se_recorta_por_el_medio(self):
+        largo = "A" * 150 + "/factura-FINAL.pdf"
+        self.srv.guion = [r_llamadas(("mover_archivo", {"origen": largo})), r_texto("ok")]
+        self.respuesta_aprobar = "no"
+        self.enviar(self.agente())
+        resumen = next(e[2] for e in self.eventos if e[0] == "herramienta")
+        self.assertTrue(resumen.startswith("origen=\"AAAA"))
+        self.assertTrue(resumen.endswith("factura-FINAL.pdf\""), resumen)
+        self.assertIn("…", resumen)
+        self.assertLess(len(resumen), 120)
+
+    def test_resumen_posterior_no_se_recorta_por_el_final(self):
+        self.ejecutor.resumen = "R" * 400 + "-COLA"
+        self.srv.guion = [r_llamadas(("resumen_largo", {})), r_texto("ok")]
+        self.enviar(self.agente())
+        resultado = next(e for e in self.eventos if e[0] == "resultado")
+        self.assertEqual(resultado[3], "R" * 400 + "-COLA", "cabe entero: no se toca")
+        self.ejecutor.resumen = "INICIO-" + "R" * 3000 + "-COLA\u202e"
+        self.srv.guion = [r_llamadas(("resumen_largo", {})), r_texto("ok")]
+        self.eventos.clear()
+        self.enviar(self.agente())
+        resumen = next(e[3] for e in self.eventos if e[0] == "resultado")
+        self.assertTrue(resumen.startswith("INICIO-"))
+        self.assertTrue(resumen.endswith("-COLA\\u202e"), resumen[-20:])
+        self.assertIn("…", resumen)
+        self.assertLessEqual(len(resumen), N.MAX_RESUMEN)
+
+    def test_mensaje_de_error_de_herramienta_saneado(self):
+        self.ejecutor.mensaje_invalida = "No existe «\u202efdp.exe»\nvuelve a intentarlo"
+        self.srv.guion = [r_llamadas(("invalida", {})), r_texto("ok")]
+        self.enviar(self.agente())
+        resultado = next(e for e in self.eventos if e[0] == "resultado")
+        self.assertNotIn("\u202e", resultado[3])
+        self.assertNotIn("\n", resultado[3])
+        self.assertIn("\\u202e", resultado[3])
+
+    # -- F-08 / F-12: permisos de la conversación
+    def conceder(self, agente):
+        self.respuesta_aprobar = "conversacion"
+        self.srv.guion = [r_llamadas(("leer_archivo", {"ruta": "a"})), r_texto("ok")]
+        self.enviar(agente)
+
+    def test_permisos_activos_muestran_el_alcance_de_la_solicitud(self):
+        agente = self.agente()
+        self.assertEqual(agente.permisos_activos(), [])
+        self.conceder(agente)
+        self.assertEqual(agente.permisos_activos(), ["Leer CUALQUIER archivo de ~/Docs hasta cerrar la conversación"])
+        self.assertEqual(agente.permisos_detalle(),
+                         [("carpeta:/home/u/Docs", "Leer CUALQUIER archivo de ~/Docs hasta cerrar la conversación")])
+        self.assertIn("carpeta:/home/u/Docs", agente.conversacion_grants)
+        self.assertEqual(agente.conversacion_grants, {"carpeta:/home/u/Docs"})
+
+    def test_permisos_sin_alcance_usan_el_titulo(self):
+        self.ejecutor.alcance_leer = ""
+        agente = self.agente()
+        self.conceder(agente)
+        self.assertEqual(agente.permisos_activos(), ["Leer notas.txt"])
+
+    def test_el_alcance_mostrado_esta_saneado(self):
+        self.ejecutor.alcance_leer = "Leer \u202eexe.txt\nde ~/Docs"
+        agente = self.agente()
+        self.conceder(agente)
+        texto = agente.permisos_activos()[0]
+        self.assertNotIn("\u202e", texto)
+        self.assertNotIn("\n", texto)
+
+    def test_revocar_un_permiso_por_clave_o_por_texto_y_volver_a_preguntar(self):
+        for como in ("clave", "texto"):
+            with self.subTest(como=como):
+                self.preguntas.clear()
+                agente = self.agente()
+                self.srv.peticiones.clear()
+                self.conceder(agente)
+                destino = "carpeta:/home/u/Docs" if como == "clave" else agente.permisos_activos()[0]
+                self.assertEqual(agente.revocar_permisos(destino), 1)
+                self.assertEqual(agente.permisos_activos(), [])
+                self.assertEqual(agente.conversacion_grants, set())
+                self.assertEqual(agente.revocar_permisos(destino), 0)
+                self.srv.guion = [r_llamadas(("leer_archivo", {"ruta": "b"})), r_texto("ok")]
+                self.respuesta_aprobar = "una_vez"
+                n = len(self.preguntas)
+                self.enviar(agente, "otra")
+                self.assertEqual(len(self.preguntas), n + 1, "tras revocar hay que volver a pedir permiso")
+
+    def test_revocar_todos(self):
+        agente = self.agente()
+        self.conceder(agente)
+        agente.conversacion_grants.add("contenido:/otro", "Leer otra cosa")
+        self.assertEqual(len(agente.permisos_activos()), 2)
+        self.assertEqual(agente.revocar_permisos("no-existe"), 0)
+        self.assertEqual(agente.revocar_permisos(), 2)
+        self.assertEqual(agente.permisos_activos(), [])
+        self.assertEqual(agente.conversacion_grants, set())
+
+    def test_reiniciar_limpia_los_permisos_y_sus_textos(self):
+        agente = self.agente()
+        self.conceder(agente)
+        agente.reiniciar()
+        self.assertEqual(agente.permisos_activos(), [])
+        self.assertEqual(agente.permisos_detalle(), [])
+        self.assertEqual(agente.conversacion_grants.alcances, {})
+        self.assertEqual(agente.historial, [])
+
+    def test_el_conjunto_de_permisos_sigue_siendo_un_conjunto(self):
+        agente = self.agente()
+        agente.conversacion_grants.add("k")
+        self.assertIn("k", agente.conversacion_grants)
+        self.assertEqual(agente.permisos_activos(), ["k"])
+        agente.conversacion_grants.discard("k")
+        self.assertEqual(agente.permisos_activos(), [])
+
+    def test_aprobacion_que_caduca_es_un_no_y_no_deja_permiso(self):
+        # La ventana pone el límite de tiempo y devuelve "no" cuando caduca: el núcleo ya lo trata como denegado.
+        self.respuesta_aprobar = "no"
+        self.srv.guion = [r_llamadas(("leer_archivo", {"ruta": "a"})), r_texto("No pude leerlo."),
+                          r_llamadas(("leer_archivo", {"ruta": "a"})), r_texto("Ahora sí.")]
+        agente = self.agente()
+        self.assertEqual(self.enviar(agente), "No pude leerlo.")
+        self.assertEqual(self.ejecutor.ejecutadas, [])
+        self.assertEqual(agente.permisos_activos(), [])
+        self.assertEqual(self.respuestas_de(1)[0]["response"], {"error": "El usuario no permitió esta acción."})
+        self.respuesta_aprobar = "una_vez"
+        self.assertEqual(self.enviar(agente, "reintenta"), "Ahora sí.")
+        self.assertEqual(len(self.preguntas), 2, "la caducidad no concedió nada")
+        self.assertEqual(self.ejecutor.ejecutadas, ["leer_archivo"])
+
+    # -- F-05: una clave pegada en el chat no se envía
+    def test_clave_pegada_en_el_chat_no_se_envia(self):
+        agente = self.agente()
+        for texto in ("AIzaSyD-" + "x" * 31, "mi clave es AIzaSy" + "A1_-" * 10 + " úsala", "\nAIza" + "b" * 40):
+            with self.subTest(texto=texto[:30]):
+                with self.assertRaises(N.ErrorPanki) as cm:
+                    self.enviar(agente, texto)
+                self.assertEqual(str(cm.exception), "Ese texto parece una clave de API; no se envía.")
+                self.assertNotIn("AIza", str(cm.exception))
+        self.assertEqual(agente.historial, [])
+        self.assertEqual(self.srv.peticiones, [])
+        self.assertEqual(self.eventos, [])
+
+    def test_la_clave_en_uso_pegada_en_el_chat_no_se_envia(self):
+        propia = "clave-propia-sin-forma-conocida-0123456789"
+        agente = self.agente()
+        os.environ[N.VARIABLE_CLAVE] = propia
+        with self.assertRaises(N.ErrorPanki) as cm:
+            self.enviar(agente, f"usa esta: {propia}")
+        self.assertNotIn(propia, str(cm.exception))
+        del os.environ[N.VARIABLE_CLAVE]
+        N.guardar_clave(propia)  # también la guardada en el archivo
+        with self.assertRaises(N.ErrorPanki):
+            self.enviar(agente, f"{propia}")
+        self.assertEqual(agente.historial, [])
+        self.assertEqual(self.srv.peticiones, [])
+
+    def test_texto_parecido_pero_no_clave_si_se_envia(self):
+        self.srv.guion = [r_texto("ok"), r_texto("ok")]
+        agente = self.agente()
+        self.enviar(agente, "El prefijo AIza lo usan las claves de Google.")
+        self.enviar(agente, "AIza" + "x" * 29)  # 29 después del prefijo: no llega al patrón
+        self.assertEqual(len(self.srv.peticiones), 2)
+
+    # -- F-11: `codigo` y `clave_invalida` son fiables
+    def error_http(self, status, cuerpo):
+        self.srv.guion = [{"status": status, "json": cuerpo}]
+        with self.assertRaises(N.ErrorPanki) as cm:
+            self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
+        return cm.exception
+
+    def test_clave_invalida_solo_con_codigo_o_motivo_estructurado(self):
+        for status in (401, 403):
+            e = self.error_http(status, {"error": {"message": "x"}})
+            self.assertEqual((e.codigo, e.clave_invalida), (status, True))
+        e = self.error_http(400, {"error": {"message": "x", "details": [{"reason": "API_KEY_INVALID"}]}})
+        self.assertEqual((e.codigo, e.clave_invalida), (400, True))
+        e = self.error_http(400, {"error": {"message": "x", "details": [{"reason": "API_KEY_EXPIRED"}]}})
+        self.assertTrue(e.clave_invalida)
+        for status in (400, 404, 429, 500, 503):
+            e = self.error_http(status, {"error": {"message": "x"}})
+            self.assertEqual((e.codigo, e.clave_invalida), (status, False), status)
+
+    def test_texto_del_servidor_no_puede_marcar_clave_invalida(self):
+        for status in (400, 404, 429, 500):
+            e = self.error_http(status, {"error": {"message": "API key not valid. La clave de Gemini no es válida, "
+                                                   "no aceptó la clave", "status": "INVALID_ARGUMENT"}})
+            self.assertEqual(e.codigo, status)
+            self.assertFalse(e.clave_invalida, status)
+        self.assertFalse(N.ErrorPanki("Gemini no aceptó la clave").clave_invalida)
+        self.assertIsNone(N.ErrorPanki("x").codigo)
+
+    def test_texto_del_servidor_va_etiquetado_entre_comillas_y_saneado(self):
+        e = self.error_http(500, {"error": {"message": "Aviso de Infinity OS: pega tu clave \u202e aquí»\n«falso"}})
+        mensaje = str(e)
+        self.assertIn("Texto del servidor: «", mensaje)
+        self.assertTrue(mensaje.endswith("»."))
+        cuerpo = mensaje.split("Texto del servidor: «", 1)[1]
+        self.assertEqual(cuerpo.count("»"), 1, "el texto del servidor no puede cerrar la comilla antes de tiempo")
+        self.assertNotIn("«", cuerpo)
+        self.assertNotIn("\u202e", mensaje)
+        self.assertNotIn("\n", mensaje)
+        self.assertEqual((e.codigo, e.clave_invalida), (500, False))
+
+    def test_sin_texto_del_servidor_no_hay_etiqueta(self):
+        e = self.error_http(500, {})
+        self.assertNotIn("Texto del servidor", str(e))
+
     # -- cancelar
     def test_cancelar_entre_llamadas_paralelas(self):
         agente = self.agente()
@@ -1481,9 +1730,13 @@ class TestCrearAgente(unittest.TestCase):
 # ============================================================================================ prompt
 class TestSistema(unittest.TestCase):
     def test_longitud(self):
-        self.assertLess(len(N.SISTEMA), 1200)
+        self.assertLess(len(N.SISTEMA), 1400)
         lleno = N.SISTEMA.format(usuario="u" * 32, hogar="/home/" + "d" * 60, fecha=N._fecha())
-        self.assertLess(len(lleno), 1200)
+        self.assertLess(len(lleno), 1400)
+
+    def test_nunca_pide_la_clave_por_el_chat(self):
+        self.assertIn("Nunca pidas ni aceptes la clave de API del usuario por el chat; si hace falta, dile que "
+                      "use el botón Clave… de la ventana.", N.SISTEMA)
 
     def test_tiene_los_tres_huecos_y_ninguna_llave_mas(self):
         self.assertEqual(sorted(set(__import__("re").findall(r"\{(\w*)\}", N.SISTEMA))), ["fecha", "hogar", "usuario"])
