@@ -124,6 +124,10 @@ def _abrir_dir_clave(crear):
         if crear:
             raise
         return None
+    except OSError as e:
+        if e.errno in (errno.ELOOP, errno.ENOTDIR) and os.path.islink(ruta):
+            raise OSError(errno.ELOOP, "enlace simbólico") from None  # Linux da ENOTDIR para O_DIRECTORY
+        raise
     try:
         if os.fstat(fd).st_uid != os.getuid():
             raise PermissionError(errno.EPERM, "la carpeta no es del usuario")
@@ -680,6 +684,8 @@ class Agente:
             if self._cancelado.is_set():
                 return self._cancelar_turno(n0, alevento)
             self._emitir(alevento, "estado", "Pensando…")
+            if self._cancelado.is_set():  # la interfaz pudo cancelar al recibir el estado
+                return self._cancelar_turno(n0, alevento)
             self._recortar()
             error = None
             respuesta = None
