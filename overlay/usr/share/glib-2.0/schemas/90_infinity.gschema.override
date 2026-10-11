@@ -12,3 +12,9 @@ enable-animations=true
 [org.gnome.Epiphany]
 default-search-engine='Google'
 incognito-search-engine='Google'
+
+# Sin botones de ventana de GTK/libadwaita (el valor es "izquierda:derecha", aquí las dos vacías): los controles
+# (-, [], x) los dibuja el shell junto a cada ventana (shell/infinity_shell/controles.py). pAnkI fija su propio
+# layout en su HeaderBar y conserva los suyos.
+[org.gnome.desktop.wm.preferences]
+button-layout=':'

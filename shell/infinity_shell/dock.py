@@ -19,12 +19,28 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .ajustes import valor as ajuste  # noqa: E402
+from .controles_logica import elegir_destino_clic, es_minimizada, restaurar  # noqa: E402
 
 ALTO = 60  # alto común de las tres islas (px)
 ORBE = 48  # diámetro de las esferas de cristal (el logo y la burbuja de pAnkI), más pequeñas que el dock
-LOGO_ORBE = 26  # lado del símbolo dentro de la esfera
-ELEVACION_ORBE = 10  # el ∞ queda este tanto más arriba que la fila del dock y del estado (px)
+LOGO_ORBE = 26  # lado nominal del símbolo dentro de la esfera (entero: es el pixel_size de Gtk.Image)
+ESCALA_SIMBOLO = 0.95  # reducción fina del símbolo: la aplica style.css (button.orb image); 26 -> ~24,7 px
 MARGEN = 14  # separación con el borde de la pantalla
+HUECO_ESFERAS = 14  # aire entre la píldora de estado y las esferas que van encima de la fila del dock
+
+
+def margen_esferas(margen=MARGEN, alto=ALTO, hueco=HUECO_ESFERAS):
+    """Margen entre el borde inferior de la pantalla y el de las esferas (el ∞ y la burbuja de pAnkI):
+    deja libres el margen, la fila de las islas (dock y píldora de estado, que ocupan `alto`) y un hueco."""
+    return margen + alto + hueco
+
+
+# ÚNICA fuente de verdad de la altura de las dos esferas: el ∞ (Orbe) y la burbuja de pAnkI (panki_burbuja)
+# usan este mismo margen inferior, así que sus centros quedan siempre a la misma altura. Se mide desde el
+# borde inferior de la pantalla (no depende del alto del monitor). Para la lectura alternativa «solo 9 px
+# más arriba que ahora» (∞ a MARGEN + (ALTO - ORBE) // 2 + 9 = 39 px, la burbuja sin moverse a 88 px), el
+# Orbe tendría que dejar de usar esta constante y usar 39.
+ALTURA_ESFERAS = margen_esferas()
 
 RUTAS_ASSETS = [
     os.environ.get("INFINITY_ASSETS", ""),
@@ -88,6 +104,18 @@ def _ejecutar(cmd):
 
 
 # =================================================================== ORBE
+def simbolo_de_esfera(ruta):
+    """El símbolo blanco (SVG) de una esfera, con el mismo tamaño en el ∞ y en la burbuja de pAnkI.
+
+    Mide LOGO_ORBE px (pixel_size solo admite enteros) y se centra en la esfera en vez de rellenarla; el
+    «achique» fino lo hace style.css con -gtk-icon-transform: scale(ESCALA_SIMBOLO)."""
+    simbolo = Gtk.Image.new_from_file(ruta)
+    simbolo.set_pixel_size(LOGO_ORBE)
+    simbolo.set_halign(Gtk.Align.CENTER)
+    simbolo.set_valign(Gtk.Align.CENTER)
+    return simbolo
+
+
 class Orbe(Gtk.Window):
     """El logo (∞) en una esfera de cristal. Al pulsarlo se abre el buscador."""
 
@@ -95,17 +123,15 @@ class Orbe(Gtk.Window):
         super().__init__(application=app, title="Infinity — Orbe")
         _capa(self, "infinity-orb", [LayerShell.Edge.BOTTOM, LayerShell.Edge.LEFT],
               (LayerShell.Edge.LEFT, MARGEN + 4))
-        # La esfera es más baja que el dock: se centra con él y se eleva un poco más
-        LayerShell.set_margin(self, LayerShell.Edge.BOTTOM, MARGEN + (ALTO - ORBE) // 2 + ELEVACION_ORBE)
+        # El ∞ va a la misma altura que la burbuja de pAnkI, encima de la fila del dock y del estado
+        LayerShell.set_margin(self, LayerShell.Edge.BOTTOM, ALTURA_ESFERAS)
         boton = Gtk.Button()
         boton.add_css_class("orb")
         boton.set_size_request(ORBE, ORBE)
         boton.set_tooltip_text("Buscar y apagar  (Super + Espacio)")
         ruta = asset("logo-white.svg")
         if ruta:
-            logo = Gtk.Image.new_from_file(ruta)
-            logo.set_pixel_size(LOGO_ORBE)  # ancho del logo dentro de la esfera
-            boton.set_child(logo)
+            boton.set_child(simbolo_de_esfera(ruta))
         else:
             boton.set_label("∞")
         boton.connect("clicked", lambda *_: al_pulsar())
@@ -265,7 +291,7 @@ class Dock(Gtk.Window):
         # menús abiertos, los tooltips y el estado de "hover", y gasta CPU para nada.
         firma = tuple(
             (el.app.id if el.app else "clase:" + (el.clase or "").casefold(), el.fijada,
-             tuple(v["address"] for v in el.ventanas),
+             tuple((v["address"], es_minimizada(v)) for v in el.ventanas),
              any(v["address"] == activa for v in el.ventanas))
             for el in elementos
         )
@@ -315,9 +341,13 @@ class Dock(Gtk.Window):
         return boton
 
     def _pulsar(self, el):
-        if el.ventanas:
-            # Salta a la ventana más reciente que no esté ya en primer plano.
-            destino = next((v for v in el.ventanas if v["address"] != self.activa), el.ventanas[0])
+        # Salta a la ventana más reciente que no esté ya en primer plano. Las minimizadas (espacio especial
+        # `minimizadas`) siguen siendo ventanas de la app: si no hay otra a la vista, se trae la última al
+        # espacio de trabajo activo y recibe el foco (controles_logica.restaurar).
+        que, destino = elegir_destino_clic(el.ventanas, self.activa)
+        if que == "restaurar":
+            restaurar(self.hypr, destino["address"])
+        elif que == "enfocar":
             self.hypr.despachar("focuswindow", f"address:{destino['address']}")
         elif el.app:
             el.app.lanzar()

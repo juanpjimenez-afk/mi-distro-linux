@@ -8,21 +8,39 @@ allí. Esta ventana solo muestra, valida y aplica; la lógica está en ajustes.p
 import os
 import re
 import sys
+import threading
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from . import ajustes as A  # noqa: E402
+from . import fondos as F  # noqa: E402
 
 APP_ID = "org.infinity.Ajustes"
 # Frase que se añade a la descripción de los ajustes que no recargan nada al aplicar.
 AYUDA_APLICA = {
     "nuevo": "Se aplica a las ventanas que abras después.",
     "conversacion": "Se aplica en la próxima conversación de pAnkI.",
+    "bloqueo": "Se aplica la próxima vez que se bloquee la pantalla.",
 }
+# Los ajustes que se eligen con una galería de miniaturas en vez de un desplegable: id → qué fondo es.
+GALERIAS = {"escritorio.fondo": "escritorio", "bloqueo.fondo": "bloqueo"}
+MOSAICO_ANCHO, MOSAICO_ALTO = 176, 99   # la miniatura (16:9)
+CSS = """
+.fondo-mosaico { padding: 6px; border-radius: 12px; border: 2px solid transparent; }
+flowboxchild { border-radius: 14px; padding: 2px; }
+flowboxchild:selected { background-color: alpha(@theme_selected_bg_color, 0.22); }
+flowboxchild:selected, flowboxchild:selected label { color: @theme_fg_color; }
+flowboxchild:selected .fondo-mosaico { border-color: @theme_selected_bg_color; }
+.fondo-miniatura { border-radius: 8px; background-color: rgba(128, 128, 128, 0.25); }
+.fondo-marca { background-color: @theme_selected_bg_color; color: @theme_selected_fg_color; border-radius: 99px;
+               padding: 0 7px; margin: 6px; font-weight: bold; }
+.fondo-infinito { font-size: 44px; color: rgba(255, 255, 255, 0.18); }
+"""
+
 _BIND = re.compile(r"^\s*(bind[a-z]*)\s*=\s*(.*)$")
 
 
@@ -84,6 +102,219 @@ def _atajos(ruta):
     return filas
 
 
+class GaleriaFondos(Gtk.Box):
+    """Galería de miniaturas para elegir un fondo: el catálogo del sistema, los del usuario y, en el
+    escritorio, «Color sólido». Reemplaza al desplegable de los ajustes escritorio.fondo y bloqueo.fondo.
+
+    `valor` es el mismo texto que guarda el ajuste (un id; en el escritorio también «imagen» y «color»).
+    La ventana le da las funciones para añadir y quitar fondos; aquí solo se dibuja y se elige.
+    """
+
+    def __init__(self, ajuste, ventana):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.ajuste = ajuste
+        self.destino = GALERIAS[ajuste.id]
+        self.ventana = ventana
+        self._valor = ajuste.defecto
+        self._ajustando = False
+        self._mosaicos = {}     # valor → FlowBoxChild
+        self._marcas = {}       # valor → etiqueta ✓
+        self._colores = []      # cajas de «Color sólido», para pintarles el color
+        self.set_margin_top(8)
+        self.set_margin_bottom(14)
+
+        titulo = Gtk.Label(label=ajuste.etiqueta, xalign=0, wrap=True)
+        titulo.add_css_class("heading")
+        self.append(titulo)
+        ayuda = " ".join(p for p in (ajuste.descripcion, AYUDA_APLICA.get(ajuste.aplica, "")) if p)
+        if ayuda:
+            etiqueta = Gtk.Label(label=ayuda, xalign=0, wrap=True)
+            etiqueta.add_css_class("dim-label")
+            self.append(etiqueta)
+
+        self.caja = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.SINGLE, homogeneous=True,
+                                min_children_per_line=2, max_children_per_line=6, row_spacing=8,
+                                column_spacing=8, valign=Gtk.Align.START, activate_on_single_click=True)
+        self.caja.connect("selected-children-changed", self._al_elegir)
+        self.append(self.caja)
+
+        pie = Gtk.Box(spacing=10)
+        self.boton_anadir = Gtk.Button(label="Añadir imagen…")
+        self.boton_anadir.set_tooltip_text("Elige una imagen de tu equipo (por ejemplo, una que hayas guardado "
+                                           "desde el navegador, en Descargas).")
+        self.boton_anadir.connect("clicked", lambda *_: ventana.elegir_imagen(self))
+        pie.append(self.boton_anadir)
+        self.rueda = Gtk.Spinner()
+        pie.append(self.rueda)
+        self.aviso = Gtk.Label(xalign=0, wrap=True, hexpand=True)
+        pie.append(self.aviso)
+        self.append(pie)
+        nota = Gtk.Label(label="Desde el navegador: clic derecho sobre la imagen → «Guardar imagen como…» y "
+                               "elígela aquí (se abre en Descargas). También puedes arrastrar un archivo "
+                               "de imagen a esta ventana.", xalign=0, wrap=True)
+        nota.add_css_class("dim-label")
+        self.append(nota)
+
+        # Arrastrar y soltar un archivo de imagen sobre la galería
+        destino = Gtk.DropTarget.new(Gio.File, Gdk.DragAction.COPY)
+        destino.set_gtypes([Gdk.FileList, Gio.File])
+        destino.connect("drop", self._al_soltar)
+        self.add_controller(destino)
+        self.recargar()
+
+    # ---------------------------------------------------------------- valor
+    @property
+    def valor(self):
+        return self._valor
+
+    @valor.setter
+    def valor(self, v):
+        if v == F.ID_CASCADA and self.destino == "escritorio":
+            v = F.VALOR_CASCADA
+        self._valor = v
+        self._marcar()
+
+    def _marcar(self):
+        """Pone la selección y las ✓ según el valor, sin avisar a la ventana."""
+        self._ajustando = True
+        try:
+            hijo = self._mosaicos.get(self._valor)
+            if hijo is None:
+                self.caja.unselect_all()
+            else:
+                self.caja.select_child(hijo)
+            for v, marca in self._marcas.items():
+                marca.set_visible(v == self._valor)
+        finally:
+            self._ajustando = False
+
+    def _al_elegir(self, caja):
+        if self._ajustando:
+            return
+        elegido = caja.get_selected_children()
+        if not elegido:
+            return
+        for v, hijo in self._mosaicos.items():
+            if hijo is elegido[0]:
+                self._valor = v
+                break
+        self._marcar()
+        self.ventana._cambio()
+
+    # ---------------------------------------------------------------- contenido
+    def recargar(self):
+        """Vuelve a leer los fondos del disco y rehace las miniaturas."""
+        self._ajustando = True
+        try:
+            while (hijo := self.caja.get_first_child()) is not None:
+                self.caja.remove(hijo)
+            self._mosaicos.clear()
+            self._marcas.clear()
+            self._colores.clear()
+            fondos = [f for f in F.listar() if (f.escritorio if self.destino == "escritorio" else f.bloqueos)]
+            for f in (x for x in fondos if x.origen != "usuario"):
+                self._anadir(F.VALOR_CASCADA if (f.id == F.ID_CASCADA and self.destino == "escritorio") else f.id, f)
+            if self.destino == "escritorio":
+                self._anadir(F.VALOR_COLOR, None)
+            for f in (x for x in fondos if x.origen == "usuario"):
+                self._anadir(f.id, f)
+        finally:
+            self._ajustando = False
+        self.pintar_color()
+        self._marcar()
+
+    def _anadir(self, valor, fondo):
+        """Una miniatura: la imagen, el nombre y, si es del usuario, «Quitar»."""
+        tarjeta = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        tarjeta.add_css_class("fondo-mosaico")
+        marco = Gtk.Overlay()
+        if fondo is None:   # «Color sólido»: el color elegido y la marca ∞
+            imagen = Gtk.Box(halign=Gtk.Align.FILL, valign=Gtk.Align.FILL)
+            imagen.add_css_class("fondo-solido")
+            infinito = Gtk.Label(label="∞", halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+            infinito.add_css_class("fondo-infinito")
+            imagen.append(infinito)
+            infinito.set_hexpand(True)
+            self._colores.append(imagen)
+            nombre = "Color sólido"
+        else:
+            foto = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, can_shrink=True)
+            if fondo.miniatura:
+                foto.set_filename(fondo.miniatura)
+            # Una Picture pide el tamaño de su imagen. Dentro de una ventana con scroll (sin barras) el
+            # mosaico mide siempre lo mismo y la foto se recorta para llenarlo.
+            imagen = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                        vscrollbar_policy=Gtk.PolicyType.NEVER, child=foto)
+            nombre = fondo.nombre
+        imagen.set_size_request(MOSAICO_ANCHO, MOSAICO_ALTO)
+        imagen.add_css_class("fondo-miniatura")
+        imagen.set_overflow(Gtk.Overflow.HIDDEN)
+        marco.set_child(imagen)
+        marca = Gtk.Label(label="✓", halign=Gtk.Align.END, valign=Gtk.Align.START)
+        marca.add_css_class("fondo-marca")
+        marca.set_visible(False)
+        marco.add_overlay(marca)
+        tarjeta.append(marco)
+        etiqueta = Gtk.Label(label=nombre, xalign=0.5, ellipsize=Pango.EllipsizeMode.END, max_width_chars=22)
+        tarjeta.append(etiqueta)
+        if fondo is not None and fondo.origen == "usuario":
+            quitar = Gtk.Button(label="Quitar", halign=Gtk.Align.CENTER)
+            quitar.add_css_class("flat")
+            quitar.set_tooltip_text("Borra este fondo de tu carpeta de fondos.")
+            quitar.connect("clicked", lambda *_: self.ventana.quitar_fondo(fondo))
+            tarjeta.append(quitar)
+        hijo = Gtk.FlowBoxChild(halign=Gtk.Align.START, valign=Gtk.Align.START)  # sin estirarse
+        hijo.set_child(tarjeta)
+        hijo.set_tooltip_text(nombre)
+        self.caja.append(hijo)
+        self._mosaicos[valor] = hijo
+        self._marcas[valor] = marca
+
+    def pintar_color(self):
+        """Colorea «Color sólido» con el color que hay en el ajuste de color del fondo."""
+        color = self.ventana.color_fondo()
+        proveedor = getattr(self, "_proveedor", None)
+        if proveedor is None:
+            proveedor = self._proveedor = Gtk.CssProvider()
+            display = Gdk.Display.get_default()
+            if display is not None:
+                Gtk.StyleContext.add_provider_for_display(display, proveedor, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        proveedor.load_from_string(f".fondo-solido {{ background-color: {color}; }}")
+
+    # ---------------------------------------------------------------- avisos
+    def mostrar(self, texto, error=False):
+        """Un mensaje dentro de la propia página (rojo si es un error)."""
+        self.aviso.set_text(texto)
+        if error:
+            self.aviso.add_css_class("error")
+        else:
+            self.aviso.remove_css_class("error")
+
+    def ocupado(self, si, texto=""):
+        self.boton_anadir.set_sensitive(not si)
+        self.rueda.set_spinning(si)
+        if si:
+            self.mostrar(texto)
+
+    def _al_soltar(self, _destino, valor, _x, _y):
+        if isinstance(valor, Gdk.FileList):
+            ficheros = valor.get_files()
+        elif isinstance(valor, Gio.File):
+            ficheros = [valor]
+        else:
+            return False
+        if not ficheros:
+            return False
+        ruta = ficheros[0].get_path()
+        if ruta is None:
+            self.mostrar("Solo se pueden añadir archivos de este equipo.", error=True)
+            return True
+        if len(ficheros) > 1:
+            self.mostrar("Se añade una imagen cada vez: se usa la primera.")
+        self.ventana.importar_imagen(ruta, self)
+        return True
+
+
 class VentanaAjustes(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Ajustes", default_width=920, default_height=660)
@@ -91,6 +322,12 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         self.guardado = dict(self.valores)
         self.controles = {}
         self._cargando = True  # hasta cargar los valores, los controles no cuentan como cambios
+        self._importando = False
+        display = Gdk.Display.get_default()
+        if display is not None:
+            estilo = Gtk.CssProvider()
+            estilo.load_from_string(CSS)
+            Gtk.StyleContext.add_provider_for_display(display, estilo, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         raiz = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.set_child(raiz)
@@ -153,10 +390,15 @@ class VentanaAjustes(Gtk.ApplicationWindow):
                 self._nota_panki(caja)
             for a in A.SCHEMA:
                 if a.pagina == clave:
-                    caja.append(self._fila(a))
+                    caja.append(self._galeria(a) if a.id in GALERIAS else self._fila(a))
         scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         scroll.set_child(caja)
         return scroll
+
+    def _galeria(self, a):
+        g = GaleriaFondos(a, self)
+        self.controles[a.id] = g
+        return g
 
     def _fila(self, a):
         fila = Gtk.Box(spacing=18)
@@ -195,6 +437,8 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         elif a.tipo == "color":
             w = Gtk.ColorDialogButton.new(Gtk.ColorDialog())
             w.connect("notify::rgba", self._cambio)
+            if a.id == "escritorio.color":
+                w.connect("notify::rgba", lambda *_: self.controles["escritorio.fondo"].pintar_color())
         else:  # texto
             w = Gtk.Entry(width_chars=22)
             w.connect("changed", self._cambio)
@@ -315,7 +559,9 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         valores = {}
         for a in A.SCHEMA:
             w = self.controles[a.id]
-            if a.tipo == "bool":
+            if a.id in GALERIAS:
+                v = w.valor
+            elif a.tipo == "bool":
                 v = w.get_active()
             elif a.tipo == "choice":
                 i = w.get_selected()
@@ -337,7 +583,9 @@ class VentanaAjustes(Gtk.ApplicationWindow):
             for a in A.SCHEMA:
                 w = self.controles[a.id]
                 v = valores.get(a.id, a.defecto)
-                if a.tipo == "bool":
+                if a.id in GALERIAS:
+                    w.valor = v
+                elif a.tipo == "bool":
                     w.set_active(bool(v))
                 elif a.tipo == "choice":
                     claves = [o for o, _ in a.opciones]
@@ -357,6 +605,128 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         nuevos, _ = A.validar(self._leer_controles())
         n = len(A.cambiados(self.guardado, nuevos))
         self._estado(f"Hay {n} cambio(s) sin aplicar. Pulsa Aplicar para usarlos." if n else "")
+
+    # ---------------------------------------------------------------- fondos
+    def color_fondo(self):
+        """El color sólido del escritorio tal como está ahora en pantalla (o el guardado, al construir)."""
+        w = self.controles.get("escritorio.color")
+        try:
+            return _hex(w.get_rgba()) if w is not None else self.valores["escritorio.color"]
+        except (AttributeError, KeyError):
+            return A.DEFECTOS["escritorio.color"]
+
+    def _galerias(self):
+        return [self.controles[i] for i in GALERIAS if i in self.controles]
+
+    @staticmethod
+    def _monitores():
+        """Tamaño lógico de cada monitor conectado: infinity-lock busca el fondo por esa resolución."""
+        medidas = []
+        display = Gdk.Display.get_default()
+        lista = display.get_monitors() if display is not None else None
+        for i in range(lista.get_n_items() if lista is not None else 0):
+            g = lista.get_item(i).get_geometry()
+            medidas.append((g.width, g.height))
+        return medidas
+
+    def elegir_imagen(self, galeria):
+        """«Añadir imagen…»: el selector de archivos, en Descargas y solo con imágenes."""
+        if self._importando:
+            galeria.mostrar("Ya se está añadiendo una imagen. Espera a que termine.", error=True)
+            return
+        filtro = Gtk.FileFilter()
+        filtro.set_name("Imágenes")
+        filtro.add_mime_type("image/*")
+        filtro.add_pixbuf_formats()
+        for sufijo in ("jpg", "jpeg", "png", "webp", "bmp", "gif", "tif", "tiff"):
+            filtro.add_suffix(sufijo)
+        filtros = Gio.ListStore.new(Gtk.FileFilter)
+        filtros.append(filtro)
+        dialogo = Gtk.FileDialog(title="Añadir imagen como fondo", filters=filtros, default_filter=filtro)
+        dialogo.set_initial_folder(Gio.File.new_for_path(F.descarga_dir()))
+        dialogo.open(self, None, self._imagen_elegida, galeria)
+
+    def _imagen_elegida(self, dialogo, resultado, galeria):
+        try:
+            fichero = dialogo.open_finish(resultado)
+        except GLib.Error:
+            return  # cancelado
+        ruta = fichero.get_path()
+        if ruta is None:
+            galeria.mostrar("Solo se pueden añadir archivos de este equipo.", error=True)
+            return
+        self.importar_imagen(ruta, galeria)
+
+    def importar_imagen(self, ruta, galeria):
+        """Convierte la imagen en un fondo, en un hilo aparte para que la ventana no se congele."""
+        if self._importando:
+            galeria.mostrar("Ya se está añadiendo una imagen. Espera a que termine.", error=True)
+            return
+        self._importando = True
+        for g in self._galerias():
+            g.ocupado(True, "Preparando la imagen…" if g is galeria else "")
+        monitores = self._monitores()
+
+        def avance(hecho, total):
+            GLib.idle_add(galeria.mostrar, f"Preparando la imagen… ({hecho}/{total})")
+
+        def trabajo():
+            try:
+                fondo, error = F.importar(ruta, monitores=monitores, progreso=avance), ""
+            except F.ErrorFondo as e:
+                fondo, error = None, str(e)
+            except Exception as e:  # nunca en silencio: el error se enseña en la página
+                fondo, error = None, f"No se pudo añadir la imagen ({type(e).__name__}: {e})."
+            GLib.idle_add(self._importacion_lista, fondo, error, galeria)
+
+        threading.Thread(target=trabajo, daemon=True).start()
+
+    def _importacion_lista(self, fondo, error, galeria):
+        self._importando = False
+        for g in self._galerias():
+            g.ocupado(False)
+            g.recargar()
+        if fondo is None:
+            galeria.mostrar(error, error=True)
+            return GLib.SOURCE_REMOVE
+        galeria.valor = fondo.id   # queda elegida, pendiente de Aplicar
+        otra = "Se verá la próxima vez que se bloquee la pantalla." if galeria.destino == "bloqueo" else ""
+        galeria.mostrar(f"«{fondo.nombre}» añadida y elegida. Pulsa Aplicar para usarla. {otra}".strip())
+        self._cambio()
+        return GLib.SOURCE_REMOVE
+
+    def quitar_fondo(self, fondo):
+        """«Quitar»: pide confirmación y borra el fondo del usuario."""
+        dialogo = Gtk.AlertDialog()
+        dialogo.set_message(f"¿Quitar el fondo «{fondo.nombre}»?")
+        dialogo.set_detail("Se borra de tu carpeta de fondos y no se puede deshacer. "
+                           "La imagen original no se toca.")
+        dialogo.set_buttons(["Cancelar", "Quitar"])
+        dialogo.set_cancel_button(0)
+        dialogo.set_default_button(0)
+        dialogo.choose(self, None, self._quitar_confirmado, fondo)
+
+    def _quitar_confirmado(self, dialogo, resultado, fondo):
+        try:
+            if dialogo.choose_finish(resultado) != 1:
+                return
+        except GLib.Error:
+            return  # cerrado sin elegir
+        try:
+            F.quitar(fondo.id)
+        except F.ErrorFondo as e:
+            for g in self._galerias():
+                g.mostrar(str(e), error=True)
+            return
+        for g in self._galerias():
+            g.recargar()
+            if g.valor == fondo.id:  # era el elegido: vuelve al de siempre
+                g.valor = g.ajuste.defecto
+                g.mostrar(f"«{fondo.nombre}» quitado. Vuelve a estar elegido el fondo por defecto; "
+                          "pulsa Aplicar para usarlo.")
+            else:
+                g.mostrar(f"«{fondo.nombre}» quitado.")
+        self._cambio()
 
     # ---------------------------------------------------------------- acciones
     def _aplicar(self, *_):

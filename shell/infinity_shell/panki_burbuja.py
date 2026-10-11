@@ -1,14 +1,15 @@
 """La burbuja de pAnkI: una esfera de cristal en el borde derecho del escritorio.
 
-Es la hermana del logo (dock.Orbe, abajo a la izquierda): la misma esfera de 60 px y el mismo estilo
-`button.orb`, con la clase `panki` para su matiz propio. Vive en el borde derecho, justo encima de la
-píldora de estado (volumen, batería, red y hora), sin tapar esa píldora ni el dock:
+Es la hermana del logo (dock.Orbe, abajo a la izquierda): la misma esfera de 48 px, el mismo símbolo
+(dock.simbolo_de_esfera) y el mismo estilo `button.orb`, con la clase `panki` para su matiz propio. Vive en el
+borde derecho, justo encima de la píldora de estado (volumen, batería, red y hora), sin tapar esa píldora ni el
+dock, y a la misma altura que el logo (los dos usan dock.ALTURA_ESFERAS):
 
     pantalla (de abajo arriba, en el borde derecho)
         MARGEN            aire con el borde de la pantalla
         ALTO              la píldora de estado
-        HUECO             aire entre la píldora y la burbuja
-        ALTO              la burbuja
+        HUECO_ESFERAS     aire entre la píldora y la burbuja
+        ORBE              la burbuja (su margen inferior es ALTURA_ESFERAS = MARGEN + ALTO + HUECO_ESFERAS)
 
 Al pulsarla abre o cierra la ventana de chat (panki_app.py). Sin animaciones ni temporizadores propios:
 cuesta lo mismo que el logo.
@@ -23,9 +24,10 @@ from gi.repository import Gtk4LayerShell as LayerShell  # noqa: E402  (antes que
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from .dock import ALTO, LOGO_ORBE, MARGEN, ORBE, _capa, asset  # noqa: E402
+from .dock import (ALTURA_ESFERAS, HUECO_ESFERAS, MARGEN, ORBE, _capa, asset,  # noqa: E402
+                   simbolo_de_esfera)
 
-HUECO = 14  # aire entre la burbuja y la píldora de estado (px)
+HUECO = HUECO_ESFERAS  # aire entre la burbuja y la píldora de estado (px); definido en dock.py
 MARGEN_DERECHO = MARGEN + 4  # el mismo que el de la píldora de estado (dock.Estado)
 
 # Abrir/cerrar la ventana de chat si la app ya está en marcha; si no, lanzarla. Listas de argumentos,
@@ -34,10 +36,11 @@ ALTERNAR = ["gapplication", "action", "org.infinity.Panki", "alternar"]
 ABRIR = ["infinity-panki"]
 
 
-def margen_inferior(margen=MARGEN, alto=ALTO, hueco=HUECO):
+def margen_inferior():
     """Margen entre el borde inferior de la pantalla y el de la burbuja: deja libres el margen, la
-    píldora de estado (que ocupa `alto`) y un hueco de aire."""
-    return margen + alto + hueco
+    píldora de estado y un hueco de aire. Es el mismo que el del ∞ (dock.ALTURA_ESFERAS, única fuente de
+    verdad), así que las dos esferas quedan a la misma altura."""
+    return ALTURA_ESFERAS
 
 
 def lanzar_proceso(argv, al_terminar=None):
@@ -84,9 +87,7 @@ class BurbujaPanki(Gtk.Window):
         boton.set_tooltip_text("pAnkI, tu agente virtual  (Super + N)")
         ruta = asset("panki-white.svg")
         if ruta:
-            marca = Gtk.Image.new_from_file(ruta)
-            marca.set_pixel_size(LOGO_ORBE)  # como el ∞ del logo dentro de la esfera
-            boton.set_child(marca)
+            boton.set_child(simbolo_de_esfera(ruta))  # del mismo tamaño que el ∞ del logo
         else:
             boton.set_label("✦")
         boton.connect("clicked", self._pulsar)

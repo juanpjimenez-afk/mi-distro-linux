@@ -12,6 +12,8 @@ import threading
 
 from gi.repository import GLib
 
+from .controles_logica import es_minimizada
+
 
 def _ruta(nombre):
     firma = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
@@ -67,9 +69,10 @@ class Hyprland:
         return self.pedir("dispatch " + " ".join(str(a) for a in args))
 
     def ventanas(self):
-        """Ventanas visibles, ordenadas de la más a la menos usada recientemente."""
+        """Ventanas visibles, ordenadas de la más a la menos usada recientemente. Las minimizadas (espacio
+        especial `minimizadas`) cuentan: siguen siendo ventanas de su app en el dock."""
         todas = self.json("clients", []) or []
-        vis = [c for c in todas if c.get("mapped") and not c.get("hidden")]
+        vis = [c for c in todas if c.get("mapped") and (not c.get("hidden") or es_minimizada(c))]
         vis.sort(key=lambda c: c.get("focusHistoryID", 99))
         return vis
 

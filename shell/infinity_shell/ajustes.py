@@ -20,7 +20,47 @@ import re
 import subprocess
 from collections import namedtuple
 
+from . import fondos as F
+from .controles_logica import HUECO_SUPERIOR_MIN
+
 Ajuste = namedtuple("Ajuste", "id pagina etiqueta descripcion tipo defecto aplica minimo maximo opciones")
+
+
+class OpcionesFondo:
+    """Opciones de un ajuste de fondo. No son una lista fija: salen del catálogo del sistema y de los
+    fondos que el usuario ha añadido, así que se leen del disco cada vez que se recorren.
+
+    `destino` es "escritorio" (admite además "imagen" = la cascada, y "color") o "bloqueo".
+    Valen para todo lo que usa `opciones`: recorrerlas da pares (valor, etiqueta).
+    """
+
+    def __init__(self, destino):
+        self.destino = destino
+
+    def __iter__(self):
+        if self.destino == "escritorio":
+            yield F.VALOR_CASCADA, "Cascada"
+            yield F.VALOR_COLOR, "Color sólido"
+        for f in F.listar():
+            if self.destino == "escritorio":
+                if f.escritorio and f.id != F.ID_CASCADA:  # la cascada ya es «imagen»
+                    yield f.id, f.nombre
+            elif f.bloqueos:
+                yield f.id, f.nombre
+
+    def normalizar(self, texto):
+        """El valor canónico de `texto`, o None si no es una opción. Un id solo se mira si tiene buen formato."""
+        if self.destino == "escritorio":
+            if texto in (F.VALOR_CASCADA, F.VALOR_COLOR):
+                return texto
+            if texto == F.ID_CASCADA:  # alias: «imagen» es la cascada
+                return F.VALOR_CASCADA
+            f = F.buscar(texto)
+            return texto if f and f.escritorio else None
+        if texto == F.ID_BLOQUEO_DEFECTO:  # siempre vale: hay respaldo aunque falte el catálogo
+            return texto
+        f = F.buscar(texto)
+        return texto if f and f.bloqueos else None
 
 
 def _a(id, pagina, etiqueta, descripcion, tipo, defecto, aplica, minimo=None, maximo=None, opciones=None):
@@ -42,9 +82,9 @@ PAGINAS = [
 # "aplica" indica qué hay que recargar al pulsar Aplicar (ver ACCION_POR_APLICA).
 SCHEMA = [
     # ---------------------------------------------------------------- escritorio
-    _a("escritorio.fondo", "escritorio", "Fondo",
-       "La cascada, o un color sólido sin imagen. En un equipo lento, el color gasta mucho menos CPU.",
-       "choice", "imagen", "fondo", opciones=[("imagen", "Cascada"), ("color", "Color sólido")]),
+    _a("escritorio.fondo", "escritorio", "Fondo del escritorio",
+       "Elige una imagen, añade la tuya o usa un color sólido. En un equipo lento, el color gasta mucho menos CPU.",
+       "choice", "imagen", "fondo", opciones=OpcionesFondo("escritorio")),
     _a("escritorio.color", "escritorio", "Color del fondo sólido",
        "Se ve cuando el fondo es de color.", "color", "#15193a", "hypr"),
     _a("escritorio.marca", "escritorio", "Marca ∞ sobre el fondo de color",
@@ -77,6 +117,9 @@ SCHEMA = [
        "int", 3, "shell", minimo=1, maximo=10),
 
     # --------------------------------------------------------- bloqueo y energía
+    _a("bloqueo.fondo", "bloqueo", "Fondo de la pantalla de bloqueo",
+       "Elige una imagen o añade la tuya.", "choice", F.ID_BLOQUEO_DEFECTO, "bloqueo",
+       opciones=OpcionesFondo("bloqueo")),
     _a("bloqueo.minutos", "bloqueo", "Bloquear tras (minutos sin actividad)",
        "Muestra la pantalla de bloqueo.", "int", 10, "hypridle", minimo=1, maximo=120),
     _a("bloqueo.apagar_pantalla", "bloqueo", "Apagar la pantalla tras (minutos sin actividad)",
@@ -138,6 +181,7 @@ ACCION_POR_APLICA = {
     "fondo": ("wallpaper", "shell"),
     "shell": ("shell",),
     "nuevo": (),
+    "bloqueo": (),  # el fondo del bloqueo se lee la próxima vez que se bloquea (infinity-lock)
     "conversacion": (),
 }
 ORDEN_ACCIONES = ("hypr", "hypridle", "wallpaper", "shell")
@@ -194,6 +238,11 @@ def _coaccionar(a, valor):
         return valor
     if t == "choice":
         texto = _texto_de(valor)
+        if isinstance(a.opciones, OpcionesFondo):
+            canonico = a.opciones.normalizar(texto)
+            if canonico is None:
+                raise ValueError("ese fondo no existe")
+            return canonico
         if texto not in [o for o, _ in a.opciones]:
             raise ValueError("opción no válida")
         return texto
@@ -268,6 +317,13 @@ def importar(ruta):
         datos = json.load(f)
     if not isinstance(datos, dict):
         raise ValueError("el fichero no contiene ajustes de Infinity")
+    # Un fondo que añadió el usuario en otro equipo no existe aquí: no tiene sentido rechazar todo el fichero
+    # por eso, y vuelve al fondo por defecto.
+    for id_ in ("escritorio.fondo", "bloqueo.fondo"):
+        a = _POR_ID[id_]
+        if id_ in datos and isinstance(datos[id_], str) and a.opciones.normalizar(datos[id_]) is None:
+            datos = dict(datos)
+            datos[id_] = a.defecto
     return validar(datos)
 
 
@@ -313,6 +369,9 @@ def _bool(b):
 
 def hypr_conf(v):
     """infinity-ajustes.conf: Hyprland lo lee al final de hyprland.conf, así que sus valores mandan."""
+    lateral = v["ventanas.hueco"] + 8
+    # El hueco de arriba es 20 px mayor (y nunca menor que HUECO_SUPERIOR_MIN): ahí van los controles de ventana.
+    superior = max(HUECO_SUPERIOR_MIN, lateral + 20)
     return f"""# Generado por Ajustes de Infinity OS: no lo edites a mano, usa la app de Ajustes.
 # Se lee al final de hyprland.conf: lo que hay aquí tiene prioridad sobre lo de allí.
 
@@ -330,7 +389,7 @@ input {{
 
 general {{
     gaps_in  = {v["ventanas.hueco"]}
-    gaps_out = {v["ventanas.hueco"] + 8}
+    gaps_out = {superior}, {lateral}, {lateral}, {lateral}
 }}
 
 decoration {{
@@ -457,6 +516,7 @@ def generar(v, textos=None):
         "foot/foot.ini": foot_ini(textos.get("foot/foot.ini", ""), v),
         "infinity/estilo.css": estilo_css(v),
         "infinity/fondo": v["escritorio.fondo"] + "\n",
+        "infinity/fondo-bloqueo": v["bloqueo.fondo"] + "\n",
     }
 
 

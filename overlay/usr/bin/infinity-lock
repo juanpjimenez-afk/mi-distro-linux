@@ -2,8 +2,10 @@
 # Bloquea la pantalla con la hora en directo, como en la maqueta de referencia (gtklock).
 #
 # La hora, su tamaño y su posición se calculan según la resolución de la pantalla donde está el
-# foco: las plantillas están en /usr/share/infinity/lock/ (layout.tpl y style.tpl) y el fondo
-# en /usr/share/infinity/lock/fondos/. Si gtklock no arranca, se usa swaylock.
+# foco: las plantillas están en /usr/share/infinity/lock/ (layout.tpl y style.tpl). El fondo es el que
+# elegiste en Ajustes → Bloqueo y energía (~/.config/infinity/fondo-bloqueo): /usr/libexec/infinity/fondo-ruta
+# busca su imagen para la resolución de la pantalla; si falla, usa islandia, luego /usr/share/infinity/lock/fondos/
+# y, si tampoco hay, gtklock arranca sin imagen (pero bloquea). Si gtklock no arranca, se usa swaylock.
 #
 # OJO: "gtklock -d" devuelve 1 aunque bloquee bien, así que no se fía de su código de salida:
 # se lanza en segundo plano y se comprueba que sigue vivo.
@@ -31,7 +33,9 @@ fi
 pidof gtklock >/dev/null 2>&1 && exit 0
 pidof swaylock >/dev/null 2>&1 && exit 0
 
-LIB=/usr/share/infinity/lock
+# INFINITY_SHARE e INFINITY_LIBEXEC solo se cambian en las pruebas.
+LIB="${INFINITY_SHARE:-/usr/share/infinity}/lock"
+LIBEXEC="${INFINITY_LIBEXEC:-/usr/libexec/infinity}"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/infinity/lock"
 mkdir -p "$CACHE" 2>/dev/null || exec swaylock
 
@@ -55,10 +59,20 @@ sed -e "s/@MARGEN_SUPERIOR@/$MT/" -e "s/@MARGEN_DERECHO@/$MD/" -e "s/@MARGEN_FEC
     "$LIB/layout.tpl" > "$CACHE/layout.xml"
 sed -e "s/@TAMANO_HORA@/$TH/" -e "s/@TAMANO_FECHA@/$TF/" "$LIB/style.tpl" > "$CACHE/style.css"
 
-FONDO="$LIB/fondos/wallpaper-lock-${LW}x${LH}.jpg"
-[ -r "$FONDO" ] || FONDO="$LIB/fondos/wallpaper-lock-1920x1080.jpg"
+# Fondo: el elegido en Ajustes (fondo-ruta ya comprueba que existe y que es un JPEG y tiene su propia
+# cadena de respaldo). Si ni eso funciona, el fondo antiguo; y si tampoco, sin imagen: el bloqueo es
+# lo importante y nunca depende de que haya una imagen.
+FONDO=$("$LIBEXEC/fondo-ruta" bloqueo "$LW" "$LH" 2>/dev/null)
+if [ -z "$FONDO" ] || [ ! -r "$FONDO" ]; then
+    FONDO="$LIB/fondos/wallpaper-lock-${LW}x${LH}.jpg"
+    [ -r "$FONDO" ] || FONDO="$LIB/fondos/wallpaper-lock-1920x1080.jpg"
+fi
 
-gtklock -b "$FONDO" -x "$CACHE/layout.xml" -s "$CACHE/style.css" >/dev/null 2>&1 &
+if [ -r "$FONDO" ]; then
+    gtklock -b "$FONDO" -x "$CACHE/layout.xml" -s "$CACHE/style.css" >/dev/null 2>&1 &
+else
+    gtklock -x "$CACHE/layout.xml" -s "$CACHE/style.css" >/dev/null 2>&1 &
+fi
 sleep 2
 pidof gtklock >/dev/null 2>&1 && exit 0
 exec swaylock

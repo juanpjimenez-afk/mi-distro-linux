@@ -49,6 +49,7 @@ from .ajustes import dir_config, valor as ajuste  # noqa: E402
 from .apps import Indice  # noqa: E402
 from .biblioteca import Biblioteca  # noqa: E402
 from .biblioteca_ventana import VentanaBiblioteca  # noqa: E402
+from .controles import Controles  # noqa: E402
 from .dock import Dock, Estado, Orbe  # noqa: E402
 from .hypr import Hyprland  # noqa: E402
 from .launcher import Launcher  # noqa: E402
@@ -66,6 +67,7 @@ class Shell(Gtk.Application):
         self.hypr = None
         self.dock = self.orbe = self.estado = None
         self.burbuja = None  # la burbuja de pAnkI (se crea con la interfaz; Ajustes puede ocultarla)
+        self.controles = None  # las pastillas −, □, × junto a cada ventana (controles.py)
         self.launcher = None  # se crea la primera vez que se usa (ahorra RAM)
         self.biblioteca_ventana = None  # idem
         self.marca = None  # solo existe con el fondo de color y la marca activada
@@ -161,6 +163,8 @@ class Shell(Gtk.Application):
         self.orbe = Orbe(self, lambda: self._launcher().alternar())
         self.estado = Estado(self)
         self.burbuja = BurbujaPanki(self)
+        # Conexión propia con Hyprland: el dock ya usa su socket de eventos y Hyprland.escuchar admite un solo oyente.
+        self.controles = Controles(self, Hyprland())
         for ventana in (self.dock, self.orbe, self.estado):
             ventana.present()
         self._sincronizar_burbuja()  # la burbuja (a la derecha, sobre el estado) se muestra según Ajustes

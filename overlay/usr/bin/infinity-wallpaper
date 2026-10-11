@@ -1,14 +1,35 @@
 #!/bin/sh
-# Fondo de pantalla de Infinity OS: la cascada, con menos brillo (ver branding/make_assets.py).
+# Fondo de pantalla de Infinity OS: la imagen que elegiste en Ajustes → Escritorio (por defecto, la
+# cascada con menos brillo, ver branding/make_assets.py), o un color sólido.
 #
-# Se muestra la cascada. Si prefieres un color sólido (en una VM sin 3D la cascada va más lenta
-# al mover el ratón), la decisión la toma /usr/libexec/infinity/fondo-modo, que usa también el
-# shell para la marca. Para cambiarlo, en el terminal (y después cerrar sesión y volver a entrar):
-#   echo imagen > ~/.config/infinity/fondo    (la cascada)
-#   echo color  > ~/.config/infinity/fondo    (color sólido, sin imagen)
+# Si prefieres el color sólido (en una VM sin 3D la imagen va más lenta al mover el ratón), la decisión la
+# toma /usr/libexec/infinity/fondo-modo, que usa también el shell para la marca. La imagen la elige
+# /usr/libexec/infinity/fondo-ruta; si la elegida no está o no se puede leer, usa la cascada y, si tampoco,
+# el fondo antiguo (/usr/share/infinity/wallpaper.jpg). Sin ninguna imagen, no lanza swaybg y se ve el
+# color de fondo de Hyprland. Se cambia desde Ajustes, que escribe ~/.config/infinity/fondo (o a mano:
+#   echo color > ~/.config/infinity/fondo      color sólido, sin imagen
+#   echo imagen > ~/.config/infinity/fondo     la cascada
+# y después cerrar sesión y volver a entrar, o ejecutar infinity-wallpaper).
+#
+# INFINITY_LIBEXEC e INFINITY_SHARE solo se cambian en las pruebas.
 
-case "$(/usr/libexec/infinity/fondo-modo)" in
+LIBEXEC="${INFINITY_LIBEXEC:-/usr/libexec/infinity}"
+SHARE="${INFINITY_SHARE:-/usr/share/infinity}"
+
+case "$("$LIBEXEC/fondo-modo")" in
     color) exit 0 ;;
 esac
 
-exec swaybg -i /usr/share/infinity/wallpaper.jpg -m fill
+IMG=$("$LIBEXEC/fondo-ruta" escritorio 2>/dev/null)
+[ -n "$IMG" ] && [ -r "$IMG" ] || IMG="$SHARE/wallpaper.jpg"
+[ -r "$IMG" ] || exit 0   # sin imagen: queda el color de fondo de Hyprland
+
+# Si swaybg no puede leer la elegida (un fichero dañado), prueba la antigua en vez de dejar el escritorio sin fondo.
+if [ "$IMG" != "$SHARE/wallpaper.jpg" ] && [ -r "$SHARE/wallpaper.jpg" ]; then
+    swaybg -i "$IMG" -m fill &
+    pid=$!
+    sleep 1
+    kill -0 "$pid" 2>/dev/null && exit 0
+    IMG="$SHARE/wallpaper.jpg"
+fi
+exec swaybg -i "$IMG" -m fill

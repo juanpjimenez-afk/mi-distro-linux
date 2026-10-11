@@ -166,6 +166,16 @@ etapa_configurar() {
     "$ROOTFS/usr/share/infinity/"
   mkdir -p "$ROOTFS/usr/share/infinity/lock/fondos"
   install -m644 "$ROOT"/branding/fondos-bloqueo/*.jpg "$ROOTFS/usr/share/infinity/lock/fondos/"
+  # Catálogo de fondos para elegir en Ajustes: /usr/share/infinity/fondos/fondos.json y una carpeta por fondo.
+  # Lo de arriba (wallpaper.jpg y fondos/wallpaper-lock-*.jpg) se conserva: es el respaldo si falta el catálogo.
+  if [[ -f $ROOT/branding/fondos/fondos.json ]]; then
+    mkdir -p "$ROOTFS/usr/share/infinity/fondos"
+    rsync -a --delete --prune-empty-dirs --chmod=D755,F644 --chown=root:root \
+      --include='*/' --include='fondos.json' --include='*.jpg' --exclude='*' \
+      "$ROOT/branding/fondos/" "$ROOTFS/usr/share/infinity/fondos/"
+  else
+    printf '\033[1;33maviso:\033[0m falta branding/fondos/fondos.json: la ISO solo traerá el fondo antiguo\n' >&2
+  fi
   install -m644 "$ROOT/branding/logo-white.svg" "$ROOTFS/usr/share/pixmaps/infinity.svg"
 
   mount_chroot

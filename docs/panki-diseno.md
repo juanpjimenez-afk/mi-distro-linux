@@ -34,11 +34,18 @@ pAnkI vive en una **burbuja de cristal** en el escritorio, hermana de la esfera 
 
 - Es una ventana de capa (`gtk4-layer-shell`) del propio shell, namespace `infinity-panki`: hereda el
   desenfoque de la regla `layerrule` de los paneles `infinity-*`.
-- Misma esfera de 48 px (el logo ∞ también baja de 60 a 48, centrado con el dock, porque las apps ahora son de colores) y mismo estilo `button.orb` que el logo, más una clase `panki` para el matiz propio.
+- Misma esfera de 48 px (el logo ∞ también baja de 60 a 48, porque las apps ahora son de colores) y mismo estilo `button.orb` que el logo, más una clase `panki` para el matiz propio.
   Dentro lleva la marca de pAnkI en blanco (`panki-white.svg`, una burbuja de diálogo con una chispa dentro, con el mismo trazo
   que el ∞).
+- Símbolo: el ∞ y la marca de pAnkI se crean con la misma función (`dock.simbolo_de_esfera`): `Gtk.Image` de `LOGO_ORBE` = 26 px
+  (`pixel_size` solo admite enteros) centrado en la esfera, y `style.css` lo reduce con
+  `button.orb image { -gtk-icon-transform: scale(0.95) }` (`dock.ESCALA_SIMBOLO`): **≈ 24,7 px, 1,3 px menos**. Una
+  prueba comprueba que el CSS y la constante coinciden.
 - Posición: borde derecho, **encima** de la píldora de estado (volumen, batería, red, hora), que ya ocupa
-  la esquina inferior derecha. Nunca debe tapar esa píldora ni el dock.
+  la esquina inferior derecha. Nunca debe tapar esa píldora ni el dock. El ∞ (abajo a la izquierda) va a **la
+  misma altura**: los dos usan el mismo margen inferior, `dock.ALTURA_ESFERAS` = margen 14 + fila de las islas 60
+  + hueco 14 = **88 px** (única fuente de verdad; la burbuja lo lee con `margen_inferior()`). Se mide desde el
+  borde inferior, así que no depende del alto del monitor.
 - Al pulsarla abre o cierra la ventana de chat: `gapplication action org.infinity.Panki alternar ||
   infinity-panki`. La ventana de chat sale cerca de la burbuja (abajo a la derecha) con una regla de
   ventana de Hyprland.

@@ -6,25 +6,19 @@ Requiere: python3-pil y librsvg2-bin (rsvg-convert).
     python3 -I branding/make_assets.py
 
 Resultado:
-- wallpaper.jpg        escritorio: la cascada, a pantalla completa, con menos brillo
-- fondos-bloqueo/      pantalla de bloqueo, una imagen por resolución: la foto de paisaje a pantalla
-                       completa (recorte centrado, sin deformar)
 - grub-background.png  menú de arranque (fondo abstracto + logo)
 - logo-white-*.png     iconos del logo
+
+Los fondos de pantalla (wallpaper.jpg, fondos-bloqueo/ y la carpeta fondos/ con todo el catálogo) ya no se
+generan aquí: los produce branding/make_fondos.py (ampliación por IA, oscurecimiento adaptativo...), que es lento
+y cuyos JPEG finales se commitean. Este script no los toca.
 """
 import subprocess
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 AQUI = Path(__file__).resolve().parent
-FOTOS = AQUI / "fotos"
-
-W, H = 1920, 1080
-RESOLUCIONES_BLOQUEO = [(1920, 1080), (1920, 1200), (2560, 1440), (2560, 1600), (1366, 768),
-                        (1280, 800), (1600, 900), (1440, 900), (1280, 720)]
-BRILLO_ESCRITORIO = 0.70    # 70 % del brillo original: se nota la foto y sigue viéndose el cristal
-BRILLO_LADOS_BLOQUEO = 0.55
 
 # Paleta del fondo abstracto (solo para el menú de arranque)
 BASE = (5, 7, 18)
@@ -36,15 +30,6 @@ MANCHAS = [
     (0.08, 0.92, 0.22, (20, 210, 170)),   # turquesa
     (0.52, 0.55, 0.16, (60, 80, 255)),    # azul central
 ]
-
-
-def cubrir(img, ancho, alto):
-    """Escala la imagen para cubrir ancho x alto y recorta el centro."""
-    escala = max(ancho / img.width, alto / img.height)
-    grande = img.resize((round(img.width * escala), round(img.height * escala)), Image.LANCZOS)
-    x0 = (grande.width - ancho) // 2
-    y0 = (grande.height - alto) // 2
-    return grande.crop((x0, y0, x0 + ancho, y0 + alto))
 
 
 def fondo_abstracto(ancho, alto):
@@ -73,22 +58,6 @@ def rasterizar_svg(svg, destino, ancho, alto=None, fondo_color=None):
     subprocess.run(cmd, check=True)
 
 
-def escritorio():
-    foto = Image.open(FOTOS / "escritorio-cascada.webp").convert("RGB")
-    img = cubrir(foto, W, H).filter(ImageFilter.UnsharpMask(radius=2, percent=60, threshold=2))
-    img = ImageEnhance.Brightness(img).enhance(BRILLO_ESCRITORIO)
-    img.save(AQUI / "wallpaper.jpg", quality=92, optimize=True, progressive=True)
-
-
-def bloqueo(ancho, alto):
-    """Fondo de la pantalla de bloqueo: la foto de paisaje a pantalla completa."""
-    foto = Image.open(FOTOS / "bloqueo-islandia.webp").convert("RGB")
-    img = cubrir(foto, ancho, alto)
-    carpeta = AQUI / "fondos-bloqueo"
-    carpeta.mkdir(exist_ok=True)
-    img.save(carpeta / f"wallpaper-lock-{ancho}x{alto}.jpg", quality=92, optimize=True)
-
-
 def grub():
     bg = fondo_abstracto(1024, 768).filter(ImageFilter.GaussianBlur(2))
     oscuro = Image.new("RGB", bg.size, (0, 0, 0))
@@ -102,9 +71,6 @@ def grub():
 
 
 def main():
-    escritorio()
-    for ancho, alto in RESOLUCIONES_BLOQUEO:
-        bloqueo(ancho, alto)
     grub()
     for t in (64, 256, 512):
         rasterizar_svg(AQUI / "logo-white.svg", AQUI / f"logo-white-{t}.png", t)

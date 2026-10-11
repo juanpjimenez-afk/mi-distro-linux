@@ -67,17 +67,23 @@ def _nombre_llamada(llamada):
 
 
 def _modulo_puro():
-    """Las constantes y la función de margen de panki_burbuja.py, ejecutadas solas (sin importar GTK) y
-    con las constantes reales de dock.py. Devuelve (espacio de nombres, constantes de dock)."""
-    dock = _arbol(DOCK)
-    constantes = {nombre: ast.literal_eval(_asignacion(dock, nombre)) for nombre in ("ALTO", "MARGEN")}
-    nodos = [n for n in _arbol(BURBUJA).body
-             if (isinstance(n, ast.Assign) and any(_es_nombre(t, nombre) for t in n.targets
-                                                   for nombre in ("HUECO", "MARGEN_DERECHO")))
-             or (isinstance(n, ast.FunctionDef) and n.name == "margen_inferior")]
-    espacio = dict(constantes)
-    exec(compile(ast.Module(body=nodos, type_ignores=[]), BURBUJA, "exec"), espacio)
-    return espacio, constantes
+    """Las constantes y las funciones de margen de dock.py y panki_burbuja.py, ejecutadas solas (sin importar
+    GTK). Devuelve (espacio de nombres, constantes ALTO y MARGEN de dock)."""
+    nombres_dock = {"ALTO", "ORBE", "LOGO_ORBE", "ESCALA_SIMBOLO", "MARGEN", "HUECO_ESFERAS", "ALTURA_ESFERAS"}
+    nombres_burbuja = {"HUECO", "MARGEN_DERECHO"}
+
+    def nodos(arbol, asignaciones, funciones):
+        return [n for n in arbol.body
+                if (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in asignaciones
+                                                       for t in n.targets))
+                or (isinstance(n, ast.FunctionDef) and n.name in funciones)]
+
+    espacio = {}
+    for ruta, asignaciones, funciones in ((DOCK, nombres_dock, {"margen_esferas"}),
+                                          (BURBUJA, nombres_burbuja, {"margen_inferior"})):
+        exec(compile(ast.Module(body=nodos(_arbol(ruta), asignaciones, funciones), type_ignores=[]), ruta, "exec"),
+             espacio)
+    return espacio, {nombre: espacio[nombre] for nombre in ("ALTO", "MARGEN")}
 
 
 # ====================================================================== sin GTK
@@ -91,6 +97,7 @@ class TestMargenes(unittest.TestCase):
 
     def test_margen_inferior_es_margen_mas_alto_mas_hueco(self):
         self.assertEqual(self.ns["margen_inferior"](), self.margen + self.alto + self.ns["HUECO"])
+        self.assertEqual(self.ns["margen_inferior"](), self.ns["ALTURA_ESFERAS"])
         self.assertEqual(self.ns["margen_inferior"](), 88)  # 14 + 60 + 14
 
     def test_el_hueco_es_de_unos_14_px(self):
@@ -105,7 +112,7 @@ class TestMargenes(unittest.TestCase):
         self.assertEqual(burbuja[0] - pildora[1], self.ns["HUECO"])
 
     def test_margen_inferior_sigue_a_las_constantes(self):
-        f = self.ns["margen_inferior"]
+        f = self.ns["margen_esferas"]
         self.assertEqual(f(margen=20, alto=70), 20 + 70 + self.ns["HUECO"])
         self.assertEqual(f(margen=14, alto=60, hueco=0), 74)
 
@@ -132,6 +139,90 @@ class TestMargenes(unittest.TestCase):
         self.assertTrue(any(_nombre_llamada(c) == "set_size_request" and len(c.args) == 2
                             and _es_nombre(c.args[1], "ALTO") for c in _llamadas(estado)),
                         "la píldora de estado ya no mide ALTO de alto")
+
+
+class TestAlturaDeLasEsferas(unittest.TestCase):
+    """El ∞ y la burbuja de pAnkI van a la MISMA altura, con una sola fuente de verdad (dock.ALTURA_ESFERAS),
+    sin solaparse con el dock ni con la píldora de estado, sea cual sea el alto de la pantalla."""
+
+    BORDE = 2  # el botón mide ORBE + 1 px de borde a cada lado (style.css: button.orb)
+    ALTOS_DE_PANTALLA = (600, 720, 768, 1080, 1440, 2160)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ns, cls.dock = _modulo_puro()
+        cls.arbol_dock, cls.arbol_burbuja = _arbol(DOCK), _arbol(BURBUJA)
+        cls.alto, cls.margen = cls.dock["ALTO"], cls.dock["MARGEN"]
+        cls.orbe = cls.ns["ORBE"] + cls.BORDE  # lado real de cada esfera
+
+    def _margen_inferior_pedido(self, arbol, clase):
+        """La expresión del margen inferior que pide `clase.__init__` (set_margin(self, BOTTOM, <expresión>))."""
+        pedidos = [c for c in _llamadas(_funcion(arbol, "__init__", clase=clase))
+                   if _nombre_llamada(c) == "set_margin" and len(c.args) == 3
+                   and getattr(c.args[1], "attr", None) == "BOTTOM"]
+        self.assertEqual(len(pedidos), 1, f"{clase} debe fijar su margen inferior una sola vez")
+        return pedidos[0].args[2]
+
+    def _caja_vertical(self, alto_pantalla, margen_inferior):
+        """(arriba, abajo) de una esfera en coordenadas de pantalla (y hacia abajo), como las pone el compositor."""
+        abajo = alto_pantalla - margen_inferior
+        return abajo - self.orbe, abajo
+
+    def test_las_dos_esferas_piden_el_mismo_margen_a_la_misma_constante(self):
+        # El ∞ usa la constante directamente...
+        self.assertTrue(_es_nombre(self._margen_inferior_pedido(self.arbol_dock, "Orbe"), "ALTURA_ESFERAS"))
+        # ...y la burbuja, su función margen_inferior(), que devuelve esa misma constante (no un número propio).
+        pedido = self._margen_inferior_pedido(self.arbol_burbuja, "BurbujaPanki")
+        self.assertIsInstance(pedido, ast.Call)
+        self.assertEqual(_nombre_llamada(pedido), "margen_inferior")
+        retornos = [n for n in ast.walk(_funcion(self.arbol_burbuja, "margen_inferior")) if isinstance(n, ast.Return)]
+        self.assertEqual(len(retornos), 1)
+        self.assertTrue(_es_nombre(retornos[0].value, "ALTURA_ESFERAS"))
+        self.assertEqual(self.ns["margen_inferior"](), self.ns["ALTURA_ESFERAS"])
+
+    def test_la_altura_se_define_en_un_solo_sitio(self):
+        definiciones = []
+        for ruta, arbol in ((DOCK, self.arbol_dock), (BURBUJA, self.arbol_burbuja)):
+            for n in arbol.body:
+                if isinstance(n, ast.Assign) and any(_es_nombre(t, "ALTURA_ESFERAS") for t in n.targets):
+                    definiciones.append(ruta)
+        self.assertEqual(definiciones, [DOCK])
+        # y no depende de nada propio de una de las esferas: solo del margen, de la fila de las islas y del hueco
+        self.assertEqual(self.ns["ALTURA_ESFERAS"], self.margen + self.alto + self.ns["HUECO_ESFERAS"])
+        self.assertEqual(self.ns["ALTURA_ESFERAS"], 88)
+
+    def test_mismo_centro_vertical_con_cualquier_alto_de_pantalla(self):
+        for alto_pantalla in self.ALTOS_DE_PANTALLA:
+            with self.subTest(alto_pantalla=alto_pantalla):
+                infinito = self._caja_vertical(alto_pantalla, self.ns["ALTURA_ESFERAS"])
+                burbuja = self._caja_vertical(alto_pantalla, self.ns["margen_inferior"]())
+                self.assertEqual(infinito, burbuja)  # mismas cajas: mismo centro, mismo borde superior e inferior
+                self.assertEqual(sum(infinito) / 2, sum(burbuja) / 2)
+                self.assertGreaterEqual(infinito[0], 0, "la esfera se sale por arriba de la pantalla")
+                # la distancia al borde inferior no depende del alto del monitor
+                self.assertEqual(alto_pantalla - infinito[1], self.ns["ALTURA_ESFERAS"])
+
+    def test_ninguna_esfera_se_solapa_con_el_dock_ni_con_la_pildora_de_estado(self):
+        for alto_pantalla in self.ALTOS_DE_PANTALLA:
+            with self.subTest(alto_pantalla=alto_pantalla):
+                fila = (alto_pantalla - self.margen - self.alto, alto_pantalla - self.margen)  # dock y píldora
+                arriba, abajo = self._caja_vertical(alto_pantalla, self.ns["ALTURA_ESFERAS"])
+                self.assertLessEqual(abajo, fila[0], "la esfera tapa el dock o la píldora de estado")
+                self.assertGreaterEqual(fila[0] - abajo, self.ns["HUECO_ESFERAS"])
+
+    def test_el_tamano_efectivo_del_simbolo_baja_entre_1_2_y_1_5_px(self):
+        efectivo = self.ns["LOGO_ORBE"] * self.ns["ESCALA_SIMBOLO"]
+        self.assertTrue(24.5 <= efectivo <= 24.8, efectivo)
+        self.assertTrue(1.2 <= self.ns["LOGO_ORBE"] - efectivo <= 1.5, efectivo)
+        self.assertEqual(self.ns["LOGO_ORBE"], 26)  # pixel_size solo admite enteros: lo nominal no cambia
+
+    def test_el_css_aplica_la_misma_escala_que_la_constante(self):
+        with open(CSS, encoding="utf-8") as f:
+            css = f.read()
+        bloques = re.findall(r"^button\.orb\s+image\s*\{([^}]*)\}", css, re.M)
+        self.assertEqual(len(bloques), 1, "falta el bloque `button.orb image` con la escala del símbolo")
+        escala = re.findall(r"-gtk-icon-transform:\s*scale\(([\d.]+)\)", bloques[0])
+        self.assertEqual([float(e) for e in escala], [self.ns["ESCALA_SIMBOLO"]])
 
 
 class TestCodigo(unittest.TestCase):
@@ -166,7 +257,7 @@ class TestCodigo(unittest.TestCase):
     def test_reutiliza_capa_y_asset_de_dock(self):
         importados = {a.name for n in self.arbol.body if isinstance(n, ast.ImportFrom) and n.module == "dock"
                       and n.level == 1 for a in n.names}
-        self.assertTrue({"_capa", "asset", "ALTO", "MARGEN"} <= importados, importados)
+        self.assertTrue({"_capa", "asset", "MARGEN", "ALTURA_ESFERAS", "simbolo_de_esfera"} <= importados, importados)
         definidas = {n.name for n in self.arbol.body if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
         self.assertNotIn("_capa", definidas)
         self.assertNotIn("asset", definidas)
@@ -392,6 +483,7 @@ class TestBurbuja(unittest.TestCase):
         self.assertEqual(d["margenes"][self.capa.Edge.RIGHT], self.dock.MARGEN + 4)
         self.assertEqual(d["margenes"][self.capa.Edge.BOTTOM], self.B.margen_inferior())
         self.assertEqual(self.B.margen_inferior(), self.dock.MARGEN + self.dock.ALTO + self.B.HUECO)
+        self.assertEqual(self.B.margen_inferior(), self.dock.ALTURA_ESFERAS)
         self.assertGreater(d["margenes"][self.capa.Edge.BOTTOM], self.dock.MARGEN + self.dock.ALTO)
 
     def test_los_margenes_coinciden_con_los_del_modulo_leido_sin_gtk(self):
@@ -453,7 +545,177 @@ class TestBurbuja(unittest.TestCase):
         hijo = self.burbuja.boton.get_child()
         self.assertIsInstance(hijo, self.Gtk.Image)
         self.assertEqual(hijo.get_pixel_size(), self.dock.LOGO_ORBE)
-        self.assertEqual(self.dock.LOGO_ORBE, 26)
+        self.assertEqual(self.dock.LOGO_ORBE, 26)  # tamaño nominal entero; style.css lo afina con la escala
+        # centrado en la esfera (no la rellena): así mide lo que dice pixel_size en cualquier versión de GTK
+        self.assertEqual((hijo.get_halign(), hijo.get_valign()), (self.Gtk.Align.CENTER, self.Gtk.Align.CENTER))
+
+    # ---------------------------------------------------- altura y tamaño reales
+    def test_el_infinito_y_la_burbuja_piden_el_mismo_margen_inferior_a_la_capa(self):
+        orbe = self.dock.Orbe(self.app, lambda: None)
+        try:
+            margen_orbe = self.capa.registro[orbe]["margenes"][self.capa.Edge.BOTTOM]
+            margen_burbuja = self.capa.registro[self.burbuja]["margenes"][self.capa.Edge.BOTTOM]
+            self.assertEqual(margen_orbe, margen_burbuja)
+            self.assertEqual(margen_orbe, self.dock.ALTURA_ESFERAS)
+            # y la esfera sigue pegada al borde de su lado: el ∞ a la izquierda, pAnkI a la derecha
+            self.assertEqual(self.capa.registro[orbe]["anclas"], {self.capa.Edge.BOTTOM, self.capa.Edge.LEFT})
+            self.assertEqual(self.capa.registro[orbe]["margenes"][self.capa.Edge.LEFT], self.dock.MARGEN + 4)
+        finally:
+            orbe.destroy()
+
+    def test_escena_completa_misma_altura_y_sin_solapes_en_varias_pantallas(self):
+        """El ∞ y la burbuja, con los márgenes que piden a la capa, puestos en una pantalla de verdad (un
+        Gtk.Overlay del tamaño del monitor) junto al dock y a la píldora de estado: se miden sus cajas."""
+        Gtk = self.Gtk
+        alturas_probadas = set()
+        with self.css_del_proyecto():
+            # Pantallas de distinto alto; el servidor X de prueba (xvfb) puede ser más pequeño que alguna, y
+            # entonces la ventana sale más pequeña: se mide con el tamaño que de verdad ha tenido.
+            for ancho, alto in ((1024, 600), (1280, 720), (1280, 1024)):
+                with self.subTest(pantalla=f"{ancho}x{alto}"):
+                    orbe = self.dock.Orbe(self.app, lambda: None)
+                    burbuja = self.B.BurbujaPanki(self.app, lanzar=self.lanzar_falso)
+                    ventana = Gtk.Window(application=self.app, title="escena")
+                    try:
+                        margenes = {v: self.capa.registro[v]["margenes"] for v in (orbe, burbuja)}
+                        esferas = {"orbe": orbe.boton, "burbuja": burbuja.boton}
+                        for v in (orbe, burbuja):
+                            v.set_child(None)
+                        superposicion = Gtk.Overlay()
+                        superposicion.set_child(Gtk.Box())
+
+                        def poner(widget, h, inferior, inicio=0, fin=0):
+                            widget.set_halign(h)
+                            widget.set_valign(Gtk.Align.END)
+                            widget.set_margin_start(inicio)
+                            widget.set_margin_end(fin)
+                            widget.set_margin_bottom(inferior)
+                            superposicion.add_overlay(widget)
+
+                        dock = Gtk.Box()
+                        dock.set_size_request(233, self.dock.ALTO)
+                        pildora = Gtk.Box()
+                        pildora.set_size_request(154, self.dock.ALTO)
+                        poner(dock, Gtk.Align.CENTER, self.dock.MARGEN)
+                        poner(pildora, Gtk.Align.END, self.dock.MARGEN, fin=self.dock.MARGEN + 4)
+                        poner(esferas["orbe"], Gtk.Align.START, margenes[orbe][self.capa.Edge.BOTTOM],
+                              inicio=margenes[orbe][self.capa.Edge.LEFT])
+                        poner(esferas["burbuja"], Gtk.Align.END, margenes[burbuja][self.capa.Edge.BOTTOM],
+                              fin=margenes[burbuja][self.capa.Edge.RIGHT])
+                        ventana.set_default_size(ancho, alto)
+                        ventana.set_child(superposicion)
+                        ventana.present()
+                        self.pumpa(0.2)
+                        ancho, alto = superposicion.get_width(), superposicion.get_height()
+                        self.assertGreaterEqual(alto, 480)  # lo mínimo para que quepan las dos esferas y el dock
+                        alturas_probadas.add(alto)
+
+                        def caja(w):
+                            _ok, r = w.compute_bounds(superposicion)
+                            return (r.get_x(), r.get_y(), r.get_x() + r.get_width(), r.get_y() + r.get_height())
+
+                        cajas = {"orbe": caja(esferas["orbe"]), "burbuja": caja(esferas["burbuja"]),
+                                 "dock": caja(dock), "pildora": caja(pildora)}
+                        # misma altura: mismo centro vertical y mismos bordes superior e inferior
+                        self.assertEqual(cajas["orbe"][1::2], cajas["burbuja"][1::2])
+                        # cada esfera, dentro de la pantalla y a su lado
+                        self.assertLess(cajas["orbe"][0], ancho / 2)
+                        self.assertGreater(cajas["burbuja"][0], ancho / 2)
+                        for nombre in ("orbe", "burbuja"):
+                            self.assertGreaterEqual(min(cajas[nombre]), 0)
+                            self.assertLessEqual(cajas[nombre][2], ancho)
+                            self.assertLessEqual(cajas[nombre][3], alto)
+                        # ninguna caja se solapa con otra
+                        nombres = sorted(cajas)
+                        for i, a in enumerate(nombres):
+                            for b in nombres[i + 1:]:
+                                ax0, ay0, ax1, ay1 = cajas[a]
+                                bx0, by0, bx1, by1 = cajas[b]
+                                solapan = ax0 < bx1 and bx0 < ax1 and ay0 < by1 and by0 < ay1
+                                self.assertFalse(solapan, f"{a} {cajas[a]} se solapa con {b} {cajas[b]}")
+                        # el hueco con la píldora y el dock (que van más abajo) es el de siempre, sea cual sea la pantalla
+                        self.assertEqual(cajas["dock"][1] - cajas["orbe"][3], self.dock.HUECO_ESFERAS)
+                        self.assertEqual(cajas["pildora"][1] - cajas["burbuja"][3], self.dock.HUECO_ESFERAS)
+                    finally:
+                        ventana.destroy()
+                        orbe.destroy()
+                        burbuja.destroy()
+        self.assertGreaterEqual(len(alturas_probadas), 2, alturas_probadas)  # se probó con más de un alto de pantalla
+
+    def _lado_equivalente_del_simbolo(self, con_escala):
+        """Dibuja un cuadrado blanco como símbolo de una esfera (dock.simbolo_de_esfera), con el style.css del
+        proyecto, y mide cuánto lado tiene lo que se pinta de verdad: se renderiza la esfera CON y SIN el símbolo
+        y la cobertura de cada píxel es (con - sin) / (255 - sin); su suma es el área y su raíz, el lado."""
+        import tempfile
+        gi = sys.modules["gi"]
+        try:
+            gi.require_version("Graphene", "1.0")
+            gi.require_version("GdkPixbuf", "2.0")
+            from gi.repository import GdkPixbuf, Graphene
+        except (ImportError, ValueError) as e:
+            self.skipTest(f"sin Graphene o GdkPixbuf: {e}")
+        Gtk, Gdk = self.Gtk, self.Gdk
+        lado = 64
+        textura = Gdk.MemoryTexture.new(lado, lado, Gdk.MemoryFormat.R8G8B8A8,
+                                        self.GLib.Bytes.new(b"\xff\xff\xff\xff" * lado * lado), lado * 4)
+        with tempfile.TemporaryDirectory() as carpeta:
+            ruta = os.path.join(carpeta, "cuadrado.png")
+            textura.save_to_png(ruta)
+            display = Gdk.Display.get_default()
+            proveedores = []
+            hojas = [(CSS, None)]
+            if not con_escala:  # el control: el mismo CSS pero sin la escala fina
+                hojas.append((None, "button.orb image { -gtk-icon-transform: none; }"))
+            for prioridad, (archivo, texto) in enumerate(hojas):
+                proveedor = Gtk.CssProvider()
+                if archivo:
+                    proveedor.load_from_path(archivo)
+                else:
+                    proveedor.load_from_string(texto)
+                Gtk.StyleContext.add_provider_for_display(display, proveedor,
+                                                          Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + prioridad)
+                proveedores.append(proveedor)
+            boton = Gtk.Button()
+            boton.add_css_class("orb")
+            boton.set_size_request(self.dock.ORBE, self.dock.ORBE)
+            boton.set_halign(Gtk.Align.START)
+            boton.set_valign(Gtk.Align.START)
+            boton.set_child(self.dock.simbolo_de_esfera(ruta))
+            ventana = Gtk.Window(application=self.app, title="medida")
+            ventana.set_child(boton)
+            try:
+                ventana.present()
+
+                def pintar():
+                    self.pumpa(0.3)
+                    paintable = Gtk.WidgetPaintable.new(boton)
+                    ancho, alto = paintable.get_intrinsic_width(), paintable.get_intrinsic_height()
+                    instantanea = Gtk.Snapshot()
+                    paintable.snapshot(instantanea, ancho, alto)
+                    tex = ventana.get_renderer().render_texture(instantanea.to_node(), Graphene.Rect().init(0, 0, ancho, alto))
+                    pb = GdkPixbuf.Pixbuf.new_from_stream(self.Gio.MemoryInputStream.new_from_bytes(tex.save_to_png_bytes()), None)
+                    paso, fila, datos = pb.get_n_channels(), pb.get_rowstride(), pb.get_pixels()
+                    return [datos[y * fila + x * paso] for y in range(pb.get_height()) for x in range(pb.get_width())]
+
+                con = pintar()
+                boton.set_child(None)
+                sin = pintar()
+            finally:
+                ventana.destroy()
+                for p in proveedores:
+                    Gtk.StyleContext.remove_provider_for_display(display, p)
+        area = sum(max(0.0, min(1.0, (c - s) / (255.0 - s))) for c, s in zip(con, sin) if s < 235)
+        return area ** 0.5
+
+    def test_el_simbolo_se_pinta_mas_pequeno_con_la_escala_del_css(self):
+        """Mide en pantalla (no solo lee el CSS) que `-gtk-icon-transform` se aplica a la imagen del orbe.
+        La cifra exacta depende del renderizador de GTK (el antiguo «gl» de GTK 4.14 ajusta a píxeles enteros; «ngl»
+        y «cairo» respetan la fracción), así que se comprueba la proporción con un margen: ~0,95."""
+        sin_escala = self._lado_equivalente_del_simbolo(con_escala=False)
+        con_escala = self._lado_equivalente_del_simbolo(con_escala=True)
+        self.assertGreater(sin_escala, 20)  # el control mide algo (≈ 26 px)
+        proporcion = con_escala / sin_escala
+        self.assertTrue(0.91 <= proporcion <= 0.98, (sin_escala, con_escala, proporcion))
 
     def test_sin_el_archivo_de_la_marca_lleva_una_chispa_de_texto(self):
         pedidos = []

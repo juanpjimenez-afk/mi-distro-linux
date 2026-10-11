@@ -507,6 +507,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
 
     def _construir(self):
         cabecera = Gtk.HeaderBar()
+        cabecera.set_decoration_layout(":minimize,maximize,close")  # sus propios −, □, ×, no dependen del ajuste global
         cabecera.add_css_class("panki-cabecera")
         cabecera.set_title_widget(Gtk.Box())  # sin título centrado: la marca va a la izquierda
         marca = Gtk.Label(label="pAnkI")
