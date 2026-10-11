@@ -38,6 +38,7 @@ flowboxchild:selected .fondo-mosaico { border-color: @theme_selected_bg_color; }
 .fondo-miniatura { border-radius: 8px; background-color: rgba(128, 128, 128, 0.25); }
 .fondo-marca { background-color: @theme_selected_bg_color; color: @theme_selected_fg_color; border-radius: 99px;
                padding: 0 7px; margin: 6px; font-weight: bold; }
+label.fondo-aviso.error { color: #ff8a80; }
 button.fondo-quitar { padding: 1px 10px; min-height: 0; min-width: 0; }
 .fondo-infinito { font-size: 44px; color: rgba(255, 255, 255, 0.18); }
 """
@@ -149,6 +150,7 @@ class GaleriaFondos(Gtk.Box):
         self.rueda = Gtk.Spinner()
         pie.append(self.rueda)
         self.aviso = Gtk.Label(xalign=0, wrap=True, hexpand=True)
+        self.aviso.add_css_class("fondo-aviso")
         pie.append(self.aviso)
         self.append(pie)
         nota = Gtk.Label(label="Desde el navegador: clic derecho sobre la imagen → «Guardar imagen como…» y "
@@ -194,7 +196,8 @@ class GaleriaFondos(Gtk.Box):
         if self._ajustando:
             return
         elegido = caja.get_selected_children()
-        if not elegido:
+        if not elegido:   # Ctrl + clic en la elegida la desmarca: siempre tiene que haber una
+            self._marcar()
             return
         for v, hijo in self._mosaicos.items():
             if hijo is elegido[0]:

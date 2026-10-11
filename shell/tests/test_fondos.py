@@ -245,7 +245,9 @@ class TestCatalogo(Entorno):
 
     def test_el_usuario_ignora_lo_que_no_encaja(self):
         self.fondo_usuario("u-bueno")
-        os.makedirs(os.path.join(self.usuario, "sin-prefijo"))
+        self.fondo_usuario("sin-prefijo")             # completo, pero sin el prefijo u-: no es un fondo de usuario
+        self.fondo_usuario("u-MAYUS")
+        self.fondo_usuario("u-con espacio")
         self.fondo_usuario("u-sin-meta")
         os.remove(os.path.join(self.usuario, "u-sin-meta", "meta.json"))
         escribe(os.path.join(self.usuario, "u-sin-ficheros", "meta.json"), b'{"nombre": "x"}')
@@ -487,6 +489,42 @@ class TestImportar(Entorno):
         self.assertGreater(borde[0][0], borde[0][2])
         self.assertGreater(borde[1][2], borde[1][0])
 
+    def test_la_proporcion_se_conserva_posicion_exacta_de_una_franja(self):
+        # 800x400 con una franja roja entre x=200 y x=300. Cubriendo 1280x720 (escala 1,8 y recorte de 80 px por
+        # lado) la franja queda entre x=280 y x=460; estirándola sin recortar (escala 1,6) quedaría entre 320 y 480.
+        pix = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 800, 400)
+        pix.fill(0x2020E0FF)
+        pix.new_subpixbuf(200, 0, 100, 400).fill(0xE02020FF)
+        ruta = os.path.join(self.tmp, "origen", "franja.png")
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        pix.savev(ruta, "png", [], [])
+        f = self.importa(ruta)
+        destino = f.bloqueos[(1280, 720)]
+        rojo = lambda x: (lambda p: p[0] > p[2])(self.pixel(destino, x, 360))  # noqa: E731
+        self.assertEqual([rojo(x) for x in (270, 290, 450, 470)], [False, True, True, False])
+
+    def test_respeta_el_giro_de_la_camara(self):
+        # Un JPEG de 640x360 con la marca EXIF «girar 90°» es en realidad una foto vertical de 360x640.
+        datos = self.leer(self.imagen("camara.jpg", 640, 360, "jpeg"))
+        tiff = b"II*\x00\x08\x00\x00\x00" + struct.pack("<H", 1) + struct.pack("<HHIHH", 0x0112, 3, 1, 6, 0) + b"\x00" * 4
+        exif = b"Exif\x00\x00" + tiff
+        giro = os.path.join(self.tmp, "origen", "girada.jpg")
+        escribe(giro, datos[:2] + b"\xff\xe1" + struct.pack(">H", len(exif) + 2) + exif + datos[2:])
+        f = self.importa(giro)
+        self.assertEqual(self.medida(f.escritorio), (360, 202))      # vertical: 16:9 de 360 de ancho
+
+    def test_la_transparencia_se_pone_sobre_negro(self):
+        pix = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, True, 8, 400, 225)
+        pix.fill(0xFF000000)             # rojo, totalmente transparente
+        pix.new_subpixbuf(0, 0, 200, 225).fill(0x00FF00FF)   # mitad izquierda verde y opaca
+        ruta = os.path.join(self.tmp, "origen", "transparente.png")
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        pix.savev(ruta, "png", [], [])
+        f = self.importa(ruta)
+        izq, der = self.pixel(f.escritorio, 100, 100), self.pixel(f.escritorio, 300, 100)
+        self.assertGreater(izq[1], izq[0] + 80)          # lo opaco se ve
+        self.assertLess(max(der), 8)                     # lo transparente es negro (no rojo)
+
     def test_imagen_vertical_y_pequena(self):
         f = self.importa(self.imagen("alta.png", 300, 600, "png"))
         self.assertEqual(self.medida(f.bloqueos[(1920, 1080)]), (1920, 1080))
@@ -505,6 +543,13 @@ class TestImportar(Entorno):
         self.assertEqual(extras, [(1080, 1920), (1536, 864)])
         self.assertEqual(self.medida(f.bloqueos[(1536, 864)]), (1536, 864))
 
+    def test_la_cabecera_coincide_con_lo_que_dice_gdkpixbuf(self):
+        for nombre, formato in (("a.png", "png"), ("a.jpg", "jpeg"), ("a.bmp", "bmp")):
+            for medida in ((640, 360), (333, 777), (65, 64)):
+                ruta = self.imagen(nombre, *medida, formato)
+                self.assertEqual(F._cabecera(self.leer(ruta))[1:], medida, (formato, medida))
+                self.assertEqual(self.medida(ruta), medida)
+
     def test_resoluciones_a_generar_pone_un_tope(self):
         r = F.resoluciones_a_generar([(1000 + i, 800) for i in range(30)])
         self.assertEqual(len(r), len(F.RESOLUCIONES) + F.MAX_MONITORES_EXTRA)
@@ -514,9 +559,11 @@ class TestImportar(Entorno):
         self.assertEqual(self.medida(f.escritorio), (400, 225))
 
     def test_otros_formatos(self):
-        for nombre, formato in (("a.jpg", "jpeg"), ("a.bmp", "bmp"), ("a.tiff", "tiff")):
+        for nombre, formato in (("a.jpg", "jpeg"), ("a.bmp", "bmp")):
             f = self.importa(self.imagen(nombre, 320, 180, formato), nombre="otro " + formato)
             self.assertTrue(os.path.isfile(f.escritorio), formato)
+        with self.assertRaisesRegex(F.ErrorFondo, "JPG, PNG o WebP"):     # TIFF y demás: no se admiten
+            self.importa(self.imagen("a.tiff", 320, 180, "tiff"))
 
     def test_se_mira_el_contenido_no_la_extension(self):
         f = self.importa(self.imagen("foto.txt", 320, 180, "png"))      # una imagen con extensión falsa vale
@@ -556,7 +603,7 @@ class TestImportar(Entorno):
             "jpeg-cortado": (self.leer(self.imagen("c.jpg", 640, 360, "jpeg"))[:300], "dañada"),
             "jpeg-a-medias": (self.leer(self.imagen("m.jpg", 640, 360, "jpeg"))[:-300], "dañada"),
             "bmp-cortado": (self.leer(self.imagen("c.bmp", 64, 64, "bmp"))[:-50], "dañada"),
-            "jpeg-roto": (b"\xff\xd8\xff\xe0" + os.urandom(2000), "dañada"),
+            "jpeg-roto": (b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00" + b"\x00" * 2000, "dañada"),
             "png-cortado": (self.leer(self.imagen("c.png", 640, 360, "png"))[:100], "dañada"),
             "png-sin-el-final": (self.leer(self.imagen("f.png", 640, 360, "png"))[:-12], "dañada"),
             "html": (b"<html><body>no</body></html>", "no es una imagen"),
@@ -598,13 +645,16 @@ class TestImportar(Entorno):
     def test_rechaza_lo_que_no_es_un_fichero(self):
         carpeta = os.path.join(self.tmp, "origen", "carpeta")
         os.makedirs(carpeta)
-        for ruta in (carpeta, os.path.join(self.tmp, "no-existe.png"), "", None, "/dev/zero", "/dev/null"):
+        for ruta in (carpeta, "/dev/zero", "/dev/null"):
+            with self.assertRaisesRegex(F.ErrorFondo, "no es un archivo", msg=ruta):
+                self.importa(ruta)
+        for ruta in (os.path.join(self.tmp, "no-existe.png"), "", None):
             with self.assertRaises(F.ErrorFondo, msg=repr(ruta)):
                 self.importa(ruta)
         fifo = os.path.join(self.tmp, "origen", "tuberia.png")
         os.mkfifo(fifo)
         t0 = time.monotonic()
-        with self.assertRaises(F.ErrorFondo):
+        with self.assertRaisesRegex(F.ErrorFondo, "no es un archivo"):
             self.importa(fifo)
         self.assertLess(time.monotonic() - t0, 5)      # una tubería no deja la interfaz esperando
 
@@ -621,7 +671,9 @@ class TestImportar(Entorno):
     @unittest.skipIf(TIENE_PIXBUF and "webp" in [f.get_name() for f in GdkPixbuf.Pixbuf.get_formats()],
                      "este equipo sí lee WebP")
     def test_webp_sin_cargador_da_un_mensaje_claro(self):
-        webp = escribe(os.path.join(self.tmp, "origen", "a.webp"), b"RIFF\x24\x00\x00\x00WEBPVP8 " + b"\x00" * 40)
+        webp = escribe(os.path.join(self.tmp, "origen", "a.webp"),
+                       b"RIFF" + struct.pack("<I", 40) + b"WEBPVP8 " + struct.pack("<I", 28) + b"\x00\x00\x00\x9d\x01\x2a"
+                       + struct.pack("<HH", 64, 64) + b"\x00" * 20)
         with self.assertRaisesRegex(F.ErrorFondo, "WebP"):
             self.importa(webp)
 
@@ -704,7 +756,67 @@ class TestImportar(Entorno):
         self.assertIsNone(F.ruta_bloqueo(f.id, 1920, 1080, self.rutas))
 
 
+def _jpeg_con_medidas(ancho, alto):
+    sof = b"\xff\xc0" + struct.pack(">HBHHB", 11, 8, alto, ancho, 1) + b"\x01\x11\x00"
+    return b"\xff\xd8" + b"\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00" + sof + b"\xff\xd9"
+
+
+def _bmp_con_medidas(ancho, alto):
+    return b"BM" + struct.pack("<IHHI", 54, 0, 0, 54) + struct.pack("<IiiHH", 40, ancho, alto, 1, 24) + b"\x00" * 24
+
+
+def _webp_con_medidas(ancho, alto, tipo):
+    if tipo == "VP8 ":
+        cuerpo = b"\x00\x00\x00\x9d\x01\x2a" + struct.pack("<HH", ancho, alto)
+    elif tipo == "VP8L":
+        cuerpo = b"\x2f" + struct.pack("<I", (ancho - 1) | ((alto - 1) << 14))
+    else:
+        cuerpo = b"\x00\x00\x00\x00" + (ancho - 1).to_bytes(3, "little") + (alto - 1).to_bytes(3, "little")
+    cuerpo += b"\x00" * 8
+    return b"RIFF" + struct.pack("<I", 4 + 8 + len(cuerpo)) + b"WEBP" + tipo.encode() + struct.pack("<I", len(cuerpo)) + cuerpo
+
+
 class TestImportarSinGdkPixbuf(Entorno):
+    def test_cabecera_de_cada_formato(self):
+        gif = b"GIF89a" + struct.pack("<HH", 300, 200) + b"\x80\x00\x00" + b"\x00" * 8 + b";"
+        casos = [("png", _png_con_cabecera(1234, 567)), ("gif", gif), ("bmp", _bmp_con_medidas(800, 600)),
+                 ("bmp", _bmp_con_medidas(800, -600)),                # BMP «de arriba abajo»: altura negativa
+                 ("jpeg", _jpeg_con_medidas(1920, 1080)),
+                 ("webp", _webp_con_medidas(640, 480, "VP8 ")), ("webp", _webp_con_medidas(640, 480, "VP8L")),
+                 ("webp", _webp_con_medidas(640, 480, "VP8X"))]
+        esperadas = [(1234, 567), (300, 200), (800, 600), (800, 600), (1920, 1080), (640, 480), (640, 480), (640, 480)]
+        for (formato, datos), medida in zip(casos, esperadas):
+            self.assertEqual(F._cabecera(datos), (formato,) + medida, formato)
+        self.assertIsNone(F._cabecera(b"texto cualquiera"))
+        self.assertIsNone(F._cabecera(b"<svg></svg>"))
+        self.assertIsNone(F._cabecera(b"II*\x00" + b"\x00" * 20))      # TIFF: no se admite
+
+    def test_cabeceras_rotas_se_rechazan_sin_fallar(self):
+        for datos in (b"\x89PNG\r\n\x1a\n", b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + b"XXXX" + b"\x00" * 8, b"GIF89", b"BM",
+                      b"\xff\xd8\xff", b"\xff\xd8\xff\xe0\x00", b"RIFF\x00\x00\x00\x00WEBP", b"RIFF\x10\x00\x00\x00WEBPVP8 "):
+            with self.assertRaises(F.ErrorFondo, msg=datos):
+                F._cabecera(datos)
+
+    def test_se_rechaza_por_las_medidas_sin_decodificar_ni_necesitar_gdkpixbuf(self):
+        # Sin GdkPixbuf (o con él) el tamaño se mira en la cabecera, antes de cualquier decodificador.
+        casos = {"png": _png_con_cabecera(F.MAX_LADO + 1, 100), "png2": _png_con_cabecera(60000, 60000),
+                 "png3": _png_con_cabecera(9000, 9000), "jpeg": _jpeg_con_medidas(20000, 10),
+                 "jpeg2": _jpeg_con_medidas(8000, 8000), "bmp": _bmp_con_medidas(30000, 30000),
+                 "webp": _webp_con_medidas(16000, 100, "VP8X"), "webp2": _webp_con_medidas(10000, 10000, "VP8L"),
+                 "cero": _png_con_cabecera(0, 100)}
+        for nombre, datos in casos.items():
+            ruta = escribe(os.path.join(self.tmp, f"{nombre}.img"), datos)
+            with self.assertRaisesRegex(F.ErrorFondo, "demasiado grande", msg=nombre):
+                F.importar(ruta, self.rutas)
+        self.assertFalse(os.path.exists(self.usuario))      # y no se creó nada
+
+    def test_formatos_que_no_se_admiten(self):
+        for nombre, datos in {"svg": b'<svg xmlns="http://www.w3.org/2000/svg"/>', "tiff": b"II*\x00" + b"\x00" * 40,
+                              "html": b"<html></html>", "texto": b"hola" * 50}.items():
+            ruta = escribe(os.path.join(self.tmp, f"{nombre}.jpg"), datos)
+            with self.assertRaisesRegex(F.ErrorFondo, "no es una imagen"):
+                F.importar(ruta, self.rutas)
+
     def test_detecta_archivos_cortados_por_formato(self):
         gif = b"GIF89a\x40\x00\x40\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff,\x00\x00\x00\x00\x40\x00\x40\x00\x00\x02\x02D\x01\x00;"
         png = _png_con_cabecera(10, 10)
@@ -846,6 +958,16 @@ class TestFondoRuta(Entorno):
         self.assertEqual(self.rel(self.bloqueo(3000, 2000)[0]), "share/lock/fondos/wallpaper-lock-1920x1080.jpg")
         shutil.rmtree(os.path.join(self.share, "lock"))
         self.assertEqual(self.bloqueo(), (None, 1))
+
+    def test_un_ajuste_que_es_una_tuberia_no_deja_esperando(self):
+        self.catalogo(ids=("islandia",))
+        os.makedirs(os.path.join(self.config, "infinity"))
+        for nombre in ("fondo", "fondo-bloqueo"):
+            os.mkfifo(os.path.join(self.config, "infinity", nombre))
+        t0 = time.monotonic()
+        self.assertEqual(self.rel(self.bloqueo()[0]), "share/fondos/islandia/bloqueo-1920x1080.jpg")
+        self.assertEqual(self.escritorio()[1], 1)       # sin cascada en este catálogo: nada, pero sin colgarse
+        self.assertLess(time.monotonic() - t0, 10)
 
     def test_bloqueo_con_ficheros_danados(self):
         self.catalogo(ids=("islandia", "lago"))
@@ -1101,6 +1223,16 @@ class TestBloqueoFondo(Entorno):
         vacio = os.path.join(self.tmp, "sin-libexec")
         os.makedirs(vacio)
         self.assertEqual(self.fondo_de(self.bloquea(libexec=vacio)), "share/lock/fondos/wallpaper-lock-1920x1080.jpg")
+        os.remove(self.llamadas)
+        self.mata()
+        # Con la resolución del monitor, igual que antes de que hubiera galería
+        self.assertEqual(self.fondo_de(self.bloquea(libexec=vacio, monitor={"width": 1280, "height": 720})),
+                         "share/lock/fondos/wallpaper-lock-1280x720.jpg")
+        os.remove(self.llamadas)
+        self.mata()
+        # y si esa resolución no existe en el fondo antiguo, la de 1920x1080
+        self.assertEqual(self.fondo_de(self.bloquea(libexec=vacio, monitor={"width": 1366, "height": 768})),
+                         "share/lock/fondos/wallpaper-lock-1920x1080.jpg")
 
     def test_si_no_hay_ninguna_imagen_bloquea_igual_sin_fondo(self):
         # Lo importante es que la sesión quede bloqueada: sin imagen, gtklock arranca sin -b.

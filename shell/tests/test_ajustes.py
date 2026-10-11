@@ -514,6 +514,12 @@ class TestFondosEnAjustes(unittest.TestCase):
             self.assertEqual(self.valida(escritorio__fondo="cascada")[0]["escritorio.fondo"], "imagen")
             self.assertEqual(self.valida(escritorio__fondo="imagen")[1], [])
 
+    def test_sin_catalogo_el_defecto_del_bloqueo_sigue_entre_las_opciones(self):
+        with mock.patch.object(F, "rutas_por_defecto",
+                               return_value=F.Rutas(sistema=(), usuario=self.usuario, legado_escritorio=(), legado_bloqueo=())):
+            a = next(x for x in A.SCHEMA if x.id == "bloqueo.fondo")
+            self.assertEqual(list(a.opciones), [("islandia", "Islandia")])
+
     def test_un_fondo_borrado_en_el_json_vuelve_al_defecto_con_aviso(self):
         ruta = os.path.join(self.tmp, "ajustes.json")
         with open(ruta, "w", encoding="utf-8") as f:

@@ -51,7 +51,7 @@ MAX_PIXELES = 50_000_000
 MAX_FONDOS_USUARIO = 50
 MAX_MONITORES_EXTRA = 6
 MIN_LADO_MONITOR, MAX_LADO_MONITOR = 320, 8192
-FORMATOS_ACEPTADOS = {"jpeg", "png", "webp", "gif", "bmp", "tiff", "avif", "heif"}
+FORMATOS_ACEPTADOS = {"jpeg", "png", "webp", "gif", "bmp"}
 
 ID_VALIDO = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 PREFIJO_USUARIO = "u-"
@@ -457,11 +457,79 @@ def _error_de_lectura(datos, error):
     if datos[:4] == b"RIFF" and datos[8:12] == b"WEBP":
         return ErrorFondo("Este equipo todavía no puede leer imágenes WebP. Guarda la imagen como JPG o PNG "
                           "(o instala el paquete webp-pixbuf-loader).")
-    conocido = (datos[:3] == b"\xff\xd8\xff" or datos[:8] == b"\x89PNG\r\n\x1a\n" or datos[:3] == b"GIF"
-                or datos[:2] == b"BM" or datos[:4] in (b"II*\x00", b"MM\x00*"))
-    if conocido:
+    if _cabecera_conocida(datos):
         return ErrorFondo("La imagen está dañada o es ilegible.")
-    return ErrorFondo("El archivo no es una imagen que se pueda leer (se mira el contenido, no la extensión).")
+    return ErrorFondo("El archivo no es una imagen que se pueda leer: usa JPG, PNG o WebP (se mira el "
+                      "contenido, no la extensión).")
+
+
+def _cabecera_conocida(datos):
+    return (datos[:3] == b"\xff\xd8\xff" or datos[:8] == b"\x89PNG\r\n\x1a\n" or datos[:3] == b"GIF"
+            or datos[:2] == b"BM")
+
+
+def _cabecera(datos):
+    """(formato, ancho, alto) leído de la cabecera del propio archivo, sin decodificar nada.
+
+    Así una imagen enorme (o una «bomba de descompresión») se rechaza antes de que ningún decodificador
+    reserve memoria. Solo se admiten los formatos que se saben leer aquí: JPEG, PNG, GIF, BMP y WebP.
+    Devuelve None si el archivo no empieza como ninguno de ellos y lanza ErrorFondo si la cabecera está rota.
+    """
+    corto = ErrorFondo("La imagen está incompleta o dañada (la cabecera no se puede leer).")
+    try:
+        if datos[:8] == b"\x89PNG\r\n\x1a\n":
+            if datos[12:16] != b"IHDR":
+                raise corto
+            ancho, alto = struct.unpack(">II", datos[16:24])
+            return "png", ancho, alto
+        if datos[:3] == b"GIF":
+            ancho, alto = struct.unpack("<HH", datos[6:10])
+            return "gif", ancho, alto
+        if datos[:2] == b"BM":
+            tam_cabecera = struct.unpack("<I", datos[14:18])[0]
+            if tam_cabecera == 12:   # formato antiguo de OS/2: medidas de 16 bits
+                ancho, alto = struct.unpack("<HH", datos[18:22])
+            else:
+                ancho, alto = struct.unpack("<ii", datos[18:26])
+            return "bmp", abs(ancho), abs(alto)
+        if datos[:4] == b"RIFF" and datos[8:12] == b"WEBP":
+            trozo = datos[12:16]
+            if trozo == b"VP8 ":
+                if datos[23:26] != b"\x9d\x01\x2a":
+                    raise corto
+                ancho, alto = struct.unpack("<HH", datos[26:30])
+                return "webp", ancho & 0x3FFF, alto & 0x3FFF
+            if trozo == b"VP8L":
+                if datos[20:21] != b"\x2f":
+                    raise corto
+                bits = struct.unpack("<I", datos[21:25])[0]
+                return "webp", (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+            if trozo == b"VP8X":
+                ancho = int.from_bytes(datos[24:27], "little") + 1
+                alto = int.from_bytes(datos[27:30], "little") + 1
+                return "webp", ancho, alto
+            raise corto
+        if datos[:3] == b"\xff\xd8\xff":
+            i = 2
+            while i + 4 <= len(datos):
+                if datos[i] != 0xFF:
+                    i += 1
+                    continue
+                marcador = datos[i + 1]
+                if marcador == 0xFF or marcador == 0x01 or 0xD0 <= marcador <= 0xD8:
+                    i += 1 if marcador == 0xFF else 2
+                    continue
+                if marcador in (0xD9, 0xDA):   # fin o datos de la imagen, y no ha aparecido el SOF
+                    break
+                largo = struct.unpack(">H", datos[i + 2:i + 4])[0]
+                if 0xC0 <= marcador <= 0xCF and marcador not in (0xC4, 0xC8, 0xCC):
+                    alto, ancho = struct.unpack(">HH", datos[i + 5:i + 9])
+                    return "jpeg", ancho, alto
+                i += 2 + largo
+            raise corto
+    except struct.error as e:
+        raise corto from e
+    return None
 
 
 def _esta_completa(datos):
@@ -497,9 +565,16 @@ def _decodificar(datos, mayor_objetivo):
     enorme o una «bomba de descompresión» no gasta memoria. Si la imagen es mucho mayor de lo necesario,
     se reduce al decodificar.
     """
-    GdkPixbuf, GLib = _gdkpixbuf()
+    cabecera = _cabecera(datos)
+    if cabecera is None:
+        raise _error_de_lectura(datos, None)
+    _, ancho, alto = cabecera
+    if not (0 < ancho <= MAX_LADO and 0 < alto <= MAX_LADO and ancho * alto <= MAX_PIXELES):
+        raise ErrorFondo(f"La imagen es demasiado grande ({ancho}×{alto} px). El máximo son {MAX_LADO} px por "
+                         f"lado y {MAX_PIXELES // 1_000_000} megapíxeles.")
     if not _esta_completa(datos):
         raise ErrorFondo("La imagen está incompleta o dañada (¿se cortó la descarga?). Vuelve a guardarla.")
+    GdkPixbuf, GLib = _gdkpixbuf()
     cargador = GdkPixbuf.PixbufLoader()
     estado = {}
 

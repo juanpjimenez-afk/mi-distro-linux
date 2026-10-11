@@ -99,10 +99,10 @@ Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://r
 `Super + ,`, el engranaje del buscador (orbe ∞, junto a los botones de energía) o **Ajustes** en el menú de
 aplicaciones abren la app de configuración. Sus páginas:
 
-- **Escritorio:** fondo (cascada o color sólido), color, marca ∞, escala de pantalla, efecto cristal
+- **Escritorio:** fondo (galería de imágenes, las tuyas o un color sólido), color, marca ∞, escala de pantalla, efecto cristal
   (desenfoque, calidad, opacidad de los paneles), separación, esquinas, sombras y animaciones.
 - **Dock y estado:** formato de la hora (24 h / 12 h) y segundos para confirmar apagar o reiniciar.
-- **Bloqueo y energía:** tiempos para bloquear, apagar la pantalla y suspender; bloquear antes de dormir;
+- **Bloqueo y energía:** fondo de la pantalla de bloqueo (misma galería); tiempos para bloquear, apagar la pantalla y suspender; bloquear antes de dormir;
   formato de la hora y tiempo de la contraseña en la pantalla de bloqueo.
 - **Teclado y ratón:** distribución, velocidad del ratón y gestos del táctil.
 - **Terminal:** fuente, tamaño y transparencia.
@@ -113,6 +113,14 @@ aplicaciones abren la app de configuración. Sus páginas:
 Pulsa **Aplicar**: Hyprland, hypridle, el fondo y el shell se recargan al momento. Los cambios de la **terminal**
 y de la **pantalla de bloqueo** se ven en las ventanas que abras después. **Restaurar** carga los valores de
 fábrica (todavía sin aplicar); **Exportar…** e **Importar…** guardan y cargan los ajustes en un fichero JSON.
+
+**Fondos de pantalla:** en **Escritorio** y en **Bloqueo y energía** eliges la imagen en una galería de miniaturas
+(el escritorio se cambia al pulsar Aplicar; el bloqueo, la próxima vez que se bloquee). Para usar la tuya,
+**Añadir imagen…** (se abre en Descargas; también vale arrastrar un archivo): desde el navegador, clic derecho
+sobre la imagen → «Guardar imagen como…». Acepta JPG, PNG y WebP (hasta 40 MB), se guarda recortada para cada
+resolución en `~/.local/share/infinity/fondos/` y **Quitar** la borra. El catálogo del sistema está en
+`branding/fondos/` (se instala en `/usr/share/infinity/fondos/`). Si el fondo elegido falta o está dañado, se usa
+el de siempre (y, sin ninguna imagen, el bloqueo se pone igual, sin foto).
 
 Los valores se guardan en `~/.config/infinity/ajustes.json`. La app genera `hypr/infinity-ajustes.conf`,
 `hypr/hypridle.conf` e `infinity/estilo.css` (no los edites a mano: se reescriben), y cambia solo las claves

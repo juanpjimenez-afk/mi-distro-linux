@@ -69,7 +69,7 @@ MAESTRO = (2880, 1620)
 MINIATURA = (320, 180)
 CALIDAD = 93                      # JPEG de escritorio y bloqueo (>= 92)
 CALIDAD_MINIATURA = 88
-TESELA, MARGEN = 256, 24          # teselas de la IA y margen descartado (px de la fuente)
+TESELA, MARGEN = 96, 12           # teselas de la IA y margen descartado (px de la fuente)
 GRANO = 1.1                       # sigma del grano, en niveles de 8 bits
 
 # Luminancia media (Rec. 709, valores sRGB de 8 bits) del wallpaper.jpg de la cascada de antes de esta
@@ -84,10 +84,10 @@ LUMA_OBJETIVO = 71.6
 #   nota:    origen / licencia, tal cual en fondos.json.
 FONDOS = [
     dict(id="cascada", nombre="Cascada otoñal", fuente="fotos/escritorio-cascada.webp",
-         ventana=(2, 40, 736, 414), ia=True, mezcla=0.15,
+         ventana=(2, 40, 736, 414), ia=True, mezcla=0.25,
          nota="Foto del proyecto (branding/fotos), origen y licencia sin verificar."),
     dict(id="islandia", nombre="Islandia", fuente="fotos/bloqueo-islandia.webp",
-         ventana=(6, 55, 928, 522), ia=True, mezcla=0.15,
+         ventana=(6, 55, 928, 522), ia=True, mezcla=0.20,
          nota="Foto del proyecto (branding/fotos), origen y licencia sin verificar."),
     dict(id="atardecer-playa", nombre="Atardecer en la playa", fuente="fotos/fondo-atardecer-playa.png",
          ventana=(2, 0, 622, 350), ia=True, mezcla=0.10,
@@ -100,7 +100,7 @@ FONDOS = [
          ventana=(4, 745, 1264, 711), ia=True, mezcla=0.35,
          nota="Aportada por el usuario (foto vertical recortada a 16:9). Licencia sin verificar."),
     dict(id="abstracto-colores", nombre="Abstracto de colores", fuente="fotos/fondo-abstracto-colores.webp",
-         ventana=(0, 130, 1500, 844), ia=True, mezcla=0.25,
+         ventana=(0, 130, 1500, 844), ia=True, mezcla=0.30,
          nota="Aportada por el usuario. La fuente lleva una marca de agua comercial (todo cuadros / tutti Quadri "
               "/ artwork vault / tudo Quadros) en la franja inferior derecha, que queda FUERA del recorte. "
               "Procede de una web de venta de cuadros: licencia dudosa."),

@@ -41,12 +41,16 @@ class OpcionesFondo:
         if self.destino == "escritorio":
             yield F.VALOR_CASCADA, "Cascada"
             yield F.VALOR_COLOR, "Color sólido"
+        hay_defecto = False
         for f in F.listar():
             if self.destino == "escritorio":
                 if f.escritorio and f.id != F.ID_CASCADA:  # la cascada ya es «imagen»
                     yield f.id, f.nombre
             elif f.bloqueos:
+                hay_defecto = hay_defecto or f.id == F.ID_BLOQUEO_DEFECTO
                 yield f.id, f.nombre
+        if self.destino == "bloqueo" and not hay_defecto:   # sin catálogo ni fondo antiguo, sigue siendo válido
+            yield F.ID_BLOQUEO_DEFECTO, "Islandia"
 
     def normalizar(self, texto):
         """El valor canónico de `texto`, o None si no es una opción. Un id solo se mira si tiene buen formato."""
