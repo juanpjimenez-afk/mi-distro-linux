@@ -360,7 +360,7 @@ _COMANDOS_BLOQUEADOS = frozenset({
     # pAnkI no borra
     "rm", "rmdir", "unlink",
 })
-_COMANDOS_PREFIJO_BLOQUEADO = ("mkfs", "sudo")   # mkfs.ext4, sudo-rs, sudoedit...
+_COMANDOS_BLOQUEADOS_RE = re.compile(r"(sudo([-.].*|edit|replay)?|mkfs([.-].*)?)")   # sudo-rs, sudoedit, mkfs.ext4...
 _LANZADORES = frozenset({
     "env", "nice", "nohup", "timeout", "xargs", "setsid", "stdbuf", "ionice", "chrt", "taskset", "time",
     "command", "exec", "eval", "builtin", "busybox", "watch", "flock", "unshare", "nsenter", "runuser",
@@ -368,6 +368,12 @@ _LANZADORES = frozenset({
     "crontab", "strace", "ltrace", "gdb", "unbuffer", "expect", "make", "gmake", "dbus-launch",
     "dbus-run-session", "awk", "gawk", "mawk", "nawk", "tclsh", "wish", "irb", "node", "nodejs", "deno",
     "bun", "php", "perl", "ruby", "lua", "luajit",
+    # contenedores y entornos aislados (equivalen a ejecutar cualquier cosa, a veces como root)
+    "docker", "podman", "nerdctl", "lxc", "lxd", "machinectl", "systemd-nspawn", "distrobox", "toolbox",
+    "bwrap", "firejail",
+    # programas que ejecutan lo que se les diga por una opción (-e, -o ProxyCommand, +!cmd, -P, -c, -z...)
+    "ssh", "scp", "sftp", "rsync", "less", "man", "vi", "vim", "view", "vimdiff", "ex", "ed", "emacs",
+    "tcpdump", "nc", "ncat", "netcat", "socat",
 })
 _LANZADOR_RE = re.compile(r"^(r?(ba|da|z|k|c|tc|a|fi)?sh|(python|pypy|perl|ruby|lua|php|node)[0-9.]*(-.*)?)$")
 _CONSULTAS_INOFENSIVAS = frozenset({"--version", "--help", "-V", "-h"})
@@ -1197,6 +1203,8 @@ class Ejecutor:
         if alto:
             detalle.append(f"Atención: la URL lleva una consulta de {consulta} caracteres. Podría estar enviando "
                            "datos (por ejemplo, información de tus archivos) al sitio.")
+        if len(partes.path) + len(partes.fragment) > 300:
+            detalle.append("Aviso: la dirección es muy larga; comprueba que no lleve datos tuyos escondidos.")
         if _host_local(partes.hostname):
             detalle.append("Aviso: es una dirección de tu propio equipo o de tu red local.")
         sol = self._solicitud("abrir_url", "Abrir una página web en el navegador", detalle,
@@ -1560,7 +1568,7 @@ class Ejecutor:
         self._igual_que_al_preparar(p, "real", r.real)
         self._asegurar_estado()
         diario = _Diario(os.path.join(self._estado_dir, f"registro-{time.time_ns():020d}-{secrets.token_hex(3)}.jsonl"))
-        movidos, fallos, creadas = 0, [], []
+        movidos, fallos, creadas, sin_registro = 0, [], [], 0
         fd_base = None
         try:
             fd_base = self._abrir_dir(r.real, r.real)
@@ -1568,22 +1576,26 @@ class Ejecutor:
             for nombre, sub in plan.movs:
                 try:
                     destino, st = self._mover_de_plan(r, fd_base, nombre, sub, diario, creadas)
-                    diario.anadir({"t": "mov", "desde": os.path.join(r.real, nombre), "hasta": destino,
-                                   "dev": st.st_dev, "ino": st.st_ino, "tam": st.st_size, "mtime_ns": st.st_mtime_ns})
-                    movidos += 1
                 except (ErrorHerramienta, OSError) as e:
                     motivo = str(e) if isinstance(e, ErrorHerramienta) else _error_os(e, "el archivo")
                     fallos.append({"archivo": _texto_seguro(nombre), "motivo": motivo})
+                    continue
+                movidos += 1
+                try:
+                    diario.anadir({"t": "mov", "desde": os.path.join(r.real, nombre), "hasta": destino,
+                                   "dev": st.st_dev, "ino": st.st_ino, "tam": st.st_size, "mtime_ns": st.st_mtime_ns})
+                except OSError:   # el archivo SÍ se movió; solo falta poder deshacerlo
+                    sin_registro += 1
         finally:
             if fd_base is not None:
                 os.close(fd_base)
             diario.cerrar()
-            if movidos == 0:   # no se movió nada: sin registro, y fuera las carpetas vacías que se crearon
-                for c in reversed(creadas):
-                    try:
-                        os.rmdir(c)
-                    except OSError:
-                        pass
+            for c in reversed(creadas):   # carpetas que se crearon y quedaron vacías (rmdir no borra nada con contenido)
+                try:
+                    os.rmdir(c)
+                except OSError:
+                    pass
+            if movidos == 0:   # no se movió nada: no hace falta registro
                 try:
                     os.unlink(diario.ruta)
                 except OSError:
@@ -1592,7 +1604,11 @@ class Ejecutor:
                 self._podar_registros()
         m = self._mostrar(r.real)
         datos = {"carpeta": m, "movidos": movidos, "fallidos": len(fallos), "detalle_fallos": fallos[:20],
-                 "se_puede_deshacer": movidos > 0}
+                 "se_puede_deshacer": movidos - sin_registro > 0}
+        if sin_registro:
+            datos["error"] = (f"Se movieron {movidos} archivos, pero no se pudo guardar el registro de "
+                              f"{sin_registro}: esos no se podrán deshacer.")
+            return Resultado(False, datos, f"{datos['error']} ({m})")
         if not fallos:
             return Resultado(True, datos, f"Se movieron {_plural(movidos, 'archivo', 'archivos')} en {m}. "
                                           "Se puede deshacer.")
@@ -1880,7 +1896,7 @@ class Ejecutor:
         return os.path.basename(ruta).casefold()
 
     def _rechazar_programa(self, base, argv):
-        if base in _COMANDOS_BLOQUEADOS or base.startswith(_COMANDOS_PREFIJO_BLOQUEADO):
+        if base in _COMANDOS_BLOQUEADOS or _COMANDOS_BLOQUEADOS_RE.fullmatch(base):
             raise ErrorHerramienta(f"El programa «{_visible(base, 40)}» no está permitido (pAnkI no obtiene "
                                    "permisos de administrador, no toca discos, no apaga ni borra).")
         if base in _LANZADORES or _LANZADOR_RE.fullmatch(base):
@@ -1894,6 +1910,13 @@ class Ejecutor:
             raise ErrorHerramienta("tar no puede ejecutar otros programas.")
         if base in ("systemctl", "loginctl") and any(a in _ENERGIA for a in argv[1:]):
             raise ErrorHerramienta("No se puede apagar, reiniciar ni suspender el equipo.")
+        if base == "git" and any(a == "-c" or a.startswith(("--exec-path", "--config-env", "--upload-pack",
+                                                            "--receive-pack", "--ext-diff", "--textconv"))
+                                 for a in argv[1:]):
+            raise ErrorHerramienta("git no puede recibir configuración ni programas externos por la línea de "
+                                   "comandos.")
+        if base == "flatpak" and any(a.startswith("--command") for a in argv[1:]):
+            raise ErrorHerramienta("flatpak no puede ejecutar un programa distinto del de la aplicación.")
 
     def _comprobar_comando(self, argv, cwd):
         exe = argv[0]
@@ -1908,21 +1931,35 @@ class Ejecutor:
             self._rechazar_programa(n, argv)
         # Argumentos que sean rutas: no pueden apuntar a la lista negra (cat ~/.ssh/id_rsa).
         for a in argv[1:]:
-            if a.startswith("-"):
-                if "=" not in a:
-                    continue
-                a = a.split("=", 1)[1]
-            if not a:
+            for cand in self._rutas_posibles(a):
+                if cand == "~" or cand.startswith("~/"):
+                    cand = os.path.join(self._hogar, cand[2:])
+                absoluta = cand if os.path.isabs(cand) else os.path.join(cwd, cand)
+                for ruta in {os.path.normpath(absoluta), os.path.realpath(absoluta)}:
+                    for base in (self._hogar, self._hogar_real):
+                        partes = self._partes(ruta, base)
+                        if partes is not None and self._protegida(partes):
+                            raise ErrorHerramienta("El comando usa una ruta protegida (claves, contraseñas o datos "
+                                                   "de programas) y no se puede ejecutar.")
+
+    @staticmethod
+    def _rutas_posibles(arg):
+        """Trozos de un argumento que podrían ser una ruta: él mismo, lo que va tras «=», tras «@» (curl -d
+        @archivo) o tras «file://». Las opciones sueltas (-l, --color) no son rutas."""
+        candidatos = []
+        pendientes = [] if arg.startswith("-") else [arg]
+        if "=" in arg:
+            pendientes.append(arg.split("=", 1)[1])
+        while pendientes:
+            c = pendientes.pop()
+            if not c or c.startswith("-"):
                 continue
-            if a == "~" or a.startswith("~/"):
-                a = os.path.join(self._hogar, a[2:])
-            absoluta = a if os.path.isabs(a) else os.path.join(cwd, a)
-            for ruta in {os.path.normpath(absoluta), os.path.realpath(absoluta)}:
-                for base in (self._hogar, self._hogar_real):
-                    partes = self._partes(ruta, base)
-                    if partes is not None and self._protegida(partes):
-                        raise ErrorHerramienta("El comando usa una ruta protegida (claves, contraseñas o datos de "
-                                               "programas) y no se puede ejecutar.")
+            candidatos.append(c)
+            if c.startswith("@"):
+                pendientes.append(c[1:])
+            if c.casefold().startswith("file://"):
+                pendientes.append(c[len("file://"):])
+        return candidatos
 
     def _argv_y_carpeta(self, args):
         argv = args.get("argv")
