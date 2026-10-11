@@ -1167,8 +1167,8 @@ class VentanaPanki(Gtk.ApplicationWindow):
         total = max(1, capa.get_line_count())
         alto_texto = capa.get_pixel_size()[1]
         alto = max(36, min(maximo, alto_texto + 18))
+        tarjeta.desplazable.set_max_content_height(alto)  # primero el máximo: GTK exige mínimo <= máximo
         tarjeta.desplazable.set_min_content_height(alto)
-        tarjeta.desplazable.set_max_content_height(alto)
         por_linea = alto_texto / total
         visibles = int((alto - 16) / por_linea) if por_linea > 0 else total
         if alto_texto + 18 > alto and total > visibles:
@@ -1414,7 +1414,10 @@ class VentanaPanki(Gtk.ApplicationWindow):
         self.tarjeta_clave = tarjeta
         self._anadir(tarjeta)
         self._actualizar_controles()
-        self._ir_al_final()
+        if motivo == "primera":
+            self._pegado = False  # el aviso es largo: se empieza a leer por arriba, no por el campo
+        else:
+            self._ir_al_final()
         campo.grab_focus()
 
     def _cerrar_tarjeta_clave(self, tarjeta, campo, volver_a_la_entrada=True):

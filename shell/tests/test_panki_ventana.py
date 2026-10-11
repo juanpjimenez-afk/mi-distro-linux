@@ -37,11 +37,12 @@ def _leer(*partes):
 
 # ------------------------------------------------------------------------------------------ falsos
 class ErrorPanki(Exception):
-    """Como la del núcleo: mensaje para el usuario y, si la hubo, el código HTTP."""
+    """Como la del núcleo: mensaje para el usuario, el código HTTP real y si Gemini rechazó la clave."""
 
-    def __init__(self, mensaje, codigo=None):
+    def __init__(self, mensaje, codigo=None, clave_invalida=False):
         super().__init__(mensaje)
         self.codigo = codigo
+        self.clave_invalida = clave_invalida
 
 
 class NucleoFalso:
@@ -78,6 +79,8 @@ class AgenteFalso:
         self.cancelado = threading.Event()
         self.reinicios = 0
         self.decisiones = []
+        self.permisos = []  # textos de alcance de los permisos "en esta conversación" (como Agente.permisos_activos)
+        self.revocaciones = 0
 
     def enviar(self, texto, alevento):
         self.enviados.append(texto)
@@ -89,6 +92,15 @@ class AgenteFalso:
 
     def reiniciar(self):
         self.reinicios += 1
+        self.permisos = []
+
+    def permisos_activos(self):
+        return list(self.permisos)
+
+    def revocar_permisos(self, clave=None):
+        self.revocaciones += 1
+        n, self.permisos = len(self.permisos), []
+        return n
 
 
 def _gtk():
@@ -109,12 +121,14 @@ class Solicitud:
     """Lo mismo que panki_herramientas.Solicitud, sin depender de ese módulo."""
 
     def __init__(self, titulo="Mover 2 archivos en ~/Descargas", detalle=None, riesgo="medio",
-                 recordable="carpeta:/home/u/Descargas", herramienta="aplicar_organizacion"):
+                 recordable="carpeta:/home/u/Descargas", herramienta="aplicar_organizacion",
+                 alcance="mover archivos de ~/Descargas a sus subcarpetas"):
         self.herramienta = herramienta
         self.titulo = titulo
         self.detalle = detalle if detalle is not None else ["a.jpg -> Imágenes/a.jpg", "b.pdf -> Documentos/b.pdf"]
         self.riesgo = riesgo
         self.recordable = recordable
+        self.alcance = alcance if recordable is not None else None
 
 
 # ------------------------------------------------------------------------------------------ funciones puras
@@ -162,12 +176,53 @@ class TestFuncionesPuras(unittest.TestCase):
         self.assertEqual(P.texto_visible("a\x00b"), "a‹U+0000›b")
         self.assertEqual(P.texto_visible("línea\ncon\ttabulación"), "línea\ncon\ttabulación")
 
-    def test_error_de_clave(self):
+    def test_parece_clave(self):
         P = self.P
-        self.assertTrue(P.es_error_de_clave("Gemini no aceptó la clave (error 403): no es válida, ha caducado."))
-        self.assertTrue(P.es_error_de_clave("No se puede iniciar pAnkI: falta la clave de Gemini."))
-        self.assertFalse(P.es_error_de_clave("Se superó la cuota de Gemini (error 429)."))
-        self.assertFalse(P.es_error_de_clave("El modelo «x» no existe o no está disponible para tu clave (error 404)."))
+        self.assertTrue(P.parece_clave("mi clave es " + CLAVE_FALSA + " gracias"))
+        self.assertTrue(P.parece_clave("AIza" + "x" * 30))
+        self.assertFalse(P.parece_clave("AIza" + "x" * 29))
+        self.assertFalse(P.parece_clave("hola, ¿qué tal? AIzaCorta"))
+        self.assertFalse(P.parece_clave(""))
+
+    def test_texto_visible_destapa_tambien_huecos_y_combinantes(self):
+        P = self.P
+        for nombre, texto, codigo in (("braille en blanco", "informe.pdf" + "\u2800" * 3 + ".desktop", "U+2800"),
+                                      ("relleno hangul", "a\u3164b", "U+3164"),
+                                      ("relleno hangul 2", "a\u115fb\u1160c", "U+115F"),
+                                      ("zalgo", "informe.pdf" + "\u0489" * 5 + ".sh", "U+0489"),
+                                      ("combinante", "x\u0300\u0300y", "U+0300"),
+                                      ("selector de variación", "a\ufe0fb", "U+FE0F")):
+            with self.subTest(nombre):
+                visible = P.texto_visible(texto)
+                self.assertIn("‹" + codigo, visible)
+                for c in "\u2800\u3164\u115f\u1160\u0489\u0300\ufe0f":
+                    self.assertNotIn(c, visible)
+
+    def test_las_tildes_normales_no_se_tocan_y_se_normaliza_a_nfc(self):
+        P = self.P
+        self.assertEqual(P.texto_visible("Descripción: canción ñandú"), "Descripción: canción ñandú")
+        descompuesto = "e\u0301sta"  # e + acento combinante: tras NFC es «ésta», sin marcas raras
+        self.assertEqual(P.texto_visible(descompuesto), "ésta")
+
+    def test_una_linea_limpia_y_recorta_por_el_medio(self):
+        P = self.P
+        t = P.una_linea("a" * 200 + ".pdf", 40)
+        self.assertEqual(len(t), 40)
+        self.assertTrue(t.endswith(".pdf"), "se conserva el final (la extensión)")
+        self.assertIn("…", t)
+        self.assertNotIn("\n", P.una_linea("uno\ndos\r\ntres"))
+        self.assertNotIn("\u202e", P.una_linea("a\u202eb"))
+        self.assertEqual(P.una_linea("corta"), "corta")
+
+    def test_el_texto_del_modelo_no_dibuja_marcos_ni_reglas(self):
+        P = self.P
+        entra = "Hola\n\n---\n\n> una cita\n\n```\ncodigo\n```\n\n┌──────┐\n│ hola │\n└──────┘\n\n▎barra\n\n***\ntexto"
+        sale = P.filtrar_texto_modelo(entra)
+        for raro in ("---", "```", "> ", "┌", "─", "│", "▎", "***"):
+            self.assertNotIn(raro, sale, raro)
+        for queda in ("Hola", "una cita", "codigo", "hola", "barra", "texto"):
+            self.assertIn(queda, sale)
+        self.assertNotIn("\n\n\n", sale)
 
     def test_sin_secretos(self):
         P = self.P
@@ -197,11 +252,37 @@ class TestFuncionesPuras(unittest.TestCase):
     def test_aviso_de_privacidad_dice_lo_que_el_documento_manda(self):
         P = self.P
         todo = " ".join(P.AVISO_PRIVACIDAD)
-        self.assertIn("se envía a Google (Gemini)", todo)
+        self.assertIn("Se envía a Google (Gemini)", todo)
         self.assertIn("~/.config/infinity/panki/clave", todo)
         self.assertIn("GEMINI_API_KEY", todo)
         self.assertIn("no se guarda", todo)  # la conversación
         self.assertIn("telemetría", todo)
+
+    def test_aviso_de_privacidad_es_veraz_con_lo_que_se_envia_sin_preguntar(self):
+        P = self.P
+        todo = " ".join(P.AVISO_PRIVACIDAD)
+        self.assertIn("pAnkI nunca te pedirá la clave por el chat", todo)
+        self.assertIn("Sin pedirte permiso", todo)  # info_sistema, ver_ajustes y buscar_apps
+        for dato in ("sistema operativo", "memoria", "disco", "batería", "tus ajustes", "las apps instaladas"):
+            self.assertIn(dato, todo)
+        for dato in ("tu nombre de usuario", "tu carpeta personal", "la fecha"):  # van en cada petición
+            self.assertIn(dato, todo)
+        self.assertIn("rutas de los archivos movidos", todo)  # el registro de deshacer
+        self.assertIn("lanzar programas", todo)  # abrir una app también ejecuta cosas
+        self.assertIn("«En esta conversación» amplía", todo)
+        self.assertNotIn("Antes de tocar nada, te pregunto", P.BIENVENIDA)  # no es cierto con permisos concedidos
+        self.assertIn("se envía a Google", P.BIENVENIDA)
+
+    def test_estilo_minimalista(self):
+        P = self.P
+        tamanos = set(re.findall(r"font-size:\s*(\d+px)", P.ESTILO))
+        self.assertEqual(tamanos, {"12px", "14px"}, "una tipografía con dos tamaños")
+        self.assertEqual(re.findall(r"box-shadow:\s*([^;]+);", P.ESTILO), ["none"] * len(re.findall("box-shadow", P.ESTILO)))
+        self.assertNotIn("gradient", P.ESTILO)
+        self.assertNotIn("transition", P.ESTILO)
+        self.assertNotIn("animation", P.ESTILO)
+        self.assertEqual(P.ESTILO.count("#b9a8ff"), P.ESTILO.count("#b9a8ff"))  # el acento es ese violeta
+        self.assertNotIn("font-family: \"Inter", P.ESTILO)
 
     def test_todo_el_css_propio_lleva_el_prefijo_panki(self):
         P = self.P
@@ -229,6 +310,10 @@ class _BaseVentana(unittest.TestCase):
         entorno.start()
         self.addCleanup(entorno.stop)
         os.environ.pop("GEMINI_API_KEY", None)
+        # Las tarjetas de permiso se arman a los 700 ms; aquí a los 30 (las pruebas del armado fijan el suyo).
+        armado = mock.patch.object(self.P, "RETARDO_ARMADO_MS", 30)
+        armado.start()
+        self.addCleanup(armado.stop)
         self.registro = os.path.join(tmp.name, "cache", "infinity", "panki.log")
         self.app = self.Gtk.Application(application_id=f"org.infinity.test.panki{time.time_ns()}")
         self.app.register(None)
@@ -299,9 +384,17 @@ class _BaseVentana(unittest.TestCase):
         v.entrada.get_buffer().set_text(texto)
         v._enviar_desde_entrada()
 
-    def espera_a_que_pida_permiso(self, v):
+    def espera_a_que_pida_permiso(self, v, armada=True):
         self.hasta(lambda: v.tarjeta_aprobacion is not None, mensaje="no apareció la tarjeta de aprobación")
-        return v.tarjeta_aprobacion
+        t = v.tarjeta_aprobacion
+        if armada:
+            self.hasta(lambda: t.espera.armada, mensaje="la tarjeta no llegó a armarse")
+        return t
+
+    @staticmethod
+    def etiqueta_de(boton):
+        """El texto de un botón, tenga etiqueta propia (label) o un hijo con el texto (el de la concesión)."""
+        return boton.get_label() if boton.get_label() is not None else boton.etiqueta.get_text()
 
     @staticmethod
     def pide_permiso(solicitud=None):
@@ -320,9 +413,9 @@ class TestVentana(_BaseVentana):
         v = self.ventana()
         self.assertEqual(v.get_title(), "pAnkI")
         self.assertTrue(v.bienvenida.get_visible())
-        self.assertIn("Hola, soy pAnkI", self.textos(v.bienvenida))
+        self.assertIn(self.P.BIENVENIDA, self.textos(v.bienvenida))
         self.assertTrue(v.entrada.get_sensitive())
-        self.assertTrue(v.boton_enviar.get_visible())
+        self.assertFalse(v._trabajando)
         self.assertFalse(v.boton_parar.get_visible())
         self.assertIsNone(v.tarjeta_clave)
 
@@ -336,20 +429,20 @@ class TestVentana(_BaseVentana):
     def test_conversacion_basica_con_estado_y_herramientas(self):
         def guion(agente, texto, alevento):
             alevento(("estado", "Pensando…"))
-            alevento(("herramienta", "buscar_apps", "consulta: gimp"))
+            alevento(("herramienta", "buscar_apps", 'consulta="gimp"'))
             alevento(("resultado", "buscar_apps", True, "1 aplicación encontrada"))
-            alevento(("herramienta", "listar_directorio", "ruta: ~/x"))
+            alevento(("herramienta", "listar_directorio", 'ruta="~/x"'))
             alevento(("resultado", "listar_directorio", False, "carpeta no permitida"))
             alevento(("texto", "Listo."))
             return "Listo."
 
         v = self.ventana(guion)
         self.enviar(v, "busca gimp")
-        self.hasta(lambda: v.boton_enviar.get_visible() and "Listo." in self.textos(v.conversacion))
+        self.hasta(lambda: not v._trabajando and "Listo." in self.textos(v.conversacion))
         textos = self.textos(v.conversacion)
         self.assertIn("busca gimp", textos)
-        self.assertIn("✓ buscar_apps — 1 aplicación encontrada", textos)
-        self.assertIn("✕ listar_directorio — carpeta no permitida", textos)
+        self.assertIn("· Buscando apps gimp — 1 aplicación encontrada · se envía a Google", textos)
+        self.assertIn("· Mirando ~/x — no se pudo: carpeta no permitida", textos)
         self.assertEqual(textos.count("Listo."), 1, "el texto final no debe salir dos veces")
         self.assertFalse(v.bienvenida.get_visible())
         self.assertTrue(v.entrada.get_sensitive())
@@ -360,7 +453,7 @@ class TestVentana(_BaseVentana):
         v = self.ventana()
         peligroso = "<b>negrita</b> & <i>x</i> <span foreground='red'>rojo</span>"
         self.enviar(v, peligroso)
-        self.hasta(lambda: v.boton_enviar.get_visible() and self.burbujas(v, "usuario"))
+        self.hasta(lambda: not v._trabajando and self.burbujas(v, "usuario"))
         etiqueta = self.widgets(self.burbujas(v, "usuario")[0], self.Gtk.Label)[0]
         self.assertFalse(etiqueta.get_use_markup())
         self.assertEqual(etiqueta.get_text(), peligroso)
@@ -453,7 +546,7 @@ class TestVentana(_BaseVentana):
             self.enviar(v, "hola")
             tarjeta = self.espera_a_que_pida_permiso(v)
             tarjeta.permitir.emit("clicked")
-            self.hasta(lambda: v.boton_enviar.get_visible() and "fin" in self.textos(v.conversacion))
+            self.hasta(lambda: not v._trabajando and "fin" in self.textos(v.conversacion))
         self.assertEqual(ajenos, [])
         self.assertIsNot(self.agentes[0].hilos[0], principal, "el agente debe correr en su propio hilo")
         self.assertTrue(self.agentes[0].hilos[0].daemon)
@@ -480,12 +573,13 @@ class TestVentana(_BaseVentana):
         self.assertIn("a.jpg -> Imágenes/a.jpg\nb.pdf -> Documentos/b.pdf", textos)
         self.assertEqual(t.permitir.get_label(), "Permitir")
         self.assertEqual(t.denegar.get_label(), "Denegar")
-        self.assertEqual(t.conversacion.get_label(), "Permitir en esta conversación")
+        self.assertEqual(self.etiqueta_de(t.conversacion),
+                         "Permitir en esta conversación: mover archivos de ~/Descargas a sus subcarpetas")
         self.assertTrue(t.detalle.has_css_class("panki-detalle"))
         self.assertIsNotNone(t.detalle.get_ancestor(self.Gtk.ScrolledWindow), "el detalle es desplazable")
         # mientras hay una tarjeta pendiente, no se puede escribir ni enviar
         self.assertFalse(v.entrada.get_sensitive())
-        self.assertFalse(v.boton_enviar.get_sensitive())
+        self.assertFalse(v.entrada.get_sensitive())
         self.assertTrue(v.boton_parar.get_visible())
 
     def test_los_tres_botones_devuelven_su_respuesta(self):
@@ -497,7 +591,7 @@ class TestVentana(_BaseVentana):
                 self.enviar(v, "ordena")
                 t = self.espera_a_que_pida_permiso(v)
                 getattr(t, boton).emit("clicked")
-                self.hasta(lambda: v.boton_enviar.get_visible() and v.entrada.get_sensitive())
+                self.hasta(lambda: not v._trabajando and v.entrada.get_sensitive())
                 self.assertEqual(self.agentes[-1].decisiones, [esperado])
                 self.assertIn(etiqueta, self.textos(t), "la tarjeta queda como registro de lo decidido")
                 self.assertEqual(self.widgets(t, self.Gtk.Button), [], "los botones desaparecen al decidir")
@@ -508,7 +602,7 @@ class TestVentana(_BaseVentana):
         self.enviar(v, "ordena")
         t = self.espera_a_que_pida_permiso(v)
         self.assertIsNone(t.conversacion)
-        self.assertNotIn("Permitir en esta conversación", [b.get_label() for b in self.widgets(t, self.Gtk.Button)])
+        self.assertFalse([b for b in self.widgets(t, self.Gtk.Button) if "en esta conversación" in self.etiqueta_de(b)])
         self.assertTrue(t.has_css_class("panki-riesgo-alto"))
 
     def test_riesgo_desconocido_se_trata_como_alto(self):
@@ -546,7 +640,7 @@ class TestVentana(_BaseVentana):
         self.hasta(lambda: self.agentes[0].decisiones == ["no"], mensaje="el hilo no recibió 'no'")
         self.assertTrue(self.agentes[0].cancelado.is_set())
         self.assertIn("Cancelado", self.textos(t))
-        self.hasta(lambda: v.boton_enviar.get_visible() and v.entrada.get_sensitive())
+        self.hasta(lambda: not v._trabajando and v.entrada.get_sensitive())
         self.assertIn("Detenido.", self.textos(v.conversacion))
         self.assertIsNone(v.tarjeta_aprobacion)
 
@@ -599,9 +693,9 @@ class TestVentana(_BaseVentana):
         self.hasta(lambda: v.boton_parar.get_visible())
         v.boton_parar.emit("clicked")
         self.assertIn("Parando", v.estado.get_text())
-        self.assertFalse(v.boton_enviar.get_sensitive())
+        self.assertFalse(v.entrada.get_sensitive())
         gate.set()
-        self.hasta(lambda: v.boton_enviar.get_visible() and v.entrada.get_sensitive())
+        self.hasta(lambda: not v._trabajando and v.entrada.get_sensitive())
         self.assertTrue(self.agentes[0].cancelado.is_set())
         textos = self.textos(v.conversacion)
         self.assertIn("Detenido.", textos)
@@ -638,7 +732,7 @@ class TestVentana(_BaseVentana):
     def test_nueva_conversacion_reinicia_y_limpia_la_vista(self):
         v = self.ventana()
         self.enviar(v, "hola")
-        self.hasta(lambda: "Respuesta a: hola" in self.textos(v.conversacion) and v.boton_enviar.get_visible())
+        self.hasta(lambda: "Respuesta a: hola" in self.textos(v.conversacion) and not v._trabajando)
         v.boton_nueva.emit("clicked")
         self.assertEqual(self.agentes[0].reinicios, 1)
         self.assertTrue(v.bienvenida.get_visible())
@@ -696,7 +790,7 @@ class TestVentana(_BaseVentana):
     def test_cerrar_sin_trabajo_oculta_y_descarta_la_conversacion(self):
         v = self.ventana()
         self.enviar(v, "hola")
-        self.hasta(lambda: "Respuesta a: hola" in self.textos(v.conversacion) and v.boton_enviar.get_visible())
+        self.hasta(lambda: "Respuesta a: hola" in self.textos(v.conversacion) and not v._trabajando)
         v.close()
         self.assertFalse(v.get_visible())
         self.assertFalse(v._cerrada, "la ventana sigue viva para que la burbuja la abra al instante")
@@ -711,7 +805,7 @@ class TestVentana(_BaseVentana):
         t = v.tarjeta_clave
         self.assertIsNotNone(t)
         texto = " ".join(self.textos(t))
-        self.assertIn("se envía a Google (Gemini)", texto)
+        self.assertIn("Se envía a Google (Gemini)", texto)
         self.assertIn("~/.config/infinity/panki/clave", texto)
         campos = self.widgets(t, self.Gtk.PasswordEntry)
         self.assertEqual(len(campos), 1, "la clave se escribe en un campo oculto")
@@ -780,7 +874,7 @@ class TestVentana(_BaseVentana):
         self.hasta(lambda: v.tarjeta_clave is not None)
         self.assertTrue(self.burbujas(v, "error"))
         self.assertIn("Gemini no ha aceptado la clave", self.textos(v.tarjeta_clave))
-        self.hasta(lambda: v.boton_enviar.get_visible())
+        self.hasta(lambda: not v._trabajando)
         self.assertEqual(v.texto_de_entrada(), "hola", "el texto vuelve para reintentarlo")
         # con la clave nueva, el agente nuevo atiende
         self.widgets(v.tarjeta_clave, self.Gtk.PasswordEntry)[0].set_text(CLAVE_FALSA)
@@ -869,7 +963,7 @@ class TestVentana(_BaseVentana):
         self.addCleanup(self._limpiar, v)
         self.pumpa(0.05)
         self.assertIsNotNone(v.tarjeta_clave, "sin clave (ni GEMINI_API_KEY) tiene que pedirla")
-        self.assertIn("se envía a Google (Gemini)", " ".join(self.textos(v.tarjeta_clave)))
+        self.assertIn("Se envía a Google (Gemini)", " ".join(self.textos(v.tarjeta_clave)))
         self.assertFalse(v.entrada.get_sensitive())
 
 
@@ -956,7 +1050,8 @@ class TestConAgenteReal(_BaseVentana):
         self.hasta(lambda: "Carpeta creada." in self.textos(v.conversacion) and v.entrada.get_sensitive())
         self.assertTrue(os.path.isdir(os.path.join(self.hogar, "Proyectos")))
         self.assertEqual(self.textos(v.conversacion).count("Carpeta creada."), 1)
-        self.assertTrue(any(t.startswith("✓ crear_carpeta") for t in self.textos(v.conversacion)))
+        self.assertTrue(any(t.startswith("· Creando") and "(permiso previo)" not in t
+                            for t in self.textos(v.conversacion)))
 
     def test_denegar_no_hace_nada(self):
         v = self.ventana_real()
