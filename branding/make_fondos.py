@@ -18,21 +18,30 @@ Funciona desde cualquier directorio. Dependencias:
         /tmp/venv-ia/bin/python -I branding/make_fondos.py
 
     Hay ruedas para CPython 3.8-3.12 (no 3.13). Si el modulo no se puede importar, el script AVISA y usa el
-    metodo clasico para esa imagen; el "metodo" de cada fondo queda escrito en fondos/fondos.json y fondos/LEEME.md.
+    metodo clasico para esa imagen; el "metodo" de cada fondo queda escrito en fondos/fondos.json.
+    Coste: la red usa un solo hilo y ~3 GB de RAM; todo el catalogo tarda ~45 minutos de CPU (el abstracto,
+    ~15). Para repartirlo, se lanzan varios procesos con ids distintos y la misma --cache, y al final uno
+    solo sin ids (que ya encuentra el resultado de la IA en la cache y tarda ~1 minuto).
     Los JPEG finales son lo que se commitea: no hace falta repetir la generacion para compilar la ISO.
 
 Que hace con cada fondo (todo en sRGB de 8 bits):
-  1. Recorta de la fuente la ventana 16:9 con mejor composicion (VENTANA, elegida a mano mirando cada imagen).
-     Si la fuente trae un perfil ICC que no es sRGB se convierte; se descartan los bordes de lienzo y las marcas.
+  1. Recorta de la fuente la ventana 16:9 con mejor composicion (clave "ventana" de FONDOS, elegida a mano
+     mirando cada imagen). Si la fuente trae un perfil ICC que no es sRGB se convierte. En el recorte quedan
+     fuera los bordes del lienzo (noche estrellada) y la marca de agua (abstracto: la ventana acaba en y=974
+     y la marca empieza en y=1248; "y_max" lo comprueba).
   2. Amplia a un "maestro" de 2880x1620 (suficiente para recortar 2560x1600 sin reescalar de mas):
-       - IA:      Real-ESRGAN x4plus sobre la ventana (quita el ruido/bloques de la compresion y reconstruye bordes)
-                  y reduccion LANCZOS al maestro. Se mezcla un poco de la ampliacion clasica (MEZCLA_CLASICA)
-                  para que no quede un aspecto "plastico".
-       - clasico: filtro bilateral suave (quita bloques 8x8 y ruido sin comerse los bordes), ampliacion LANCZOS
+       - IA:      Real-ESRGAN x4plus sobre la ventana (quita el ruido/bloques de la compresion y reconstruye
+                  bordes), reduccion LANCZOS al maestro, correccion del tono global (la red oscurece hasta un
+                  12 %: se devuelve la luz y el color de la foto original, solo en baja frecuencia) y mezcla
+                  de un pequeno porcentaje de la ampliacion clasica ("mezcla" de cada fondo, 10-35 %) para que
+                  no quede un aspecto "plastico" ni se vean texturas inventadas de mas.
+       - clasico: filtro bilateral suave (quita ruido y bloques sin comerse los bordes), ampliacion LANCZOS
                   en pasos de x2 como maximo y mascara de desenfoque (unsharp) con umbral.
   3. Escritorio: maestro -> 2560x1440, OSCURECIMIENTO ADAPTATIVO y grano. Bloqueo: recorte "cubrir" del maestro
-     a cada resolucion de RESOLUCIONES_BLOQUEO (sin oscurecer, sin deformar) y grano. Miniatura 320x180.
-  4. JPEG calidad >= 92, submuestreo 4:4:4, optimizado (progresivo en los de escritorio).
+     a cada resolucion de RESOLUCIONES_BLOQUEO (sin oscurecer, sin deformar; las resoluciones 16:10 recortan
+     un poco los lados de la misma ventana) y grano. Miniatura 320x180 del maestro sin oscurecer.
+  4. JPEG 4:4:4 optimizado y progresivo, calidad 92 (miniaturas 88, no progresivas).
+     Pesa mucho (unos 55 MB el catalogo) porque 4:4:4 a calidad 92 conserva el detalle fino.
 
 Oscurecimiento adaptativo del escritorio. Antes era un 0,70x fijo: bien para la cascada (clara y saturada) pero
 una foto ya oscura, como La noche estrellada o un atardecer, quedaba hundida. Ahora el objetivo es la
@@ -48,7 +57,6 @@ import argparse
 import hashlib
 import io
 import json
-import shutil
 import sys
 import time
 from pathlib import Path
@@ -67,7 +75,7 @@ BRILLO_ESCRITORIO = 0.70          # suelo del oscurecimiento (el valor fijo de a
 ESCRITORIO = (2560, 1440)
 MAESTRO = (2880, 1620)
 MINIATURA = (320, 180)
-CALIDAD = 93                      # JPEG de escritorio y bloqueo (>= 92)
+CALIDAD = 92                      # JPEG de escritorio y bloqueo (>= 92; 4:4:4)
 CALIDAD_MINIATURA = 88
 TESELA, MARGEN = 96, 12           # teselas de la IA y margen descartado (px de la fuente)
 GRANO = 1.1                       # sigma del grano, en niveles de 8 bits
@@ -79,6 +87,7 @@ LUMA_OBJETIVO = 71.6
 # ---------------------------------------------------------------------------------------------------------
 # Catalogo. El orden es el del selector de Ajustes.
 #   ventana: (x0, y0, ancho, alto) en pixeles de la fuente; ~16:9. Elegida a mano mirando cada imagen.
+#   y_max:   (opcional) la ventana no puede pasar de esta fila de la fuente (marca de agua desde y=1248).
 #   ia:      True si con este fondo la IA sale mejor que el clasico (decidido mirando recortes al 100 %).
 #   mezcla:  parte de la ampliacion clasica que se mezcla con la de la IA (0 = IA pura).
 #   nota:    origen / licencia, tal cual en fondos.json.
@@ -100,7 +109,7 @@ FONDOS = [
          ventana=(4, 745, 1264, 711), ia=True, mezcla=0.35,
          nota="Aportada por el usuario (foto vertical recortada a 16:9). Licencia sin verificar."),
     dict(id="abstracto-colores", nombre="Abstracto de colores", fuente="fotos/fondo-abstracto-colores.webp",
-         ventana=(0, 130, 1500, 844), ia=True, mezcla=0.30,
+         ventana=(0, 130, 1500, 844), y_max=1240, ia=True, mezcla=0.30,
          nota="Aportada por el usuario. La fuente lleva una marca de agua comercial (todo cuadros / tutti Quadri "
               "/ artwork vault / tudo Quadros) en la franja inferior derecha, que queda FUERA del recorte. "
               "Procede de una web de venta de cuadros: licencia dudosa."),
@@ -214,6 +223,18 @@ def clasico_maestro(ventana_img):
     return grande.filter(ImageFilter.UnsharpMask(radius=2.0, percent=55, threshold=3))
 
 
+def igualar_tono(ia, ref, lado=48):
+    """La red de IA oscurece y desplaza un poco el color (hasta un 12 % de brillo medio en el salto de agua).
+    Se corrige solo la componente de baja frecuencia: se multiplica `ia` por el cociente (borroso) entre la
+    ampliacion clasica `ref` y la propia `ia`, limitado a 0,7..1,4, de modo que el detalle es el de la IA
+    pero la luz y el color global son los de la foto original."""
+    a = np.asarray(ia, dtype=np.float32)
+    pequena = lambda im: np.asarray(im.resize((ia.width // lado, ia.height // lado), Image.BOX), dtype=np.float32)
+    ratio = (pequena(ref) + 1.0) / (pequena(ia) + 1.0)
+    ratio = np.stack([np.asarray(Image.fromarray(ratio[..., c]).resize(ia.size, Image.BICUBIC)) for c in range(3)], -1)
+    return Image.fromarray(np.clip(a * np.clip(ratio, 0.7, 1.4) + 0.5, 0, 255).astype(np.uint8))
+
+
 def maestro(fondo, Realesrgan, cache=None, forzar_clasico=False):
     """Devuelve (imagen RGB 2880x1620, texto del metodo)."""
     x0, y0, w, h = fondo["ventana"]
@@ -221,15 +242,16 @@ def maestro(fondo, Realesrgan, cache=None, forzar_clasico=False):
     assert abs(asp - 1) < 0.005, f"{fondo['id']}: la ventana no es 16:9 ({w}x{h})"
     fuente = abrir_srgb(AQUI / fondo["fuente"])
     assert x0 >= 0 and y0 >= 0 and x0 + w <= fuente.width and y0 + h <= fuente.height, fondo["id"]
+    assert y0 + h <= fondo.get("y_max", fuente.height), f"{fondo['id']}: la ventana invade la zona con marca de agua"
     ventana = fuente.crop((x0, y0, x0 + w, y0 + h))
     clasico = clasico_maestro(ventana)
     desc_ventana = f"ventana 16:9 {w}x{h} de {fuente.width}x{fuente.height}"
     if fondo["ia"] and Realesrgan and not forzar_clasico:
         x4 = ia_x4(ventana, Realesrgan, cache, fondo["id"])
-        ia = x4.resize(MAESTRO, Image.LANCZOS)
+        ia = igualar_tono(x4.resize(MAESTRO, Image.LANCZOS), ampliar_pasos(ventana, MAESTRO[0]).resize(MAESTRO, Image.LANCZOS))
         m = fondo["mezcla"]
         res = Image.blend(ia, clasico, m) if m else ia
-        texto = (f"{desc_ventana}; Real-ESRGAN x4plus (IA, CPU) y reducción LANCZOS a {MAESTRO[0]}x{MAESTRO[1]}"
+        texto = (f"{desc_ventana}; Real-ESRGAN x4plus (IA, CPU) y reducción LANCZOS a {MAESTRO[0]}x{MAESTRO[1]}, tono global igualado al original"
                  + (f", mezclado un {round(m * 100)} % con la ampliación clásica" if m else ""))
         return res, texto
     texto = (f"{desc_ventana}; clásico: filtro bilateral, ampliación LANCZOS por pasos de x2 y unsharp con umbral"
@@ -253,10 +275,6 @@ def con_grano(arr, semilla):
     return Image.fromarray(np.clip(arr + lum + col + 0.5, 0, 255).astype(np.uint8))
 
 
-def afilar(img, radio=0.9, porcentaje=35):
-    return img.filter(ImageFilter.UnsharpMask(radius=radio, percent=porcentaje, threshold=2))
-
-
 def guardar_jpeg(img, ruta, calidad, progresivo):
     ruta.parent.mkdir(parents=True, exist_ok=True)
     img.save(ruta, "JPEG", quality=calidad, subsampling=0, optimize=True, progressive=progresivo)
@@ -267,7 +285,7 @@ def generar_fondo(fondo, Realesrgan, cache=None, forzar_clasico=False, salida=SA
     m, metodo = maestro(fondo, Realesrgan, cache, forzar_clasico)
     carpeta = salida / fondo["id"]
     # Escritorio
-    base = afilar(m.resize(ESCRITORIO, Image.LANCZOS), 1.0, 30)
+    base = m.resize(ESCRITORIO, Image.LANCZOS)
     arr = np.asarray(base, dtype=np.float32)
     f = factor_escritorio(arr)
     esc = con_grano(arr * f, fondo["id"] + "/escritorio")
@@ -277,10 +295,10 @@ def generar_fondo(fondo, Realesrgan, cache=None, forzar_clasico=False, salida=SA
     # Bloqueo
     bloqueo = {}
     for ancho, alto in RESOLUCIONES_BLOQUEO:
-        img = afilar(cubrir(m, ancho, alto))
+        img = cubrir(m, ancho, alto)
         img = con_grano(np.asarray(img, dtype=np.float32), f"{fondo['id']}/bloqueo{ancho}x{alto}")
         nombre = f"bloqueo-{ancho}x{alto}.jpg"
-        guardar_jpeg(img, carpeta / nombre, CALIDAD, False)
+        guardar_jpeg(img, carpeta / nombre, CALIDAD, True)
         bloqueo[f"{ancho}x{alto}"] = f"{fondo['id']}/{nombre}"
     print(f"  {fondo['id']}: brillo escritorio x{f:.3f}  ({time.time() - t0:.0f} s)  {metodo}")
     return dict(id=fondo["id"], nombre=fondo["nombre"], escritorio=f"{fondo['id']}/escritorio.jpg",
@@ -291,14 +309,14 @@ def generar_fondo(fondo, Realesrgan, cache=None, forzar_clasico=False, salida=SA
 def compatibilidad(m_cascada, m_islandia, f_cascada, salida=AQUI):
     """branding/wallpaper.jpg (1920x1080, la cascada oscurecida) y branding/fondos-bloqueo/wallpaper-lock-*.jpg
     (la foto de Islandia): los nombres de siempre, que usan build.sh y las pruebas."""
-    base = afilar(m_cascada.resize((1920, 1080), Image.LANCZOS), 1.0, 30)
+    base = m_cascada.resize((1920, 1080), Image.LANCZOS)
     arr = np.asarray(base, dtype=np.float32)
     guardar_jpeg(con_grano(arr * f_cascada, "wallpaper.jpg"), salida / "wallpaper.jpg", CALIDAD, True)
     carpeta = salida / "fondos-bloqueo"
     for ancho, alto in RESOLUCIONES_BLOQUEO:
-        img = afilar(cubrir(m_islandia, ancho, alto))
+        img = cubrir(m_islandia, ancho, alto)
         img = con_grano(np.asarray(img, dtype=np.float32), f"islandia/bloqueo{ancho}x{alto}")
-        guardar_jpeg(img, carpeta / f"wallpaper-lock-{ancho}x{alto}.jpg", CALIDAD, False)
+        guardar_jpeg(img, carpeta / f"wallpaper-lock-{ancho}x{alto}.jpg", CALIDAD, True)
 
 
 def main(argv=None):

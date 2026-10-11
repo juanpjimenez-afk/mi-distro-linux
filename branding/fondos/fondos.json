@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "fondos": [
+    {
+      "id": "cascada",
+      "nombre": "Cascada otoñal",
+      "escritorio": "cascada/escritorio.jpg",
+      "miniatura": "cascada/miniatura.jpg",
+      "bloqueo": {
+        "1920x1080": "cascada/bloqueo-1920x1080.jpg",
+        "1920x1200": "cascada/bloqueo-1920x1200.jpg",
+        "2560x1440": "cascada/bloqueo-2560x1440.jpg",
+        "2560x1600": "cascada/bloqueo-2560x1600.jpg",
+        "1366x768": "cascada/bloqueo-1366x768.jpg",
+        "1280x800": "cascada/bloqueo-1280x800.jpg",
+        "1600x900": "cascada/bloqueo-1600x900.jpg",
+        "1440x900": "cascada/bloqueo-1440x900.jpg",
+        "1280x720": "cascada/bloqueo-1280x720.jpg"
+      },
+      "fuente": "fotos/escritorio-cascada.webp",
+      "metodo": "ventana 16:9 736x414 de 740x493; Real-ESRGAN x4plus (IA, CPU) y reducción LANCZOS a 2880x1620, tono global igualado al original, mezclado un 25 % con la ampliación clásica",
+      "nota": "Foto del proyecto (branding/fotos), origen y licencia sin verificar.",
+      "brillo_escritorio": 0.703
+    },
+    {
+      "id": "islandia",
+      "nombre": "Islandia",
+      "escritorio": "islandia/escritorio.jpg",
+      "miniatura": "islandia/miniatura.jpg",
+      "bloqueo": {
+        "1920x1080": "islandia/bloqueo-1920x1080.jpg",
+        "1920x1200": "islandia/bloqueo-1920x1200.jpg",
+        "2560x1440": "islandia/bloqueo-2560x1440.jpg",
+        "2560x1600": "islandia/bloqueo-2560x1600.jpg",
+        "1366x768": "islandia/bloqueo-1366x768.jpg",
+        "1280x800": "islandia/bloqueo-1280x800.jpg",
+        "1600x900": "islandia/bloqueo-1600x900.jpg",
+        "1440x900": "islandia/bloqueo-1440x900.jpg",
+        "1280x720": "islandia/bloqueo-1280x720.jpg"
+      },
+      "fuente": "fotos/bloqueo-islandia.webp",
+      "metodo": "ventana 16:9 928x522 de 940x625; Real-ESRGAN x4plus (IA, CPU) y reducción LANCZOS a 2880x1620, tono global igualado al original, mezclado un 20 % con la ampliación clásica",
+      "nota": "Foto del proyecto (branding/fotos), origen y licencia sin verificar.",
+      "brillo_escritorio": 0.772
+    },
+    {
+      "id": "atardecer-playa",
+      "nombre": "Atardecer en la playa",
+      "escritorio": "atardecer-playa/escritorio.jpg",
+      "miniatura": "atardecer-playa/miniatura.jpg",
+      "bloqueo": {
+        "1920x1080": "atardecer-playa/bloqueo-1920x1080.jpg",
+        "1920x1200": "atardecer-playa/bloqueo-1920x1200.jpg",
+        "2560x1440": "atardecer-playa/bloqueo-2560x1440.jpg",
+        "2560x1600": "atardecer-playa/bloqueo-2560x1600.jpg",
+        "1366x768": "atardecer-playa/bloqueo-1366x768.jpg",
+        "1280x800": "atardecer-playa/bloqueo-1280x800.jpg",
+        "1600x900": "atardecer-playa/bloqueo-1600x900.jpg",
+        "1440x900": "atardecer-playa/bloqueo-1440x900.jpg",
+        "1280x720": "atardecer-playa/bloqueo-1280x720.jpg"
+      },
+      "fuente": "fotos/fondo-atardecer-playa.png",
+      "metodo": "ventana 16:9 622x350 de 625x350; Real-ESRGAN x4plus (IA, CPU) y reducción LANCZOS a 2880x1620, tono global igualado al original, mezclado un 10 % con la ampliación clásica",
+      "nota": "Aportada por el usuario; parece generada por IA. Licencia sin verificar.",
+      "brillo_escritorio": 0.823
+    },
+    {
+      "id": "lago-montanas",
+      "nombre": "Lago entre montañas",
+      "escritorio": "lago-montanas/escritorio.jpg",
+      "miniatura": "lago-montanas/miniatura.jpg",
+      "bloqueo": {
+        "1920x1080": "lago-montanas/bloqueo-1920x1080.jpg",
+        "1920x1200": "lago-montanas/bloqueo-1920x1200.jpg",
+        "2560x1440": "lago-montanas/bloqueo-2560x1440.jpg",
+        "2560x1600": "lago-montanas/bloqueo-2560x1600.jpg",
+        "1366x768": "lago-montanas/bloqueo-1366x768.jpg",
+        "1280x800": "lago-montanas/bloqueo-1280x800.jpg",
+        "1600x900": "lago-montanas/bloqueo-1600x900.jpg",
+        "1440x900": "lago-montanas/bloqueo-1440x900.jpg",
+        "1280x720": "lago-montanas/bloqueo-1280x720.jpg"
+      },
+      "fuente": "fotos/fondo-lago-montanas.webp",
+      "metodo": "ventana 16:9 672x378 de 673x456; Real-ESRGAN x4plus (IA, CPU) y reducción LANCZOS a 2880x1620, tono global igualado al original, mezclado un 10 % con la ampliación clásica",
+      "nota": "Aportada por el usuario; lámina cromolitográfica antigua, de aspecto de dominio público pero sin verificar.",
+      "brillo_escritorio": 0.7
+    },
+    {
+      "id": "salto-de-agua",
+      "nombre": "Salto de agua",
+      "escritorio": "salto-de-agua/escritorio.jpg",
+      "miniatura": "salto-de-agua/miniatura.jpg",
+      "bloqueo": {
+        "1920x1080": "salto-de-agua/bloqueo-1920x1080.jpg",
+        "1920x1200": "salto-de-agua/bloqueo-1920x1200.jpg",
+        "2560x1440": "salto-de-agua/bloqueo-2560x1440.jpg",
+        "2560x1600": "salto-de-agua/bloqueo-2560x1600.jpg",
+        "1366x768": "salto-de-agua/bloqueo-1366x768.jpg",
+        "1280x800": "salto-de-agua/bloqueo-1280x800.jpg",
+        "1600x900": "salto-de-agua/bloqueo-1600x900.jpg",
+        "1440x900": "salto-de-agua/bloqueo-1440x900.jpg",
+        "1280x720": "salto-de-agua/bloqueo-1280x720.jpg"
+      },
+      "fuente": "fotos/fondo-salto-de-agua.webp",
+      "metodo": "ventana 16:9 1264x711 de 1275x1542; Real-ESRGAN x4plus (IA, CPU) y reducción LANCZOS a 2880x1620, tono global igualado al original, mezclado un 35 % con la ampliación clásica",
+      "nota": "Aportada por el usuario (foto vertical recortada a 16:9). Licencia sin verificar.",
+      "brillo_escritorio": 0.742
+    },
+    {
+      "id": "abstracto-colores",
+      "nombre": "Abstracto de colores",
+      "escritorio": "abstracto-colores/escritorio.jpg",
+      "miniatura": "abstracto-colores/miniatura.jpg",
+      "bloqueo": {
+        "1920x1080": "abstracto-colores/bloqueo-1920x1080.jpg",
+        "1920x1200": "abstracto-colores/bloqueo-1920x1200.jpg",
+        "2560x1440": "abstracto-colores/bloqueo-2560x1440.jpg",
+        "2560x1600": "abstracto-colores/bloqueo-2560x1600.jpg",
+        "1366x768": "abstracto-colores/bloqueo-1366x768.jpg",
+        "1280x800": "abstracto-colores/bloqueo-1280x800.jpg",
+        "1600x900": "abstracto-colores/bloqueo-1600x900.jpg",
+        "1440x900": "abstracto-colores/bloqueo-1440x900.jpg",
+        "1280x720": "abstracto-colores/bloqueo-1280x720.jpg"
+      },
+      "fuente": "fotos/fondo-abstracto-colores.webp",
+      "metodo": "ventana 16:9 1500x844 de 1500x1500; Real-ESRGAN x4plus (IA, CPU) y reducción LANCZOS a 2880x1620, tono global igualado al original, mezclado un 30 % con la ampliación clásica",
+      "nota": "Aportada por el usuario. La fuente lleva una marca de agua comercial (todo cuadros / tutti Quadri / artwork vault / tudo Quadros) en la franja inferior derecha, que queda FUERA del recorte. Procede de una web de venta de cuadros: licencia dudosa.",
+      "brillo_escritorio": 0.7
+    },
+    {
+      "id": "noche-estrellada",
+      "nombre": "La noche estrellada",
+      "escritorio": "noche-estrellada/escritorio.jpg",
+      "miniatura": "noche-estrellada/miniatura.jpg",
+      "bloqueo": {
+        "1920x1080": "noche-estrellada/bloqueo-1920x1080.jpg",
+        "1920x1200": "noche-estrellada/bloqueo-1920x1200.jpg",
+        "2560x1440": "noche-estrellada/bloqueo-2560x1440.jpg",
+        "2560x1600": "noche-estrellada/bloqueo-2560x1600.jpg",
+        "1366x768": "noche-estrellada/bloqueo-1366x768.jpg",
+        "1280x800": "noche-estrellada/bloqueo-1280x800.jpg",
+        "1600x900": "noche-estrellada/bloqueo-1600x900.jpg",
+        "1440x900": "noche-estrellada/bloqueo-1440x900.jpg",
+        "1280x720": "noche-estrellada/bloqueo-1280x720.jpg"
+      },
+      "fuente": "fotos/fondo-noche-estrellada.webp",
+      "metodo": "ventana 16:9 1228x691 de 1280x720; Real-ESRGAN x4plus (IA, CPU) y reducción LANCZOS a 2880x1620, tono global igualado al original, mezclado un 20 % con la ampliación clásica",
+      "nota": "«La noche estrellada» (Van Gogh, 1889): obra de dominio público. La reproducción es la aportada por el usuario, licencia de la fotografía sin verificar; se recortan los bordes del lienzo.",
+      "brillo_escritorio": 0.713
+    }
+  ]
+}
