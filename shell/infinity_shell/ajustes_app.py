@@ -38,6 +38,7 @@ flowboxchild:selected .fondo-mosaico { border-color: @theme_selected_bg_color; }
 .fondo-miniatura { border-radius: 8px; background-color: rgba(128, 128, 128, 0.25); }
 .fondo-marca { background-color: @theme_selected_bg_color; color: @theme_selected_fg_color; border-radius: 99px;
                padding: 0 7px; margin: 6px; font-weight: bold; }
+button.fondo-quitar { padding: 1px 10px; min-height: 0; min-width: 0; }
 .fondo-infinito { font-size: 44px; color: rgba(255, 255, 255, 0.18); }
 """
 
@@ -120,6 +121,7 @@ class GaleriaFondos(Gtk.Box):
         self._mosaicos = {}     # valor → FlowBoxChild
         self._marcas = {}       # valor → etiqueta ✓
         self._colores = []      # cajas de «Color sólido», para pintarles el color
+        self._proveedor = None  # el CSS de ese color
         self.set_margin_top(8)
         self.set_margin_bottom(14)
 
@@ -255,14 +257,18 @@ class GaleriaFondos(Gtk.Box):
         marca.set_visible(False)
         marco.add_overlay(marca)
         tarjeta.append(marco)
-        etiqueta = Gtk.Label(label=nombre, xalign=0.5, ellipsize=Pango.EllipsizeMode.END, max_width_chars=22)
+        etiqueta = Gtk.Label(label=nombre, xalign=0.5, ellipsize=Pango.EllipsizeMode.END,
+                             width_chars=18, max_width_chars=18)
         tarjeta.append(etiqueta)
-        if fondo is not None and fondo.origen == "usuario":
-            quitar = Gtk.Button(label="Quitar", halign=Gtk.Align.CENTER)
-            quitar.add_css_class("flat")
-            quitar.set_tooltip_text("Borra este fondo de tu carpeta de fondos.")
-            quitar.connect("clicked", lambda *_: self.ventana.quitar_fondo(fondo))
-            tarjeta.append(quitar)
+        if fondo is not None and fondo.origen == "usuario":   # «Quitar», sobre la esquina de la miniatura
+            quitar = Gtk.Button(label="Quitar", halign=Gtk.Align.START, valign=Gtk.Align.START)
+            quitar.add_css_class("osd")
+            quitar.add_css_class("fondo-quitar")
+            quitar.set_margin_start(6)
+            quitar.set_margin_top(6)
+            quitar.set_tooltip_text(f"Borra «{fondo.nombre}» de tu carpeta de fondos.")
+            quitar.connect("clicked", lambda *_, f=fondo: self.ventana.quitar_fondo(f))
+            marco.add_overlay(quitar)
         hijo = Gtk.FlowBoxChild(halign=Gtk.Align.START, valign=Gtk.Align.START)  # sin estirarse
         hijo.set_child(tarjeta)
         hijo.set_tooltip_text(nombre)
@@ -272,14 +278,15 @@ class GaleriaFondos(Gtk.Box):
 
     def pintar_color(self):
         """Colorea «Color sólido» con el color que hay en el ajuste de color del fondo."""
-        color = self.ventana.color_fondo()
-        proveedor = getattr(self, "_proveedor", None)
+        if not self._colores:
+            return
+        proveedor = self._proveedor
         if proveedor is None:
             proveedor = self._proveedor = Gtk.CssProvider()
             display = Gdk.Display.get_default()
             if display is not None:
                 Gtk.StyleContext.add_provider_for_display(display, proveedor, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        proveedor.load_from_string(f".fondo-solido {{ background-color: {color}; }}")
+        proveedor.load_from_string(f".fondo-solido {{ background-color: {self.ventana.color_fondo()}; }}")
 
     # ---------------------------------------------------------------- avisos
     def mostrar(self, texto, error=False):

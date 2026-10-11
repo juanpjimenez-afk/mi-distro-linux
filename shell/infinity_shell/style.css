@@ -375,15 +375,16 @@ entry.lib-entry {
 
 /* ------------------------------------------------ controles de ventana (−, □, ×)
  * La pastilla de cristal que el shell dibuja junto a cada ventana (controles.py). Mide ANCHO x ALTO de
- * controles_logica.py (80 x 26): 3 botones de 22 px, 2 px entre ellos, 4 px de relleno y 1 px de borde.
+ * controles_logica.py (78 x 26): 3 botones de 20 px, 3 px entre ellos, 5 px de relleno a los lados,
+ * 2 px arriba y abajo y 1 px de borde.
  * El fondo conserva la opacidad del cristal (>= 0.30) para que Hyprland lo desenfoque. */
 .glass.ctl {
-  padding: 1px 4px;
+  padding: 2px 5px;
   border-radius: 999px;
 }
 button.ctl-btn {
-  min-width: 22px;
-  min-height: 22px;
+  min-width: 20px;
+  min-height: 20px;
   padding: 0;
   margin: 0;
   border: none;

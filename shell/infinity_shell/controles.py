@@ -17,7 +17,6 @@ geometría unas 4 veces por segundo (una petición ligera por el socket), y adem
 de Hyprland (abrir, cerrar, cambiar de espacio de trabajo...). Solo se mueve una pastilla si su sitio cambió;
 al arrastrar una ventana, la pastilla la sigue con un retraso de hasta ~250 ms.
 """
-import math
 import threading
 
 import gi
@@ -27,7 +26,9 @@ from gi.repository import Gtk4LayerShell as LayerShell  # noqa: E402  (antes que
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+gi.require_version("Gsk", "4.0")
+gi.require_version("Graphene", "1.0")
+from gi.repository import Gdk, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 from . import controles_logica as L  # noqa: E402
 
@@ -36,55 +37,57 @@ INTERVALO_MS = 250  # sondeo de la geometría mientras haya pastillas visibles (
 INTERVALO_SIN_EVENTOS_MS = 1000  # si el socket de eventos no está disponible, se mira más despacio, siempre
 
 
-def _icono(tipo):
-    """Botón con el símbolo dibujado a mano (no depende del tema de iconos ni de la tipografía)."""
-    area = Gtk.DrawingArea()
-    area.set_content_width(12)
-    area.set_content_height(12)
-    area.tipo = tipo
+class Icono(Gtk.Widget):
+    """El símbolo de un botón (−, □, ❐, ×), trazado con Gsk (GTK 4.14 o más): no depende del tema de iconos, de
+    la tipografía ni de pycairo. Toma el color del CSS (`color`), así que un tema puede cambiarlo."""
 
-    def dibujar(a, cr, ancho, alto, _datos=None):
-        cr.set_source_rgba(1, 1, 1, 0.94)
-        cr.set_line_width(1.6)
-        cr.set_line_cap(1)  # redondeado
-        cr.set_line_join(1)
-        c = ancho / 2
-        r = 4.0
-        if a.tipo == "minimizar":
-            cr.move_to(c - r, c + 2)
-            cr.line_to(c + r, c + 2)
-            cr.stroke()
-        elif a.tipo == "maximizar":
-            _cuadrado(cr, c - r, c - r, 2 * r, 2 * r)
-            cr.stroke()
-        elif a.tipo == "restaurar":  # dos cuadrados superpuestos
-            _cuadrado(cr, c - r, c - r + 2, 2 * r - 2, 2 * r - 2)
-            cr.stroke()
-            cr.move_to(c - r + 2, c - r + 2)  # el cuadrado de atrás, solo su "L" visible
-            cr.line_to(c - r + 2, c - r)
-            cr.line_to(c + r, c - r)
-            cr.line_to(c + r, c + r - 2)
-            cr.line_to(c + r - 2, c + r - 2)
-            cr.stroke()
+    __gtype_name__ = "InfinityControlIcono"
+    LADO = 12  # px del cuadro donde se dibuja
+    GROSOR = 1.6
+
+    def __init__(self, tipo):
+        super().__init__()
+        self.tipo = tipo  # "minimizar" | "maximizar" | "restaurar" | "cerrar"
+        self.set_size_request(self.LADO, self.LADO)
+        self.set_halign(Gtk.Align.CENTER)
+        self.set_valign(Gtk.Align.CENTER)
+
+    def poner_tipo(self, tipo):
+        if tipo != self.tipo:
+            self.tipo = tipo
+            self.queue_draw()
+
+    def do_snapshot(self, snapshot):
+        c, r = self.get_width() / 2, 4.0  # centro y semilado del símbolo
+        pb = Gsk.PathBuilder.new()
+        if self.tipo == "minimizar":
+            pb.move_to(c - r, c + 1.5)
+            pb.line_to(c + r, c + 1.5)
+        elif self.tipo == "maximizar":
+            _cuadrado(pb, c - r, c - r, 2 * r, 2 * r)
+        elif self.tipo == "restaurar":  # dos cuadrados superpuestos: el de delante entero, el de atrás solo su "L"
+            _cuadrado(pb, c - r, c - r + 2, 2 * r - 2, 2 * r - 2)
+            pb.move_to(c - r + 2, c - r + 2)
+            pb.line_to(c - r + 2, c - r)
+            pb.line_to(c + r, c - r)
+            pb.line_to(c + r, c + r - 2)
+            pb.line_to(c + r - 2, c + r - 2)
         else:  # cerrar
-            cr.move_to(c - r + 0.5, c - r + 0.5)
-            cr.line_to(c + r - 0.5, c + r - 0.5)
-            cr.move_to(c + r - 0.5, c - r + 0.5)
-            cr.line_to(c - r + 0.5, c + r - 0.5)
-            cr.stroke()
+            pb.move_to(c - r + 0.5, c - r + 0.5)
+            pb.line_to(c + r - 0.5, c + r - 0.5)
+            pb.move_to(c + r - 0.5, c - r + 0.5)
+            pb.line_to(c - r + 0.5, c + r - 0.5)
+        trazo = Gsk.Stroke.new(self.GROSOR)
+        trazo.set_line_cap(Gsk.LineCap.ROUND)
+        trazo.set_line_join(Gsk.LineJoin.ROUND)
+        snapshot.append_stroke(pb.to_path(), trazo, self.get_color())
 
-    area.set_draw_func(dibujar)
-    return area
 
-
-def _cuadrado(cr, x, y, w, h, r=1.5):
+def _cuadrado(pb, x, y, w, h, radio=1.5):
     """Cuadrado de esquinas suaves (como el resto de la interfaz)."""
-    cr.new_sub_path()
-    cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
-    cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
-    cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
-    cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
-    cr.close_path()
+    caja = Gsk.RoundedRect()
+    caja.init_from_rect(Graphene.Rect().init(x, y, w, h), radio)
+    pb.add_rounded_rect(caja)
 
 
 class Pastilla(Gtk.Window):
@@ -114,7 +117,7 @@ class Pastilla(Gtk.Window):
             b.add_css_class("ctl-btn")
             b.add_css_class("ctl-cerrar" if tipo == "cerrar" else "ctl-" + tipo)
             b.set_size_request(L.BOTON, L.BOTON)
-            b.set_child(_icono(tipo))
+            b.set_child(Icono(tipo))
             b.set_focusable(False)  # el clic no necesita foco y no queremos el aro de foco
             b.set_tooltip_text(ayuda)
             b.update_property([Gtk.AccessibleProperty.LABEL], [ayuda])
@@ -131,8 +134,7 @@ class Pastilla(Gtk.Window):
             return
         self.maximizada = maximizada
         medio = self.botones["maximizar"]
-        medio.get_child().tipo = "restaurar" if maximizada else "maximizar"
-        medio.get_child().queue_draw()
+        medio.get_child().poner_tipo("restaurar" if maximizada else "maximizar")
         ayuda = "Restaurar" if maximizada else "Maximizar"
         medio.set_tooltip_text(ayuda)
         medio.update_property([Gtk.AccessibleProperty.LABEL], [ayuda])
@@ -183,6 +185,7 @@ class Controles:
         self._en_curso = False
         self._repetir = False
         self._con_eventos = False
+        self._cerrado = False
         if hypr.disponible:
             self._con_eventos = bool(hypr.escuchar(self._evento))
             if not self._con_eventos:
@@ -191,7 +194,7 @@ class Controles:
 
     # ----------------------------------------------------------------- consultas
     def _evento(self, nombre, _datos):
-        if nombre in L.EVENTOS:
+        if nombre in L.EVENTOS and not self._cerrado:
             self.refrescar_pronto()
 
     def refrescar_pronto(self):
@@ -225,6 +228,8 @@ class Controles:
 
     def _recibido(self, clientes, monitores):
         self._en_curso = False
+        if self._cerrado:
+            return False
         try:
             self.aplicar(clientes, monitores)
         finally:
@@ -276,6 +281,17 @@ class Controles:
                 self.pastillas.pop(direccion).destroy()  # la ventana se cerró
         self._ajustar_temporizador()
         return plan
+
+    def cerrar(self):
+        """Quita las pastillas y para el sondeo (lo que llegue después de esto se ignora)."""
+        self._cerrado = True
+        self._quitar_temporizador()
+        if self._pendiente:
+            GLib.source_remove(self._pendiente)
+            self._pendiente = 0
+        for pastilla in self.pastillas.values():
+            pastilla.destroy()
+        self.pastillas.clear()
 
     # ----------------------------------------------------------------- acciones
     def pulsar(self, tipo, direccion):

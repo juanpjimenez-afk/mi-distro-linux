@@ -1,6 +1,6 @@
 #!/bin/sh
 # Qué imagen de fondo toca: escritorio (swaybg) o pantalla de bloqueo (gtklock). Imprime una ruta a un
-# JPEG que existe, o nada (con código 1) si no hay ninguno: quien lo llama tiene su propio último recurso.
+# JPEG que existe, o nada (código 1, o 3 si el escritorio es de color sólido) si no hay ninguno: quien lo llama tiene su propio último recurso.
 #
 #   fondo-ruta escritorio              lee ~/.config/infinity/fondo        (imagen | color | id de fondo)
 #   fondo-ruta bloqueo ANCHO ALTO      lee ~/.config/infinity/fondo-bloqueo (id de fondo)
@@ -94,6 +94,7 @@ bloqueo_de() {
 case "${1:-}" in
     escritorio)
         elegido=$(leer_ajuste "$CFG/fondo")
+        [ "$elegido" = color ] && exit 3   # sin imagen a propósito (infinity-wallpaper ya lo mira antes con fondo-modo)
         for id in "$elegido" cascada; do
             case "$id" in imagen | color) continue ;; esac
             ruta=$(escritorio_de "$id") && [ -n "$ruta" ] && { printf '%s\n' "$ruta"; exit 0; }

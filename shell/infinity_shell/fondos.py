@@ -26,6 +26,7 @@ import os
 import re
 import shutil
 import stat
+import struct
 import tempfile
 import time
 import unicodedata
@@ -463,6 +464,32 @@ def _error_de_lectura(datos, error):
     return ErrorFondo("El archivo no es una imagen que se pueda leer (se mira el contenido, no la extensión).")
 
 
+def _esta_completa(datos):
+    """False si el archivo parece cortado (una descarga interrumpida, por ejemplo).
+
+    GdkPixbuf no se queja de un PNG, BMP o JPEG cortado: devuelve media imagen. Aquí se comprueba el final
+    de cada formato común. Un formato que no se reconoce aquí se deja pasar (el cargador dirá si no sirve).
+    """
+    if datos[:8] == b"\x89PNG\r\n\x1a\n":
+        i = 8
+        while i + 12 <= len(datos):
+            largo = struct.unpack(">I", datos[i:i + 4])[0]
+            if datos[i + 4:i + 8] == b"IEND":
+                return i + 12 + 0 <= len(datos)
+            i += 12 + largo
+        return False
+    if datos[:3] == b"\xff\xd8\xff":
+        return b"\xff\xd9" in datos[-2048:]
+    if datos[:3] == b"GIF":
+        return datos.rstrip(b"\x00")[-1:] == b";"
+    if datos[:2] == b"BM" and len(datos) >= 6:
+        tam = struct.unpack("<I", datos[2:6])[0]
+        return tam == 0 or len(datos) >= tam
+    if datos[:4] == b"RIFF" and datos[8:12] == b"WEBP":
+        return len(datos) >= struct.unpack("<I", datos[4:8])[0] + 8
+    return True
+
+
 def _decodificar(datos, mayor_objetivo):
     """Pixbuf RGB (sin transparencia, derecho) a partir de los bytes de una imagen.
 
@@ -471,6 +498,8 @@ def _decodificar(datos, mayor_objetivo):
     se reduce al decodificar.
     """
     GdkPixbuf, GLib = _gdkpixbuf()
+    if not _esta_completa(datos):
+        raise ErrorFondo("La imagen está incompleta o dañada (¿se cortó la descarga?). Vuelve a guardarla.")
     cargador = GdkPixbuf.PixbufLoader()
     estado = {}
 

@@ -15,9 +15,10 @@ import collections
 
 # --------------------------------------------------------------------------- medidas (px lógicos)
 ALTO = 26  # alto de la pastilla
-BOTON = 22  # lado de cada botón redondo
-ESPACIO = 2  # aire entre botones
-ANCHO = 3 * BOTON + 2 * ESPACIO + 2 * 4 + 2  # tres botones + 4 px de relleno a cada lado + borde de 1 px
+BOTON = 20  # lado de cada botón redondo
+ESPACIO = 3  # aire entre botones
+RELLENO = 5  # aire entre los botones de los extremos y el borde redondeado de la pastilla
+ANCHO = 3 * BOTON + 2 * ESPACIO + 2 * RELLENO + 2  # tres botones, su aire, el relleno y el borde de 1 px (78)
 SEPARACION = 4  # aire entre la pastilla y el borde superior de la ventana (modo "encima")
 TOPE = 4  # lo mínimo que debe quedar entre la pastilla y el borde de la pantalla
 MARGEN_DENTRO = 8  # distancia a los bordes superior y derecho en el modo "dentro"

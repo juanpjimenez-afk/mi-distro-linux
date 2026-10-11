@@ -83,6 +83,7 @@ Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://r
 | `Super + E` / `Super + B` | Archivos / Navegador |
 | `Super + Q` | Cerrar ventana |
 | `Super + F` / `Super + V` | Pantalla completa / ventana flotante |
+| `Super + M` / `Super + Shift + F` | Minimizar la ventana (se recupera desde el dock) / maximizar y restaurar |
 | `Super + ←↑↓→` | Mover el foco · con `Shift`, mover la ventana |
 | `Super + 1…5` | Escritorios · con `Shift`, enviar ventana |
 | `Super + L` | Bloquear la pantalla: hora gigante a la derecha (también se bloquea sola a los 10 min) |
@@ -126,6 +127,7 @@ busca en la web. Apagar, reiniciar y cerrar sesión **piden confirmación** (pul
 escribir "apagar" y pulsar Enter dos veces) para no apagar por accidente.
 **Dock:** clic = abrir o ir a la ventana · clic central = ventana nueva · clic derecho = abrir ventana
 nueva, cerrar, fijar/quitar del dock.
+**Controles de ventana:** junto a cada ventana, encima de su esquina superior derecha (dentro de ella si encima no cabe), una pastilla de cristal con **−** (minimizar), **□** (maximizar / restaurar) y **×** (cerrar); la dibuja el shell porque Hyprland no tiene barras de título. Una ventana minimizada sigue en el dock: un clic en su icono la trae de vuelta. Detalles y límites en [`docs/controles-ventana.md`](docs/controles-ventana.md).
 
 <p align="center"><img src="docs/bloqueo.jpg" alt="Pantalla de bloqueo: la foto de paisaje a pantalla completa con la hora gigante arriba a la derecha" width="70%"></p>
 
