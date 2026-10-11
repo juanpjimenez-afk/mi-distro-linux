@@ -92,6 +92,8 @@ _COMANDOS_DESACTIVADOS = ("pAnkI no tiene permiso para proponer comandos de term
                           "activarlo en Ajustes → pAnkI (IA).")
 AJUSTES_PROPIOS = ("panki.",)   # ajustes que pAnkI no puede cambiarse a sí misma (ver _validar_cambio)
 
+_RECORRER = ("Ese programa lee todo lo que recorre y la carpeta incluye zonas protegidas (claves, contraseñas...). "
+             "Indica una subcarpeta concreta, no «~» ni carpetas como «~/.config».")
 _NOMBRES_UNICODE_RAROS = ("Cc", "Cf", "Cs", "Co", "Zl", "Zp")
 _ESCAPES_CORTOS = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
 
@@ -185,6 +187,11 @@ def _error_os(e, que="la ruta"):
     if codigo == errno.EROFS:
         return "El sistema de archivos es de solo lectura."
     return f"No se pudo completar la operación: {_texto_seguro(getattr(e, 'strerror', None) or e)}."
+
+
+def _motivo(e):
+    """El texto de un error del sistema, sin rutas largas ni saltos de línea."""
+    return _visible(_texto_seguro(getattr(e, "strerror", None) or e), 120)
 
 
 def _arg_texto(args, nombre, maximo=4096, obligatorio=True):
@@ -380,6 +387,12 @@ _CONSULTAS_INOFENSIVAS = frozenset({"--version", "--help", "-V", "-h"})
 _FIND_PELIGROSO = frozenset({"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0",
                              "-fprintf", "-fls"})
 _TAR_PELIGROSO = ("--to-command", "--checkpoint-action", "--use-compress-program", "--rsh-command", "-I")
+# Programas que LEEN el contenido de lo que recorren: no se les puede dar una carpeta que contenga una zona
+# protegida (~, ~/.config...), porque llegarían a la clave de Gemini sin nombrarla. (Los que solo muestran
+# nombres o tamaños, como ls -R, find -name o du, sí se admiten.)
+_LEEN_RECURSIVO = frozenset({"grep", "egrep", "fgrep", "zgrep", "rgrep", "rg", "ag", "ack", "cp", "tar", "zip",
+                             "7z", "7za", "diff", "cpio"})
+_PROC_AJENO_RE = re.compile(r"^/proc/\d+/(environ|mem)$")   # el entorno de otro proceso (la app de pAnkI)
 _ENERGIA = frozenset({"poweroff", "reboot", "halt", "kexec", "suspend", "hibernate", "hybrid-sleep",
                       "suspend-then-hibernate", "rescue", "emergency", "isolate", "soft-reboot"})
 
@@ -525,12 +538,13 @@ def _validar_url(url):
 
 def _host_local(host):
     h = host.rstrip(".").casefold()
-    if h == "localhost" or h.endswith(".localhost") or h.endswith(".local") or "." not in h and ":" not in h:
+    if h == "localhost" or h.endswith((".localhost", ".local")) or ("." not in h and ":" not in h):
         return True
     try:
         ip = ipaddress.ip_address(h)
     except ValueError:
-        return False
+        # 0x7f.1, 2130706433... : formas numéricas raras que el navegador entiende como una IP
+        return all(re.fullmatch(r"0x[0-9a-f]+|[0-9]+", etiqueta) for etiqueta in h.split("."))
     return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
@@ -686,7 +700,14 @@ class Ejecutor:
             args = {}
         if not isinstance(args, dict):
             raise ErrorHerramienta("Los argumentos de la herramienta deben ser un objeto con nombre y valor.")
-        return getattr(self, "_preparar_" + nombre)(args)
+        try:
+            return getattr(self, "_preparar_" + nombre)(args)
+        except ErrorHerramienta:
+            raise
+        except OSError as e:
+            raise ErrorHerramienta(_error_os(e)) from None
+        except Exception as e:   # un fallo inesperado no debe tumbar la conversación
+            raise ErrorHerramienta(f"Error inesperado al preparar la herramienta ({type(e).__name__}).") from None
 
     def ejecutar(self, preparada):
         nombre = getattr(preparada, "nombre", None)
@@ -699,7 +720,9 @@ class Ejecutor:
                 raise ErrorHerramienta("Los argumentos de la herramienta no son válidos.")
             if not isinstance(getattr(preparada, "interno", None), dict):
                 preparada.interno = {}
-            return getattr(self, "_ejecutar_" + nombre)(preparada)
+            r = getattr(self, "_ejecutar_" + nombre)(preparada)
+            r.resumen = _visible(r.resumen)      # una sola línea, sin saltos ni texto bidireccional
+            return r
         except ErrorHerramienta as e:
             return self._fallo(str(e))
         except Exception as e:   # un fallo inesperado no debe tumbar la conversación
@@ -1089,6 +1112,8 @@ class Ejecutor:
         id_ = _arg_texto(args, "id", 100)
         if "valor" not in args or args["valor"] is None:
             raise ErrorHerramienta("Falta el argumento «valor».")
+        if isinstance(args["valor"], str) and len(args["valor"]) > 200:
+            raise ErrorHerramienta("«valor» es demasiado largo.")
         a, actuales, normal = self._validar_cambio(id_, args["valor"])
         viejo, nuevo = self._texto_valor(actuales.get(id_)), self._texto_valor(normal[id_])
         sol = self._solicitud("cambiar_ajuste", f"Cambiar el ajuste «{a.etiqueta}»",
@@ -1191,7 +1216,7 @@ class Ejecutor:
         try:
             self._abrir("app", id_)
         except (OSError, ValueError) as e:
-            raise ErrorHerramienta(f"No se pudo abrir {info['nombre']}: {_texto_seguro(getattr(e, 'strerror', None) or e)}.") from None
+            raise ErrorHerramienta(f"No se pudo abrir {info['nombre']}: {_motivo(e)}.") from None
         return Resultado(True, {"abierta": id_, "nombre": info["nombre"]}, f"Abierta {info['nombre']}.")
 
     # ------------------------------------------------------------------ URL
@@ -1216,7 +1241,7 @@ class Ejecutor:
         try:
             self._abrir("url", url)
         except (OSError, ValueError) as e:
-            raise ErrorHerramienta(f"No se pudo abrir el navegador: {_texto_seguro(getattr(e, 'strerror', None) or e)}.") from None
+            raise ErrorHerramienta(f"No se pudo abrir el navegador: {_motivo(e)}.") from None
         return Resultado(True, {"abierta": url}, "Abierta la página en el navegador.")
 
     # ------------------------------------------------------------------ listar_directorio
@@ -1559,7 +1584,7 @@ class Ejecutor:
 
     def _ejecutar_aplicar_organizacion(self, p):
         id_plan = p.args.get("id_plan")
-        plan = self._planes.pop(id_plan, None) if isinstance(id_plan, str) else None
+        plan = self._planes.get(id_plan) if isinstance(id_plan, str) else None
         if plan is None:
             raise ErrorHerramienta("Ese plan no existe (ya se usó o se perdió). Propón la organización otra vez.")
         r = self._resolver(plan.carpeta)
@@ -1567,7 +1592,12 @@ class Ejecutor:
             raise ErrorHerramienta(_CAMBIO)
         self._igual_que_al_preparar(p, "real", r.real)
         self._asegurar_estado()
-        diario = _Diario(os.path.join(self._estado_dir, f"registro-{time.time_ns():020d}-{secrets.token_hex(3)}.jsonl"))
+        try:
+            diario = _Diario(os.path.join(self._estado_dir,
+                                          f"registro-{time.time_ns():020d}-{secrets.token_hex(3)}.jsonl"))
+        except OSError:
+            raise ErrorHerramienta("No se pudo crear el registro para deshacer; no se ha movido nada.") from None
+        del self._planes[id_plan]      # un plan se usa una sola vez
         movidos, fallos, creadas, sin_registro = 0, [], [], 0
         fd_base = None
         try:
@@ -1749,7 +1779,8 @@ class Ejecutor:
             except (LookupError, ErrorHerramienta):
                 omitidos += 1
                 continue
-            detalle.append(f"{self._mostrar(objeto)} → {self._mostrar(os.path.join(carpeta, _nombre_libre(carpeta, nombre)))}")
+            libre = _nombre_libre(carpeta, nombre)
+            detalle.append(f"{self._mostrar(objeto)} → {self._mostrar(os.path.join(carpeta, libre))}")
         if not detalle:
             raise ErrorHerramienta("Ninguno de los archivos movidos sigue donde se dejó, así que no hay nada "
                                    "que deshacer.")
@@ -1930,17 +1961,33 @@ class Ejecutor:
         for n in sorted(nombres):
             self._rechazar_programa(n, argv)
         # Argumentos que sean rutas: no pueden apuntar a la lista negra (cat ~/.ssh/id_rsa).
+        recorre = bool(nombres & _LEEN_RECURSIVO)
+        hay_rutas = False
         for a in argv[1:]:
             for cand in self._rutas_posibles(a):
                 if cand == "~" or cand.startswith("~/"):
                     cand = os.path.join(self._hogar, cand[2:])
                 absoluta = cand if os.path.isabs(cand) else os.path.join(cwd, cand)
+                hay_rutas = hay_rutas or os.path.lexists(absoluta)   # «AIza» en grep -r AIza no es una ruta
+                if _PROC_AJENO_RE.match(os.path.normpath(absoluta)):
+                    raise ErrorHerramienta("No se puede leer el entorno ni la memoria de otro proceso.")
                 for ruta in {os.path.normpath(absoluta), os.path.realpath(absoluta)}:
                     for base in (self._hogar, self._hogar_real):
                         partes = self._partes(ruta, base)
-                        if partes is not None and self._protegida(partes):
+                        if partes is None:
+                            continue
+                        if self._protegida(partes):
                             raise ErrorHerramienta("El comando usa una ruta protegida (claves, contraseñas o datos "
                                                    "de programas) y no se puede ejecutar.")
+                        if recorre and self._ancestro_protegido(partes):
+                            raise ErrorHerramienta(_RECORRER)
+        # Sin ninguna ruta que recorrer, rg/ag/ack y grep -r recorren la carpeta de trabajo.
+        recorre_cwd = bool(nombres & {"rg", "ag", "ack", "rgrep"}) or (
+            bool(nombres & _LEEN_RECURSIVO) and any(
+                a == "--recursive" or (a.startswith("-") and not a.startswith("--") and ("r" in a or "R" in a))
+                for a in argv[1:]))
+        if recorre_cwd and not hay_rutas and self._ancestro_protegido(self._partes(cwd, self._hogar_real) or ()):
+            raise ErrorHerramienta(_RECORRER)
 
     @staticmethod
     def _rutas_posibles(arg):
@@ -1998,7 +2045,7 @@ class Ejecutor:
         except PermissionError:
             raise ErrorHerramienta(f"No tengo permiso para ejecutar «{_visible(argv[0], 60)}».") from None
         except (OSError, ValueError, subprocess.SubprocessError) as e:
-            raise ErrorHerramienta(f"No se pudo ejecutar el comando: {_texto_seguro(getattr(e, 'strerror', None) or e)}.") from None
+            raise ErrorHerramienta(f"No se pudo ejecutar el comando: {_motivo(e)}.") from None
         crudo = salida.encode("utf-8", "replace") if isinstance(salida, str) else bytes(salida or b"")
         recortada = len(crudo) > LIMITE_SALIDA
         texto = crudo[:LIMITE_SALIDA].decode("utf-8", "replace").replace("\0", "")

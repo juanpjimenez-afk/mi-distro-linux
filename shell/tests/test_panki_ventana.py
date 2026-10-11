@@ -214,7 +214,9 @@ class TestFuncionesPuras(unittest.TestCase):
 
 # ------------------------------------------------------------------------------------------ la ventana
 @unittest.skipUnless(PANTALLA, "necesita una pantalla (xvfb-run)")
-class TestVentana(unittest.TestCase):
+class _BaseVentana(unittest.TestCase):
+    """Lo común de las pruebas con ventana: entorno aislado, bucle de GTK y ayudas. No tiene pruebas propias."""
+
     @classmethod
     def setUpClass(cls):
         cls.P, cls.Gtk, cls.Gdk, cls.GLib = _gtk()
@@ -266,7 +268,8 @@ class TestVentana(unittest.TestCase):
         return v
 
     def _limpiar(self, v):
-        if not v._cerrada:
+        v.liberar()  # lo que hace la X o apagar la aplicación; así ningún hilo se queda esperando
+        if not v._cerrada or v.get_visible():
             v.destroy()
         self.pumpa(0.05)
         for agente in self.agentes:
@@ -308,6 +311,10 @@ class TestVentana(unittest.TestCase):
             return "terminado"
         return guion
 
+
+
+@unittest.skipUnless(PANTALLA, "necesita una pantalla (xvfb-run)")
+class TestVentana(_BaseVentana):
     # -- arranque y conversación
     def test_arranca_con_la_bienvenida_y_la_entrada_lista(self):
         v = self.ventana()
@@ -556,13 +563,23 @@ class TestVentana(unittest.TestCase):
         self.assertTrue(agente.cancelado.is_set())
         self.assertTrue(v._cerrada)
 
-    def test_destruir_la_ventana_libera_la_aprobacion(self):
-        v = self.ventana(self.pide_permiso())
-        self.enviar(v, "ordena")
-        self.espera_a_que_pida_permiso(v)
-        v.destroy()
-        self.agentes[0].hilos[0].join(5)
-        self.assertEqual(self.agentes[0].decisiones, ["no"])
+    def test_apagar_la_aplicacion_con_una_aprobacion_pendiente_libera_el_hilo(self):
+        P = self.P
+        agentes = []
+
+        def fabrica(aprobar):
+            agentes.append(AgenteFalso(aprobar, self.pide_permiso()))
+            return agentes[-1]
+
+        app = P.Panki(fabrica_agente=fabrica, nucleo=NucleoFalso(True))
+        self.GLib.timeout_add(300, lambda: app.ventana.preguntar("ordena") or False)
+        self.GLib.timeout_add(1000, lambda: app.quit() or False)  # con la tarjeta de aprobación sin contestar
+        app.run(["panki"])
+        self.assertEqual(len(agentes), 1)
+        agentes[0].hilos[0].join(5)
+        self.assertFalse(agentes[0].hilos[0].is_alive())
+        self.assertEqual(agentes[0].decisiones, ["no"])
+        self.assertTrue(agentes[0].cancelado.is_set())
 
     def test_una_aprobacion_que_llega_tras_parar_se_responde_no_sin_mostrarse(self):
         v = self.ventana()
@@ -661,10 +678,18 @@ class TestVentana(unittest.TestCase):
         self.assertTrue(v.get_visible(), "el agente espera una respuesta: la tarjeta tiene que seguir a la vista")
 
     def test_una_aprobacion_con_la_ventana_oculta_la_muestra(self):
-        v = self.ventana(self.pide_permiso())
+        gate = threading.Event()
+
+        def guion(agente, texto, alevento):
+            gate.wait(5)  # la ventana se oculta mientras el agente trabaja y solo entonces pide permiso
+            agente.decisiones.append(agente.aprobar(Solicitud()))
+            return "fin"
+
+        v = self.ventana(guion)
         self.enviar(v, "ordena")
         self.hasta(lambda: v._trabajando)
         v.set_visible(False)
+        gate.set()
         self.espera_a_que_pida_permiso(v)
         self.assertTrue(v.get_visible())
 
@@ -796,7 +821,7 @@ class TestVentana(unittest.TestCase):
         P = self.P
         self.assertEqual(P.APP_ID, "org.infinity.Panki")
         app = P.Panki(fabrica_agente=lambda a: AgenteFalso(a), nucleo=NucleoFalso(True))
-        self.assertTrue(app.has_action("alternar"))
+        self.assertIsNotNone(app.lookup_action("alternar"))
         app.register(None)
         app.activate()
         self.assertTrue(app.ventana.get_visible())
@@ -826,6 +851,14 @@ class TestVentana(unittest.TestCase):
         for hilo in agentes[0].hilos:
             hilo.join(5)
 
+    def test_ayuda_y_opciones_desconocidas_no_abren_la_ventana(self):
+        P = self.P
+        for args, codigo in ((["panki", "--help"], 0), (["panki", "--ayuda"], 0), (["panki", "--no-existe%s"], 2)):
+            with self.subTest(args):
+                app = P.Panki(fabrica_agente=lambda a: AgenteFalso(a), nucleo=NucleoFalso(True))
+                self.assertEqual(app.run(args), codigo)
+                self.assertIsNone(app.ventana)
+
     def test_con_los_modulos_reales_y_sin_clave_sale_la_tarjeta_de_la_clave(self):
         try:
             from infinity_shell import panki_nucleo  # noqa: F401
@@ -841,6 +874,149 @@ class TestVentana(unittest.TestCase):
 
 
 # ------------------------------------------------------------------------------------------ Ajustes
+class _RespuestaHttp:
+    status = 200
+
+    def __init__(self, cuerpo):
+        self._cuerpo = cuerpo
+
+    def read(self, n=-1):
+        cuerpo, self._cuerpo = self._cuerpo, b""
+        return cuerpo
+
+    def close(self):
+        pass
+
+
+def _gemini(*partes):
+    import json
+    return json.dumps({"candidates": [{"content": {"role": "model", "parts": list(partes)},
+                                       "finishReason": "STOP"}]}).encode()
+
+
+@unittest.skipUnless(PANTALLA, "necesita una pantalla (xvfb-run)")
+class TestConAgenteReal(_BaseVentana):
+    """La ventana con el Agente y las herramientas REALES; solo la red es falsa (el `abrir` del cliente)."""
+
+    def setUp(self):
+        super().setUp()
+        try:
+            from infinity_shell import panki_herramientas as H
+            from infinity_shell import panki_nucleo as N
+        except ImportError as e:
+            self.skipTest(f"faltan el núcleo o las herramientas: {e}")
+        self.H, self.N = H, N
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.hogar = os.path.join(tmp.name, "hogar")
+        os.makedirs(self.hogar)
+        self.estado = os.path.join(tmp.name, "estado")
+        N.guardar_clave(CLAVE_FALSA)  # en el XDG_CONFIG_HOME temporal de setUp
+        self.respuestas = []  # lo que "contesta Gemini", en orden: bytes de una respuesta, o una excepción
+        self.llamadas = []
+
+    def abrir(self, solicitud, timeout=None):
+        self.llamadas.append(solicitud)
+        r = self.respuestas.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return _RespuestaHttp(r)
+
+    def ventana_real(self):
+        def fabrica(aprobar):
+            cliente = self.N.ClienteGemini(CLAVE_FALSA, "gemini-flash-latest", abrir=self.abrir)
+            ejecutor = self.H.Ejecutor(hogar=self.hogar, estado_dir=self.estado)
+            agente = self.N.Agente(cliente, ejecutor, aprobar)
+            self.agentes.append(agente)
+            return agente
+
+        v = self.P.VentanaPanki(self.app, fabrica_agente=fabrica, nucleo=self.N)
+        v.present()
+        self.addCleanup(self._limpiar_real, v)
+        self.pumpa(0.05)
+        return v
+
+    def _limpiar_real(self, v):
+        v.liberar()
+        if not v._cerrada or v.get_visible():
+            v.destroy()
+        self.pumpa(0.05)
+
+    def llamada_a_crear_carpeta(self):
+        return _gemini({"functionCall": {"name": "crear_carpeta", "args": {"ruta": "~/Proyectos"}}})
+
+    def test_permitir_crea_la_carpeta_y_pAnkI_lo_cuenta(self):
+        v = self.ventana_real()
+        self.respuestas = [self.llamada_a_crear_carpeta(), _gemini({"text": "Carpeta creada."})]
+        self.enviar(v, "crea la carpeta Proyectos")
+        t = self.espera_a_que_pida_permiso(v)
+        self.assertIn("Proyectos", " ".join(self.textos(t)), "la tarjeta enseña la acción exacta")
+        self.assertFalse(os.path.exists(os.path.join(self.hogar, "Proyectos")), "nada se hace antes de aprobar")
+        t.permitir.emit("clicked")
+        self.hasta(lambda: "Carpeta creada." in self.textos(v.conversacion) and v.entrada.get_sensitive())
+        self.assertTrue(os.path.isdir(os.path.join(self.hogar, "Proyectos")))
+        self.assertEqual(self.textos(v.conversacion).count("Carpeta creada."), 1)
+        self.assertTrue(any(t.startswith("✓ crear_carpeta") for t in self.textos(v.conversacion)))
+
+    def test_denegar_no_hace_nada(self):
+        v = self.ventana_real()
+        self.respuestas = [self.llamada_a_crear_carpeta(), _gemini({"text": "Entendido, no la creo."})]
+        self.enviar(v, "crea la carpeta Proyectos")
+        self.espera_a_que_pida_permiso(v).denegar.emit("clicked")
+        self.hasta(lambda: "Entendido, no la creo." in self.textos(v.conversacion))
+        self.assertFalse(os.path.exists(os.path.join(self.hogar, "Proyectos")))
+
+    def test_parar_en_la_aprobacion_y_despues_se_puede_seguir_hablando(self):
+        v = self.ventana_real()
+        self.respuestas = [self.llamada_a_crear_carpeta()]
+        self.enviar(v, "crea la carpeta Proyectos")
+        self.espera_a_que_pida_permiso(v)
+        v.boton_parar.emit("clicked")
+        self.hasta(lambda: v.entrada.get_sensitive() and not v._trabajando)
+        self.assertIn("Detenido.", self.textos(v.conversacion))
+        self.assertFalse(os.path.exists(os.path.join(self.hogar, "Proyectos")))
+        # La señal de cancelar no se queda puesta: el siguiente mensaje se atiende con normalidad.
+        self.respuestas = [_gemini({"text": "Aquí estoy."})]
+        self.enviar(v, "hola otra vez")
+        self.hasta(lambda: "Aquí estoy." in self.textos(v.conversacion))
+
+    def test_cerrar_con_la_aprobacion_pendiente_termina_el_hilo_del_agente_real(self):
+        v = self.ventana_real()
+        self.respuestas = [self.llamada_a_crear_carpeta()]
+        self.enviar(v, "crea la carpeta Proyectos")
+        self.espera_a_que_pida_permiso(v)
+        hilos = [h for h in threading.enumerate() if h.name == "panki-agente"]
+        self.assertEqual(len(hilos), 1)
+        v.close()
+        hilos[0].join(5)
+        self.assertFalse(hilos[0].is_alive())
+        self.assertFalse(os.path.exists(os.path.join(self.hogar, "Proyectos")))
+
+    def test_la_api_rechaza_la_clave_y_se_vuelve_a_pedir(self):
+        import io
+        import urllib.error
+        cuerpo = io.BytesIO(b'{"error": {"code": 403, "message": "denegado", "status": "PERMISSION_DENIED"}}')
+        v = self.ventana_real()
+        self.respuestas = [urllib.error.HTTPError("https://x/y", 403, "Forbidden", {}, cuerpo)]
+        self.enviar(v, "hola")
+        self.hasta(lambda: v.tarjeta_clave is not None)
+        errores = " ".join(self.textos(v.conversacion))
+        self.assertIn("Gemini no aceptó la clave", errores)
+        self.assertNotIn(CLAVE_FALSA, errores)
+        for solicitud in self.llamadas:  # la clave viaja por la cabecera, nunca por la URL
+            self.assertNotIn(CLAVE_FALSA, solicitud.full_url)
+
+    def test_el_cliente_real_no_deja_la_clave_en_ninguna_etiqueta_ni_en_el_registro(self):
+        v = self.ventana_real()
+        self.respuestas = [OSError("fallo de red con " + CLAVE_FALSA)]
+        self.enviar(v, "hola")
+        self.hasta(lambda: self.burbujas(v, "error"))
+        for texto in self.textos(v):
+            self.assertNotIn(CLAVE_FALSA, texto)
+        if os.path.exists(self.registro):
+            self.assertNotIn(CLAVE_FALSA, _leer(self.registro))
+
+
 @unittest.skipUnless(PANTALLA, "necesita una pantalla (xvfb-run)")
 class TestPaginaPanki(unittest.TestCase):
     @classmethod

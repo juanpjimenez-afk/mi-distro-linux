@@ -48,6 +48,32 @@ class TestBuscadorWeb(unittest.TestCase):
             self.assertFalse("duckduckgo" in f.read().lower(), "queda una referencia a DuckDuckGo en launcher.py")
 
 
+class TestPrefijoPreguntar(unittest.TestCase):
+    """El prefijo «?» del buscador (código leído sin ejecutarlo; las pruebas con la lista están más abajo)."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(RUTA, encoding="utf-8") as f:
+            cls.fuente = f.read()
+
+    def test_el_prefijo_devuelve_antes_de_la_calculadora_y_de_la_busqueda_web(self):
+        i_pregunta = self.fuente.index('q.startswith("?")')
+        self.assertLess(i_pregunta, self.fuente.index("calcular(q)"))
+        self.assertLess(i_pregunta, self.fuente.index("Buscar en la web"))
+        self.assertGreater(i_pregunta, self.fuente.index('q.startswith(">")'))
+
+    def test_la_pregunta_se_pasa_como_argumento_sin_shell(self):
+        self.assertIn('["infinity-panki", "--preguntar", p]', self.fuente)
+        self.assertIn('["infinity-panki"]', self.fuente)
+        self.assertNotIn("infinity-panki --preguntar", self.fuente)  # nunca una cadena para un shell
+
+    def test_textos_de_los_resultados(self):
+        self.assertIn("Preguntar a pAnkI: {pregunta}", self.fuente)
+        self.assertIn("Se envía a Google (Gemini)", self.fuente)
+        self.assertIn('"Abrir pAnkI"', self.fuente)
+        self.assertEqual(self.fuente.count('"dialog-question"'), 2)
+
+
 class _AppFalsa:
     def __init__(self, nombre):
         self.nombre = nombre
@@ -193,6 +219,66 @@ class TestBusquedaDiferida(unittest.TestCase):
             self.lz.cerrar()
             self.pumpa(0.2)
         self.assertEqual(act.call_count, 0)
+
+
+    # ------------------------------------------------------------------ prefijo «?» (pAnkI)
+    def buscar(self, texto):
+        self.lz.entrada.set_text(texto)
+        self.lz._al_dia()
+        return self.lz.resultados
+
+    def test_pregunta_a_pAnkI(self):
+        res = self.buscar("? qué hora es en Tokio")
+        self.assertEqual(len(res), 1, "el prefijo manda: ni apps, ni calculadora, ni búsqueda web")
+        self.assertEqual(res[0].titulo, "Preguntar a pAnkI: qué hora es en Tokio")
+        self.assertEqual(res[0].subtitulo, "Se envía a Google (Gemini)")
+        self.assertEqual(res[0].icono, "dialog-question")
+        self.assertFalse(res[0].confirmar)
+
+    def test_enter_lanza_infinity_panki_con_la_pregunta_como_argumento(self):
+        self.buscar("? qué hora es")
+        with mock.patch.object(self.L.Launcher, "_lanzar") as lanzar:
+            self.lz.entrada.emit("activate")
+        lanzar.assert_called_once_with(["infinity-panki", "--preguntar", "qué hora es"])
+
+    def test_la_pregunta_nunca_pasa_por_un_shell(self):
+        peligrosa = "$(touch /tmp/x); rm -rf ~ | cat > /dev/null && `id` 'comilla\" doble"
+        self.buscar("?" + peligrosa)
+        with mock.patch.object(self.L.Launcher, "_lanzar") as lanzar:
+            self.lz.entrada.emit("activate")
+        lanzar.assert_called_once_with(["infinity-panki", "--preguntar", peligrosa])
+        argv = lanzar.call_args[0][0]
+        self.assertIsInstance(argv, list)
+        self.assertEqual(argv[:2], ["infinity-panki", "--preguntar"])
+
+    def test_interrogacion_a_secas_abre_pAnkI(self):
+        for texto in ("?", "?   ", "  ?  "):
+            with self.subTest(texto):
+                res = self.buscar(texto)
+                self.assertEqual(len(res), 1)
+                self.assertEqual(res[0].titulo, "Abrir pAnkI")
+                self.assertEqual(res[0].icono, "dialog-question")
+                with mock.patch.object(self.L.Launcher, "_lanzar") as lanzar:
+                    self.lz.entrada.emit("activate")
+                lanzar.assert_called_once_with(["infinity-panki"])
+                self.lz.abrir()
+
+    def test_el_prefijo_no_se_mezcla_con_la_calculadora_ni_con_las_apps(self):
+        res = self.buscar("? 2+2")
+        self.assertEqual([r.titulo for r in res], ["Preguntar a pAnkI: 2+2"])
+        res = self.buscar("?aplicacion 7")  # sin espacio tras el «?» también vale
+        self.assertEqual([r.titulo for r in res], ["Preguntar a pAnkI: aplicacion 7"])
+
+    def test_una_interrogacion_dentro_del_texto_no_es_el_prefijo(self):
+        res = self.buscar("aplicacion 7 ?")
+        self.assertNotIn("Preguntar a pAnkI", " ".join(r.titulo for r in res))
+        self.assertTrue(any(r.titulo.startswith("Buscar en la web") for r in res))
+
+    def test_el_prefijo_de_comando_sigue_funcionando(self):
+        res = self.buscar("> echo hola")
+        self.assertEqual([r.titulo for r in res], ["Ejecutar: echo hola"])
+        res = self.buscar("2+2")
+        self.assertEqual(res[0].titulo, "= 4")
 
 
 if __name__ == "__main__":

@@ -382,8 +382,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
         self._fabrica = fabrica_agente
 
         self._construir()
-        self.connect("close-request", self._al_cerrar)
-        self.connect("destroy", self._al_destruir)
+        self.connect("close-request", self._al_cerrar)  # GTK 4 no emite "destroy": la X y apagar la app liberan al hilo
 
         if self._error_carga:
             self._anadir_burbuja(self._error_carga, "error")
@@ -646,7 +645,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
         if self._trabajando or self.tarjeta_aprobacion is not None or self.tarjeta_clave is not None:
             if len(self._cola) < MAX_COLA:
                 self._cola.append(texto)
-                self._poner_estado(f"En cola: {len(self._cola)} mensaje(s) esperando su turno.")
+                self._poner_estado_de_cola()
             return
         self._iniciar(texto)
 
@@ -656,6 +655,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
         if not self._nucleo.existe_clave():
             self._cola.append(texto)  # se envía en cuanto se guarde la clave
             self._mostrar_tarjeta_clave("primera")
+            self._poner_estado_de_cola()
             return
         try:
             agente = self._agente_listo()
@@ -678,6 +678,12 @@ class VentanaPanki(Gtk.ApplicationWindow):
         self._actualizar_controles()
         self._ir_al_final()
         threading.Thread(target=self._hilo, args=(agente, texto), name="panki-agente", daemon=True).start()
+
+    def _poner_estado_de_cola(self):
+        if self.tarjeta_clave is not None:
+            self._poner_estado("Tu pregunta se enviará en cuanto guardes la clave.")
+        else:
+            self._poner_estado(f"En cola: {len(self._cola)} mensaje(s) esperando su turno.")
 
     def _agente_listo(self):
         if self._agente is None:
@@ -1006,8 +1012,12 @@ class VentanaPanki(Gtk.ApplicationWindow):
         else:
             self.set_visible(False)
 
-    def _liberar_hilo(self):
-        """La ventana se cierra: nadie va a responder. El hilo del agente no se queda esperando ni sigue trabajando."""
+    def liberar(self):
+        """La ventana se cierra o la aplicación se apaga: nadie va a responder.
+
+        El hilo del agente no se queda esperando una aprobación (recibe "no") ni sigue trabajando (se cancela).
+        Se puede llamar más de una vez.
+        """
         self._cancelar_agente(cerrada=True)
         with self._candado:
             espera = self._espera
@@ -1016,14 +1026,11 @@ class VentanaPanki(Gtk.ApplicationWindow):
 
     def _al_cerrar(self, _ventana):
         if self._trabajando or self._espera is not None:
-            self._liberar_hilo()
+            self.liberar()
             return False  # cierra de verdad: la aplicación termina
         self.nueva_conversacion()  # lo que se habló se descarta al cerrar
         self.set_visible(False)
         return True  # y se queda oculta, viva, para que la burbuja la abra al instante
-
-    def _al_destruir(self, _ventana):
-        self._liberar_hilo()
 
     # --------------------------------------------------------------------- la clave de Gemini
     def _mostrar_tarjeta_clave(self, motivo):
@@ -1090,6 +1097,8 @@ class VentanaPanki(Gtk.ApplicationWindow):
             self.tarjeta_clave = None
         if volver_a_la_entrada:
             self._cola_a_la_entrada()
+        if not self._trabajando:
+            self._poner_estado("")
         self._actualizar_controles()
 
     def _guardar_clave(self, tarjeta, campo, mensaje):
@@ -1151,17 +1160,16 @@ class Panki(Gtk.Application):
             if ajustes_gtk is not None:
                 ajustes_gtk.set_property("gtk-application-prefer-dark-theme", True)
             self.ventana = VentanaPanki(self, **self._inyectado)
-            self.ventana.connect("destroy", self._al_destruir_ventana)
         return self.ventana
 
-    def _al_destruir_ventana(self, _ventana):
-        self.ventana = None
-
     def _alternar(self):
-        if self.ventana is None:
-            self._asegurar_ventana().mostrar()
-        else:
-            self.ventana.alternar()
+        self._asegurar_ventana().alternar()  # una ventana recién creada está oculta: alternar la muestra
+
+    def do_shutdown(self):
+        """Al apagar la aplicación (Quit, o la X con trabajo en curso), el hilo del agente no se queda colgado."""
+        if self.ventana is not None:
+            self.ventana.liberar()
+        Gtk.Application.do_shutdown(self)
 
     def do_activate(self):
         self._asegurar_ventana().mostrar()
@@ -1169,7 +1177,7 @@ class Panki(Gtk.Application):
     def do_command_line(self, linea):
         pregunta, ayuda, error = interpretar_argumentos(linea.get_arguments()[1:])
         if error:
-            linea.printerr(error + "\n" + USO)
+            linea.printerr_literal(error + "\n" + USO)  # literal: el texto puede llevar un «%»
             return 2
         if ayuda:
             linea.print_literal(USO)

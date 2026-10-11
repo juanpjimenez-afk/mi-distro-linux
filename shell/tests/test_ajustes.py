@@ -209,6 +209,81 @@ class TestSkelYGenerador(unittest.TestCase):
         self.assertIn("rgba(18, 22, 44, 0.42)", A.estilo_css(A.DEFECTOS))
 
 
+class TestPanki(unittest.TestCase):
+    """La página «pAnkI (IA)»: modelo, comandos y burbuja. La clave de Gemini NO es un ajuste."""
+
+    def ajuste(self, id):
+        return next(a for a in A.SCHEMA if a.id == id)
+
+    def valida(self, **cambios):
+        valores = dict(A.DEFECTOS)
+        valores.update({k.replace("__", "."): v for k, v in cambios.items()})
+        return A.validar(valores)
+
+    def test_la_pagina_va_antes_de_atajos(self):
+        claves = [p for p, _ in A.PAGINAS]
+        self.assertIn("panki", claves)
+        self.assertEqual(claves.index("panki") + 1, claves.index("atajos"))
+        self.assertEqual(dict(A.PAGINAS)["panki"], "pAnkI (IA)")
+
+    def test_los_tres_ajustes_y_sus_defectos(self):
+        self.assertEqual(A.DEFECTOS["panki.modelo"], "gemini-flash-latest")
+        self.assertIs(A.DEFECTOS["panki.comandos"], False)
+        self.assertIs(A.DEFECTOS["panki.burbuja"], True)
+        for id in ("panki.modelo", "panki.comandos", "panki.burbuja"):
+            self.assertEqual(self.ajuste(id).pagina, "panki", id)
+        self.assertEqual(self.ajuste("panki.modelo").tipo, "texto")
+        self.assertEqual(self.ajuste("panki.modelo").maximo, 60)
+        self.assertEqual(self.ajuste("panki.comandos").tipo, "bool")
+        self.assertEqual(self.ajuste("panki.burbuja").tipo, "bool")
+        self.assertEqual(self.ajuste("panki.burbuja").etiqueta, "Mostrar la burbuja de pAnkI en el escritorio")
+
+    def test_modelo_y_comandos_no_recargan_nada_y_la_burbuja_recarga_el_shell(self):
+        self.assertEqual(self.ajuste("panki.modelo").aplica, "conversacion")
+        self.assertEqual(self.ajuste("panki.comandos").aplica, "conversacion")
+        self.assertEqual(self.ajuste("panki.burbuja").aplica, "shell")
+        self.assertEqual(A.ACCION_POR_APLICA["conversacion"], ())
+        self.assertEqual(A.acciones_para(["panki.modelo", "panki.comandos"]), [])
+        self.assertEqual(A.acciones_para(["panki.burbuja"]), ["shell"])
+
+    def test_modelo_acepta_nombres_de_modelo_y_rechaza_lo_raro(self):
+        for bueno in ("gemini-flash-latest", "gemini-2.5-flash", "gemini-3-pro-preview", "gemini_x.1"):
+            self.assertEqual(self.valida(panki__modelo=bueno)[1], [], bueno)
+        self.assertEqual(self.valida(panki__modelo="  gemini-2.5-flash ")[0]["panki.modelo"], "gemini-2.5-flash")
+        for malo in ("", "   ", "x" * 61, "gemini\nflash", "models/gemini", "a;b", "gemini?key=1", 7, None):
+            self.assertEqual([i for i, _ in self.valida(panki__modelo=malo)[1]], ["panki.modelo"], repr(malo))
+        self.assertEqual(self.valida(panki__modelo="x" * 60)[1], [])
+
+    def test_comandos_y_burbuja_son_booleanos_estrictos(self):
+        for id in ("panki__comandos", "panki__burbuja"):
+            for malo in ("true", 1, 0, None, "si"):
+                self.assertEqual(len(self.valida(**{id: malo})[1]), 1, f"{id}={malo!r}")
+        self.assertIs(self.valida(panki__comandos=True)[0]["panki.comandos"], True)
+        self.assertIs(self.valida(panki__burbuja=False)[0]["panki.burbuja"], False)
+
+    def test_ida_y_vuelta_por_el_fichero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = os.path.join(tmp, "infinity", "ajustes.json")
+            valores = dict(A.DEFECTOS, **{"panki.modelo": "gemini-2.5-flash", "panki.comandos": True,
+                                          "panki.burbuja": False})
+            A.guardar_json(valores, ruta)
+            self.assertEqual(A.cargar(ruta), (valores, []))
+            self.assertEqual(A.valor("panki.modelo", ruta), "gemini-2.5-flash")
+            self.assertIs(A.valor("panki.comandos", ruta), True)
+            self.assertEqual(A.valor("panki.comandos", os.path.join(tmp, "no-existe.json")), False)
+
+    def test_la_clave_de_gemini_no_es_un_ajuste(self):
+        # ajustes.json se exporta: ahí no puede haber nada con aspecto de clave.
+        for a in A.SCHEMA:
+            self.assertNotRegex(a.id.lower(), r"clave|key|token|secret", a.id)
+
+    def test_los_ajustes_de_pAnkI_no_tocan_los_ficheros_generados(self):
+        base = A.generar(A.DEFECTOS)
+        cambiado = A.generar(dict(A.DEFECTOS, **{"panki.modelo": "otro-modelo", "panki.comandos": True,
+                                                 "panki.burbuja": False}))
+        self.assertEqual(base, cambiado)
+
+
 class TestFicherosGenerados(unittest.TestCase):
     def cambia(self, **cambios):
         v = dict(A.DEFECTOS)
