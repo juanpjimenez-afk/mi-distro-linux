@@ -36,8 +36,8 @@ window.infinity-window {
 
 /* ------------------------------------------------------------------- orbe */
 button.orb {
-  min-width: 60px;
-  min-height: 60px;
+  min-width: 48px;
+  min-height: 48px;
   padding: 0;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.30);

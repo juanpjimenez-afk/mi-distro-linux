@@ -21,6 +21,8 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 from .ajustes import valor as ajuste  # noqa: E402
 
 ALTO = 60  # alto común de las tres islas (px)
+ORBE = 48  # diámetro de las esferas de cristal (el logo y la burbuja de pAnkI), más pequeñas que el dock
+LOGO_ORBE = 26  # lado del símbolo dentro de la esfera
 MARGEN = 14  # separación con el borde de la pantalla
 
 RUTAS_ASSETS = [
@@ -92,14 +94,16 @@ class Orbe(Gtk.Window):
         super().__init__(application=app, title="Infinity — Orbe")
         _capa(self, "infinity-orb", [LayerShell.Edge.BOTTOM, LayerShell.Edge.LEFT],
               (LayerShell.Edge.LEFT, MARGEN + 4))
+        # La esfera es más baja que el dock: se sube lo justo para que quede centrada con él
+        LayerShell.set_margin(self, LayerShell.Edge.BOTTOM, MARGEN + (ALTO - ORBE) // 2)
         boton = Gtk.Button()
         boton.add_css_class("orb")
-        boton.set_size_request(ALTO, ALTO)
+        boton.set_size_request(ORBE, ORBE)
         boton.set_tooltip_text("Buscar y apagar  (Super + Espacio)")
         ruta = asset("logo-white.svg")
         if ruta:
             logo = Gtk.Image.new_from_file(ruta)
-            logo.set_pixel_size(34)  # ancho del logo dentro de la esfera de 60 px
+            logo.set_pixel_size(LOGO_ORBE)  # ancho del logo dentro de la esfera
             boton.set_child(logo)
         else:
             boton.set_label("∞")

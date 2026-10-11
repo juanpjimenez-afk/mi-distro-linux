@@ -424,11 +424,12 @@ class TestBurbuja(unittest.TestCase):
         return round(caja.get_width()), round(caja.get_height())
 
     def test_boton_pide_alto_por_alto(self):
-        self.assertEqual(self.dock.ALTO, 60)
-        self.assertEqual(self.burbuja.boton.get_size_request(), (self.dock.ALTO, self.dock.ALTO))
+        self.assertEqual(self.dock.ORBE, 48)
+        self.assertLess(self.dock.ORBE, self.dock.ALTO)  # las esferas son más pequeñas que el dock
+        self.assertEqual(self.burbuja.boton.get_size_request(), (self.dock.ORBE, self.dock.ORBE))
         self.burbuja.present()
         self.pumpa(0.1)
-        self.assertEqual(self.tamano(self.burbuja.boton), (self.dock.ALTO, self.dock.ALTO))
+        self.assertEqual(self.tamano(self.burbuja.boton), (self.dock.ORBE, self.dock.ORBE))
 
     def test_boton_mide_igual_que_el_logo_con_el_css_del_proyecto(self):
         with self.css_del_proyecto():
@@ -439,19 +440,20 @@ class TestBurbuja(unittest.TestCase):
                 self.pumpa(0.1)
                 logo, burbuja = self.tamano(orbe.boton), self.tamano(self.burbuja.boton)
                 self.assertEqual(burbuja, logo)
-                # 60 px de la esfera y 1 px de borde a cada lado: lo que mide hoy el logo
-                self.assertGreaterEqual(min(burbuja), self.dock.ALTO)
-                self.assertLessEqual(max(burbuja), self.dock.ALTO + 2)
+                # 48 px de la esfera y 1 px de borde a cada lado: lo que mide hoy el logo
+                self.assertGreaterEqual(min(burbuja), self.dock.ORBE)
+                self.assertLessEqual(max(burbuja), self.dock.ORBE + 2)
             finally:
                 orbe.destroy()
 
     def test_tooltip(self):
         self.assertEqual(self.burbuja.boton.get_tooltip_text(), "pAnkI, tu agente virtual  (Super + N)")
 
-    def test_lleva_la_marca_de_panki_a_34_px(self):
+    def test_lleva_la_marca_de_panki_al_tamano_del_simbolo_del_logo(self):
         hijo = self.burbuja.boton.get_child()
         self.assertIsInstance(hijo, self.Gtk.Image)
-        self.assertEqual(hijo.get_pixel_size(), 34)
+        self.assertEqual(hijo.get_pixel_size(), self.dock.LOGO_ORBE)
+        self.assertEqual(self.dock.LOGO_ORBE, 26)
 
     def test_sin_el_archivo_de_la_marca_lleva_una_chispa_de_texto(self):
         pedidos = []

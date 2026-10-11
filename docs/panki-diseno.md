@@ -34,8 +34,8 @@ pAnkI vive en una **burbuja de cristal** en el escritorio, hermana de la esfera 
 
 - Es una ventana de capa (`gtk4-layer-shell`) del propio shell, namespace `infinity-panki`: hereda el
   desenfoque de la regla `layerrule` de los paneles `infinity-*`.
-- Misma esfera de 60 px y mismo estilo `button.orb` que el logo, más una clase `panki` para el matiz propio.
-  Dentro lleva la marca de pAnkI en blanco (`panki-white.svg`, una chispa de cuatro puntas con el mismo trazo
+- Misma esfera de 48 px (el logo ∞ también baja de 60 a 48, centrado con el dock, porque las apps ahora son de colores) y mismo estilo `button.orb` que el logo, más una clase `panki` para el matiz propio.
+  Dentro lleva la marca de pAnkI en blanco (`panki-white.svg`, una burbuja de diálogo con una chispa dentro, con el mismo trazo
   que el ∞).
 - Posición: borde derecho, **encima** de la píldora de estado (volumen, batería, red, hora), que ya ocupa
   la esquina inferior derecha. Nunca debe tapar esa píldora ni el dock.

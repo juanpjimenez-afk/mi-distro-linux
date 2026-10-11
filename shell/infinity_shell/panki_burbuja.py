@@ -23,7 +23,7 @@ from gi.repository import Gtk4LayerShell as LayerShell  # noqa: E402  (antes que
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from .dock import ALTO, MARGEN, _capa, asset  # noqa: E402
+from .dock import ALTO, LOGO_ORBE, MARGEN, ORBE, _capa, asset  # noqa: E402
 
 HUECO = 14  # aire entre la burbuja y la píldora de estado (px)
 MARGEN_DERECHO = MARGEN + 4  # el mismo que el de la píldora de estado (dock.Estado)
@@ -80,12 +80,12 @@ class BurbujaPanki(Gtk.Window):
         boton = Gtk.Button()
         boton.add_css_class("orb")
         boton.add_css_class("panki")
-        boton.set_size_request(ALTO, ALTO)
+        boton.set_size_request(ORBE, ORBE)
         boton.set_tooltip_text("pAnkI, tu agente virtual  (Super + N)")
         ruta = asset("panki-white.svg")
         if ruta:
             marca = Gtk.Image.new_from_file(ruta)
-            marca.set_pixel_size(34)  # como el ∞ del logo dentro de la esfera de 60 px
+            marca.set_pixel_size(LOGO_ORBE)  # como el ∞ del logo dentro de la esfera
             boton.set_child(marca)
         else:
             boton.set_label("✦")

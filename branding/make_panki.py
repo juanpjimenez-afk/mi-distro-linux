@@ -7,14 +7,13 @@ Requiere: python3-pil y librsvg2-bin (rsvg-convert).
 
 Resultado:
 - panki-white.svg  la marca en blanco sobre fondo transparente: la burbuja del escritorio la muestra a
-                   34 px dentro de la esfera de cristal, como el ∞ de logo-white.svg
+                   26 px dentro de la esfera de cristal, como el ∞ de logo-white.svg
 - panki.png        icono de 256 x 256 para el menú y el lanzador: la misma marca sobre un círculo oscuro
 
-La marca es una chispa de cuatro puntas (una estrella de lados cóncavos) con un punto pequeño. Está
-dibujada como línea, con el mismo carácter que el ∞ del logo: trazo grueso y redondeado, sin relleno. El
-∞ tiene un trazo de unas 371 u en su viewBox de 4000 x 2000, que a 34 px de ancho son 3,2 px; la chispa
-usa un viewBox cuadrado de 2000 u de alto (la misma altura) y un trazo de 190 u, que a 34 px también son
-3,2 px.
+La marca es una burbuja de diálogo (el agente con el que se habla) con una chispa de cuatro puntas dentro.
+La burbuja está dibujada como línea, con el mismo carácter que el ∞ del logo: trazo grueso y redondeado,
+sin relleno; la chispa va rellena porque es pequeña. El viewBox es cuadrado de 2000 u; el trazo es de 190 u,
+que a 26 px son 2,5 px (el ∞ de 4000 u de ancho con 371 u de trazo da 2,4 px a 26 px de ancho).
 """
 import io
 import subprocess
@@ -26,13 +25,16 @@ AQUI = Path(__file__).resolve().parent
 SALIDA_SVG = AQUI / "panki-white.svg"
 SALIDA_PNG = AQUI / "panki.png"
 
-# --- la chispa, en un viewBox cuadrado de LADO x LADO unidades
+# --- la marca, en un viewBox cuadrado de LADO x LADO unidades
 LADO = 2000
-C = LADO // 2
-RADIO = 800      # del centro a cada punta (el trazo añade GROSOR / 2 por fuera)
+GROSOR = 190     # trazo de la burbuja: 2,5 px a 26 px, como el ∞
+# La burbuja: rectángulo de esquinas muy redondeadas con una cola abajo a la izquierda.
+BURBUJA = ("M670 330H1330A420 420 0 0 1 1750 750V910A420 420 0 0 1 1330 1330H930"
+           "L560 1680L700 1330H670A420 420 0 0 1 250 910V750A420 420 0 0 1 670 330Z")
+# La chispa de dentro: estrella de cuatro puntas de lados cóncavos.
+CENTRO_CHISPA = (1000, 840)
+RADIO = 330      # del centro a cada punta
 CONCAVO = 0.24   # cuánto se hunden los lados: 0 daría una cruz de puntas finísimas, 0,5 un rombo
-GROSOR = 190     # trazo de la marca del escritorio: 3,2 px a 34 px, como el ∞
-PUNTO = (1575, 425, 115)  # el punto pequeño: centro x, centro y y radio
 
 # --- el icono
 TAM = 256
@@ -44,21 +46,21 @@ LUZ = (74, 82, 178)
 HALO = (140, 150, 255)
 
 
-def trazado():
+def chispa():
     """El contorno de la chispa: cuatro curvas cuadráticas que se hunden hacia el centro."""
+    cx, cy = CENTRO_CHISPA
     k = round(CONCAVO * RADIO)
     r = RADIO
-    return (f"M{C} {C - r} Q{C + k} {C - k} {C + r} {C} Q{C + k} {C + k} {C} {C + r} "
-            f"Q{C - k} {C + k} {C - r} {C} Q{C - k} {C - k} {C} {C - r} Z")
+    return (f"M{cx} {cy - r} Q{cx + k} {cy - k} {cx + r} {cy} Q{cx + k} {cy + k} {cx} {cy + r} "
+            f"Q{cx - k} {cy + k} {cx - r} {cy} Q{cx - k} {cy - k} {cx} {cy - r} Z")
 
 
 def svg(grosor=GROSOR, relleno="none", color="#ffffff", lado=200):
-    """La marca como SVG. Con grosor 0 solo queda el relleno (sin línea)."""
-    x, y, r = PUNTO
+    """La marca como SVG. Con grosor 0 solo queda el relleno de la burbuja (sin línea)."""
     trazo = f' stroke="{color}" stroke-width="{grosor}" stroke-linejoin="round"' if grosor else ""
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {LADO} {LADO}" width="{lado}" height="{lado}">\n'
-            f'  <path fill="{relleno}"{trazo} d="{trazado()}"/>\n'
-            f'  <circle fill="{color}" cx="{x}" cy="{y}" r="{r}"/>\n'
+            f'  <path fill="{relleno}"{trazo} d="{BURBUJA}"/>\n'
+            f'  <path fill="{color}" d="{chispa()}"/>\n'
             f'</svg>\n')
 
 
