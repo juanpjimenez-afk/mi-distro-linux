@@ -102,6 +102,8 @@ _PROTEGIDA = ("Esa ruta está protegida (claves, contraseñas o datos de program
 _CAMBIO = ("El sistema de archivos cambió entre que se preparó la acción y se ejecutó, "
            "así que no se ha hecho nada. Vuelve a intentarlo.")
 
+# Texto fijo: el nombre que mandó el modelo no se devuelve ni se enseña (puede llevar texto que imite al sistema).
+_HERRAMIENTA_DESCONOCIDA = "Esa herramienta no existe."
 _COMANDOS_DESACTIVADOS = ("pAnkI no tiene permiso para proponer comandos de terminal. El usuario puede "
                           "activarlo en Ajustes → pAnkI (IA).")
 AJUSTES_PROPIOS = ("panki.",)   # ajustes que pAnkI no puede cambiarse a sí misma (ver _validar_cambio)
@@ -123,6 +125,7 @@ class Solicitud:
     detalle: list                    # líneas exactas (cada movimiento, el comando, la URL...)
     riesgo: str                      # "bajo" | "medio" | "alto"
     recordable: str | None = None    # clave de "permitir en esta conversación"; None = siempre preguntar
+    alcance: str | None = None       # texto literal de lo que concede "en esta conversación" (None si no es recordable)
 
 
 @dataclass
@@ -151,26 +154,68 @@ def _texto_seguro(s):
     return str(s).encode("utf-8", "replace").decode("utf-8")
 
 
-def _visible(s, maximo=None):
-    """Hace visibles los caracteres de control y de formato (saltos de línea, texto de derecha a izquierda...).
+# Además de los de formato y control: marcas combinantes (tapan la letra anterior), selectores de variación
+# y rellenos que se dibujan como un hueco en blanco (braille vacío, hangul).
+_CARACTERES_ENGANOSOS = frozenset({0x2800, 0x3164, 0x115F, 0x1160, 0xFFA0, 0x034F})
+_ESCAPAR_EN_TARJETA = _NOMBRES_UNICODE_RAROS + ("Mn", "Me")
 
-    Es lo que se muestra al usuario en la tarjeta de aprobación: un nombre de archivo con un salto de línea
-    o con U+202E no puede disfrazarse de otra línea ni de otra extensión.
+
+def _escapa(ch):
+    o = ord(ch)
+    return f"\\x{o:02x}" if o < 0x100 else f"\\u{o:04x}" if o < 0x10000 else f"\\U{o:08x}"
+
+
+def _visible(s, maximo=None):
+    """Hace visibles los caracteres de control, de formato, invisibles o que tapan a otros.
+
+    Es lo que se muestra al usuario en la tarjeta de aprobación: un nombre de archivo con un salto de línea,
+    con U+202E o con cien marcas combinantes no puede disfrazarse de otra línea ni de otra extensión.
+    Se normaliza a NFC antes: una «é» escrita como e + acento es una letra normal; lo que quede suelto
+    (marcas combinantes sin letra a la que unirse, o de sobra) se escapa.
     """
     salida = []
-    for ch in str(s):
+    for ch in unicodedata.normalize("NFC", str(s)):
         cat = unicodedata.category(ch)
         if ch in _ESCAPES_CORTOS:
             salida.append(_ESCAPES_CORTOS[ch])
-        elif cat in _NOMBRES_UNICODE_RAROS or (cat == "Zs" and ch != " "):
-            o = ord(ch)
-            salida.append(f"\\x{o:02x}" if o < 0x100 else f"\\u{o:04x}" if o < 0x10000 else f"\\U{o:08x}")
+        elif cat in _ESCAPAR_EN_TARJETA or (cat == "Zs" and ch != " ") or ord(ch) in _CARACTERES_ENGANOSOS \
+                or 0xFE00 <= ord(ch) <= 0xFE0F or 0xE0100 <= ord(ch) <= 0xE01EF:
+            salida.append(_escapa(ch))
         else:
             salida.append(ch)
     texto = "".join(salida)
     if maximo and len(texto) > maximo:
         texto = texto[:maximo - 1] + "…"
     return texto
+
+
+def _medio(texto, maximo):
+    """Recorta por el MEDIO conservando el principio y el final (el final de una ruta es lo que importa)."""
+    if len(texto) <= maximo:
+        return texto
+    corte = maximo - 1
+    return texto[:corte - corte // 2] + "…" + texto[len(texto) - corte // 2:]
+
+
+def _escritura_unicode(texto):
+    """El texto con todo lo que no es ASCII como \\uXXXX."""
+    return "".join(c if ord(c) < 128 else _escapa(c) for c in texto)
+
+
+def _escritura_de(ch):
+    try:
+        return unicodedata.name(ch).split()[0]
+    except ValueError:
+        return "?"
+
+
+def _nombre_engañoso(texto):
+    """¿Tiene letras que no son latinas, o escrituras mezcladas en una misma palabra? (homógrafos: «Dоcumentos»)"""
+    for palabra in re.split(r"[\W_]+", unicodedata.normalize("NFC", texto)):
+        escrituras = {_escritura_de(c) for c in palabra if c.isalpha()}
+        if len(escrituras) > 1 or (escrituras and escrituras != {"LATIN"}):
+            return True
+    return False
 
 
 def _plural(n, uno, varios):
@@ -413,6 +458,9 @@ _SYSTEMCTL_LECTURA = frozenset({"status", "is-active", "is-enabled", "list-units
 # Programas que escriben en las rutas que reciben (se les aplica la lista de ESCRITURA PROHIBIDA).
 _ESCRIBEN = frozenset({"cp", "mv", "tee", "truncate", "touch", "mkdir", "sed", "curl", "wget", "tar", "unzip",
                        "zip", "7z", "7za", "gzip", "gunzip", "bzip2", "xz", "unxz", "patch", "rename"})
+# Un destino con estas extensiones (o sin extensión y con el bit de ejecución) es algo que se puede arrancar.
+_EXTENSIONES_EJECUTABLES = frozenset({".desktop", ".sh", ".bash", ".zsh", ".py", ".pl", ".rb", ".js", ".service",
+                                      ".timer", ".socket", ".path", ".appimage", ".run", ".bin", ".command"})
 _RUTAS_LECTURA_INOCUA = ("/usr", "/opt", "/sys/class")
 _ARCHIVOS_LECTURA_INOCUA = frozenset({"/proc/cpuinfo", "/proc/meminfo", "/etc/os-release", "/etc/lsb-release"})
 _FUERA_CMD = ("El comando usa una ruta fuera de tu carpeta personal. Solo se admiten rutas de /usr, /opt, "
@@ -561,6 +609,9 @@ def _abrir_real(tipo, valor):
     raise OSError(errno.EINVAL, f"tipo de apertura desconocido: {tipo}")
 
 
+# Cadenas largas de base64 / hexadecimal: lo que parece información codificada para sacarla por la dirección.
+_CODIFICADO_RE = re.compile(r"[A-Za-z0-9+/_=-]{40,}|(?:%[0-9A-Fa-f]{2}){12,}")
+_HOST_ARG_RE = re.compile(r"(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}|\d{1,3}(?:\.\d{1,3}){3}")
 _HOST_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?")
 
 
@@ -773,7 +824,7 @@ class Ejecutor:
 
     def preparar(self, nombre, args):
         if not isinstance(nombre, str) or nombre not in HERRAMIENTAS:
-            raise ErrorHerramienta(f"No existe la herramienta «{_visible(str(nombre), 60)}».")
+            raise ErrorHerramienta(_HERRAMIENTA_DESCONOCIDA)
         if nombre == "ejecutar_comando" and not self._permitir_comandos:
             raise ErrorHerramienta(_COMANDOS_DESACTIVADOS)
         if args is None:
@@ -793,7 +844,7 @@ class Ejecutor:
         nombre = getattr(preparada, "nombre", None)
         try:
             if nombre not in HERRAMIENTAS:
-                raise ErrorHerramienta(f"No existe la herramienta «{_visible(str(nombre), 60)}».")
+                raise ErrorHerramienta(_HERRAMIENTA_DESCONOCIDA)
             if nombre == "ejecutar_comando" and not self._permitir_comandos:
                 raise ErrorHerramienta(_COMANDOS_DESACTIVADOS)
             if not isinstance(preparada.args, dict):
@@ -801,7 +852,7 @@ class Ejecutor:
             if not isinstance(getattr(preparada, "interno", None), dict):
                 preparada.interno = {}
             r = getattr(self, "_ejecutar_" + nombre)(preparada)
-            r.resumen = _visible(r.resumen)      # una sola línea, sin saltos ni texto bidireccional
+            r.resumen = _medio(_visible(r.resumen), 180)   # una línea; si es larga se corta por el MEDIO
             return r
         except ErrorHerramienta as e:
             return self._fallo(str(e))
@@ -813,9 +864,10 @@ class Ejecutor:
         return Resultado(False, {"error": mensaje}, mensaje)
 
     @staticmethod
-    def _solicitud(herramienta, titulo, detalle, riesgo, recordable=None):
+    def _solicitud(herramienta, titulo, detalle, riesgo, recordable=None, alcance=None):
         """Todo lo que ve el usuario pasa por _visible: nada de saltos de línea ni bidi en nombres."""
-        return Solicitud(herramienta, _visible(titulo), [_visible(linea) for linea in detalle], riesgo, recordable)
+        return Solicitud(herramienta, _visible(titulo), [_visible(linea) for linea in detalle], riesgo, recordable,
+                         _visible(alcance) if recordable is not None and alcance else None)
 
     # ------------------------------------------------------------------ política de rutas
     @staticmethod
@@ -1323,7 +1375,8 @@ class Ejecutor:
         sol = self._solicitud("abrir_app", f"Abrir {info['nombre']} ({id_})",
                               [f"Aplicación: {info['nombre']} ({id_})", f"Ejecutará: {orden}",
                                f"Archivo: {self._mostrar(info['real'])}"],
-                              "bajo", f"app:{id_}:{info['firma']}")
+                              "bajo", f"app:{id_}:{info['firma']}",
+                              f"abrir {info['nombre']} ({id_}) mientras su archivo no cambie")
         return Preparada("abrir_app", {"app": id_}, sol, {"firma": info["firma"]})
 
     def _ejecutar_abrir_app(self, p):
@@ -1339,18 +1392,19 @@ class Ejecutor:
     # ------------------------------------------------------------------ URL
     def _preparar_abrir_url(self, args):
         url, partes = _validar_url(_arg_texto(args, "url", LIMITE_URL + 1))
-        consulta = len(partes.query)
-        alto = consulta > LIMITE_CONSULTA_URL
-        detalle = [f"URL: {url}", f"Sitio: {partes.hostname}"]
+        resto = partes.path + partes.query + partes.fragment
+        datos_codificados = bool(_CODIFICADO_RE.search(resto))
+        alto = len(partes.query) > LIMITE_CONSULTA_URL or len(resto) > 100 or datos_codificados
+        host = partes.hostname
+        # Lo importante primero: el sitio, y después la dirección entera.
+        detalle = [f"Sitio: {host}", f"URL: {url}"]
         if alto:
-            detalle.append(f"Atención: la URL lleva una consulta de {consulta} caracteres. Podría estar enviando "
-                           "datos (por ejemplo, información de tus archivos) al sitio.")
-        if len(partes.path) + len(partes.fragment) > 300:
-            detalle.append("Aviso: la dirección es muy larga; comprueba que no lleve datos tuyos escondidos.")
-        if _host_local(partes.hostname):
+            detalle.append(f"Atención: la dirección lleva {len(resto)} caracteres después del sitio"
+                           + (" y parte parece información codificada" if datos_codificados else "")
+                           + ". Podría estar enviando datos (por ejemplo, de tus archivos) al sitio.")
+        if _host_local(host):
             detalle.append("Aviso: es una dirección de tu propio equipo o de tu red local.")
-        sol = self._solicitud("abrir_url", "Abrir una página web en el navegador", detalle,
-                              "alto" if alto else "medio")
+        sol = self._solicitud("abrir_url", f"Abrir {host}", detalle, "alto" if alto else "medio")
         return Preparada("abrir_url", {"url": url}, sol, {})
 
     def _ejecutar_abrir_url(self, p):
@@ -1373,8 +1427,12 @@ class Ejecutor:
         m = self._mostrar(r.real)
         detalle = [f"Carpeta: {m}", "Los nombres de lo que hay dentro se envían a Google (Gemini)."]
         if ocultos:
-            detalle.append("Incluye los archivos ocultos.")
-        sol = self._solicitud("listar_directorio", f"Ver qué hay en {m}", detalle, "bajo", f"carpeta:{r.real}")
+            detalle.append("Atención: incluye los archivos ocultos (los que empiezan por punto: historiales, "
+                           "configuraciones, notas privadas...).")
+        # Cada variante tiene su propia clave: lo que se concede es exactamente lo que dice el botón.
+        sol = self._solicitud("listar_directorio", f"Ver qué hay en {m}" + (" (con archivos ocultos)" if ocultos else ""),
+                              detalle, "medio" if ocultos else "bajo", f"listar:{r.real}:{int(ocultos)}",
+                              f"ver los nombres de los archivos de {m} ({'con' if ocultos else 'sin'} ocultos)")
         return Preparada("listar_directorio", {"ruta": ruta, "mostrar_ocultos": ocultos}, sol, {"real": r.real})
 
     def _ejecutar_listar_directorio(self, p):
@@ -1429,10 +1487,11 @@ class Ejecutor:
         if not os.path.isdir(r.real):
             raise ErrorHerramienta("Esa carpeta no existe.")
         m = self._mostrar(r.real)
-        sol = self._solicitud("buscar_archivos", f"Buscar archivos por nombre en {m}",
-                              [f"Carpeta: {m} (y sus subcarpetas)", f"Patrón: {patron}",
+        sol = self._solicitud("buscar_archivos", f"Buscar archivos por nombre en {m} (incluye subcarpetas)",
+                              [f"Carpeta: {m} (y todas sus subcarpetas)", f"Patrón: {patron}",
                                "Los nombres que coincidan se envían a Google (Gemini). No se lee ningún contenido."],
-                              "bajo", f"busqueda:{r.real}")
+                              "bajo", f"buscar:{r.real}",
+                              f"buscar archivos por nombre en {m} y en todas sus subcarpetas")
         return Preparada("buscar_archivos", {"carpeta": carpeta, "patron": patron}, sol, {"real": r.real})
 
     def _ejecutar_buscar_archivos(self, p):
@@ -1528,7 +1587,7 @@ class Ejecutor:
                               [f"Archivo: {m} ({_tam(st.st_size)})",
                                f"Su contenido (hasta {LIMITE_LECTURA:,} bytes) se envía a Google (Gemini)."
                                .replace(",", " ")],
-                              "medio", f"contenido:{os.path.dirname(r.real)}")
+                              "medio", f"leer:{r.real}", f"leer el archivo {m}")
         return Preparada("leer_archivo", {"ruta": ruta}, sol, {"real": r.real})
 
     def _ejecutar_leer_archivo(self, p):
@@ -1555,7 +1614,8 @@ class Ejecutor:
         sol = self._solicitud("proponer_organizacion", f"Mirar los archivos de {m} para proponer cómo organizarlos",
                               [f"Carpeta: {m}", f"Criterio: por {criterio}",
                                "Los nombres de los archivos se envían a Google (Gemini). No se mueve nada."],
-                              "bajo", f"carpeta:{r.real}")
+                              "bajo", f"organizar:{r.real}",
+                              f"ver los nombres de los archivos de {m} para proponer cómo organizarlos")
         return Preparada("proponer_organizacion", {"carpeta": carpeta, "criterio": criterio}, sol,
                          {"real": r.real})
 
@@ -1673,8 +1733,30 @@ class Ejecutor:
         titulo = f"Mover {_plural(len(detalle), 'archivo', 'archivos')} en {m}"
         if ausentes:
             titulo += f" ({ausentes} del plan ya no están)"
-        sol = self._solicitud("aplicar_organizacion", titulo, detalle, "medio")
+        detalle = self._cabecera_movimientos(len(detalle), [d.split(" → ", 1)[1] for d in detalle]) + detalle
+        avisos = self._aviso_nombres([nombre for nombre, _ in plan.movs])
+        sol = self._solicitud("aplicar_organizacion", titulo, avisos + detalle, "medio")
         return Preparada("aplicar_organizacion", {"id_plan": id_plan}, sol, {"real": r.real})
+
+    @staticmethod
+    def _cabecera_movimientos(total, destinos):
+        """Las dos primeras líneas de una tarjeta con varios movimientos: cuántos y a qué carpetas."""
+        carpetas = []
+        for d in destinos:
+            c = os.path.dirname(d) or "."
+            if c not in carpetas:
+                carpetas.append(c)
+        mostradas = ", ".join(carpetas[:8]) + (f" y {len(carpetas) - 8} más" if len(carpetas) > 8 else "")
+        return [f"Total: {_plural(total, 'archivo', 'archivos')} a mover",
+                f"Carpetas de destino ({len(carpetas)}): {mostradas}"]
+
+    @staticmethod
+    def _aviso_nombres(textos):
+        """Línea de aviso si algún nombre tiene letras no latinas o escrituras mezcladas (homógrafos)."""
+        raros = [t for t in textos if _nombre_engañoso(t)]
+        if not raros:
+            return []
+        return ["Aviso: el nombre tiene caracteres no ASCII: " + ", ".join(_escritura_unicode(t) for t in raros[:5])]
 
     def _asegurar_estado(self):
         """Crea (0700) y comprueba la carpeta del registro ANTES de mover nada."""
@@ -1911,6 +1993,7 @@ class Ejecutor:
         titulo = f"Deshacer la última organización ({_plural(len(detalle), 'archivo', 'archivos')})"
         if omitidos:
             titulo += f"; {omitidos} ya no están donde se dejaron y no se tocan"
+        detalle = self._cabecera_movimientos(len(detalle), [d.split(" → ", 1)[1] for d in detalle]) + detalle
         return Preparada("deshacer_ultima_organizacion", {}, self._solicitud("deshacer_ultima_organizacion",
                                                                              titulo, detalle, "medio"), {})
 
@@ -1979,7 +2062,9 @@ class Ejecutor:
             if os.path.isdir(r.real):
                 return Preparada("crear_carpeta", {"ruta": ruta}, None, {"existe": True})
             raise ErrorHerramienta("Ya existe un archivo con ese nombre.")
-        sol = self._solicitud("crear_carpeta", f"Crear la carpeta {m}", [f"Carpeta nueva: {m}"], "bajo")
+        avisos = self._aviso_nombres([os.path.basename(r.real)])
+        sol = self._solicitud("crear_carpeta", f"Crear la carpeta {m}", [f"Carpeta nueva: {m}"] + avisos,
+                              "medio" if avisos else "bajo")
         return Preparada("crear_carpeta", {"ruta": ruta}, sol, {"real": r.real})
 
     def _ejecutar_crear_carpeta(self, p):
@@ -2027,14 +2112,36 @@ class Ejecutor:
             raise ErrorHerramienta("No se puede mover una carpeta dentro de sí misma.")
         return objeto, carpeta, nombre
 
+    @staticmethod
+    def _es_ejecutable(nombre, st):
+        ext = os.path.splitext(nombre)[1].casefold()
+        if ext in _EXTENSIONES_EJECUTABLES:
+            return True
+        return not ext and stat.S_ISREG(st.st_mode) and bool(st.st_mode & 0o111)
+
     def _preparar_mover_archivo(self, args):
         objeto, carpeta, nombre = self._plan_mover(args)
         libre = _nombre_libre(carpeta, nombre)
-        detalle = [f"{self._mostrar(objeto)} → {self._mostrar(os.path.join(carpeta, libre))}"]
+        origen_nombre = os.path.basename(objeto)
+        destino_txt = self._mostrar(os.path.join(carpeta, libre))
+        detalle = [f"{self._mostrar(objeto)} → {destino_txt}"]
         if libre != nombre:
             detalle.append(f"Ya existe «{nombre}» en el destino: no se sobrescribe, se guardará como «{libre}».")
-        sol = self._solicitud("mover_archivo", f"Mover «{os.path.basename(objeto)}» a {self._mostrar(carpeta)}",
-                              detalle, "medio")
+        riesgo = "medio"
+        if self._es_ejecutable(libre, os.lstat(objeto)):
+            riesgo = "alto"
+            detalle.append("Atención: el archivo resultante es ejecutable o un lanzador (un programa que se puede "
+                           "arrancar).")
+        avisos = self._aviso_nombres([origen_nombre, libre, os.path.basename(carpeta)])
+        detalle += avisos
+        if libre != origen_nombre:
+            if carpeta == os.path.dirname(objeto):
+                titulo = f"Renombrar «{origen_nombre}» a «{libre}»"
+            else:
+                titulo = f"Renombrar y mover «{origen_nombre}» a «{libre}» en {self._mostrar(carpeta)}"
+        else:
+            titulo = f"Mover «{origen_nombre}» a {self._mostrar(carpeta)}"
+        sol = self._solicitud("mover_archivo", titulo, detalle, riesgo)
         return Preparada("mover_archivo", {"origen": args["origen"], "destino": args["destino"]}, sol,
                          {"objeto": objeto, "carpeta": carpeta})
 
@@ -2045,7 +2152,7 @@ class Ejecutor:
         final = os.path.join(carpeta, self._mover_seguro(os.path.dirname(objeto), os.path.basename(objeto),
                                                          carpeta, nombre))
         datos = {"origen": self._mostrar(objeto), "destino": self._mostrar(final)}
-        return Resultado(True, datos, f"Movido: {datos['origen']} → {datos['destino']}.")
+        return Resultado(True, datos, f"Movido: {_medio(datos['origen'], 70)} → {_medio(datos['destino'], 70)}.")
 
     # ------------------------------------------------------------------ ejecutar_comando
     @staticmethod
@@ -2156,8 +2263,11 @@ class Ejecutor:
         argv = args.get("argv")
         if not isinstance(argv, list) or not argv:
             raise ErrorHerramienta("«argv» debe ser una lista de textos no vacía: el programa y sus argumentos.")
-        if len(argv) > 100 or not all(isinstance(a, str) for a in argv):
-            raise ErrorHerramienta("«argv» debe ser una lista de textos (máximo 100 elementos).")
+        if not all(isinstance(a, str) for a in argv):
+            raise ErrorHerramienta("«argv» debe ser una lista de textos.")
+        if len(argv) > 21:
+            raise ErrorHerramienta("Demasiados argumentos (máximo 20): la tarjeta de aprobación tiene que poder "
+                                   "mostrarlos todos. Divide la tarea en comandos más pequeños.")
         if not argv[0].strip() or any("\0" in a or len(a) > 4096 for a in argv):
             raise ErrorHerramienta("«argv» contiene un elemento vacío o no válido.")
         carpeta = _arg_texto(args, "carpeta", obligatorio=False)
@@ -2167,13 +2277,36 @@ class Ejecutor:
         self._comprobar_comando(argv, r.real)
         return list(argv), carpeta, r
 
+    @staticmethod
+    def _hosts_de(argumentos):
+        """Hosts que aparecen en los argumentos (URL, usuario@host, host:ruta, dominio suelto), sin repetir."""
+        hosts = []
+        for a in argumentos:
+            for trozo in {a, a.split("=", 1)[-1], a.lstrip("@")}:
+                host = None
+                if "://" in trozo:
+                    try:
+                        host = urlsplit(trozo).hostname
+                    except ValueError:
+                        host = None
+                else:
+                    m = _HOST_ARG_RE.fullmatch(trozo.split("/", 1)[0].split(":", 1)[0].rsplit("@", 1)[-1])
+                    host = m.group(0) if m else None
+                if host and host not in hosts:
+                    hosts.append(host)
+        return hosts
+
     def _preparar_ejecutar_comando(self, args):
         argv, carpeta, r = self._argv_y_carpeta(args)
-        linea = " ".join(shlex.quote(a) for a in argv)
-        sol = self._solicitud("ejecutar_comando", "Ejecutar un comando en la terminal",
-                              [f"Comando: {linea}", f"Carpeta: {self._mostrar(r.real)}",
-                               f"Tiempo máximo: {self.tiempo_comando} s. Se ejecuta sin shell.",
-                               "Lo que imprima se envía a Google (Gemini)."], "alto")
+        # Lo importante primero (programa y destino de red), luego los argumentos uno por línea.
+        detalle = [f"Programa: {argv[0]}"]
+        hosts = self._hosts_de(argv[1:])
+        if hosts:
+            detalle.append("Destino: " + ", ".join(hosts))
+        detalle += [f"Argumento {i}: {shlex.quote(a)}" for i, a in enumerate(argv[1:], 1)]
+        detalle += [f"Carpeta: {self._mostrar(r.real)}", f"Tiempo máximo: {self.tiempo_comando} s. Se ejecuta sin shell.",
+                    "Lo que imprima se envía a Google (Gemini)."]
+        sol = self._solicitud("ejecutar_comando", f"Ejecutar {os.path.basename(argv[0])} en la terminal", detalle, "alto")
         args_limpios = {"argv": argv}
         if carpeta:
             args_limpios["carpeta"] = carpeta

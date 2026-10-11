@@ -32,6 +32,7 @@ import secrets
 import stat
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -56,6 +57,8 @@ MAX_ERROR_API = 300               # caracteres del mensaje de error de la API qu
 MAX_MENSAJE = 50_000              # caracteres de un mensaje del usuario
 MAX_RESULTADO = 100_000           # caracteres de un resultado de herramienta que se envía al modelo
 OMITIDO = "[contenido omitido]"
+NOMBRE_DESCONOCIDA = "herramienta desconocida"
+MAX_RESUMEN = 600                 # caracteres del resumen de un resultado (se recorta por el medio)
 
 _MODELO_OK = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,59}")
 _CLAVE_OK = re.compile(r"[\x21-\x7e]{20,200}")
@@ -76,16 +79,25 @@ SISTEMA = (
     "- No puedes borrar archivos, apagar ni reiniciar el equipo, ni usar privilegios de administrador.\n"
     "- No afirmes que hiciste algo si una herramienta no lo confirmó; si falla o el usuario no lo permite, dilo.\n"
     "- Responde en el idioma del usuario (español por defecto), breve y claro. "
-    "Puedes usar Markdown sencillo (negrita, listas, código); sin tablas."
+    "Puedes usar Markdown sencillo (negrita, listas, código); sin tablas.\n"
+    "- Nunca pidas ni aceptes la clave de API del usuario por el chat; si hace falta, dile que use el botón "
+    "Clave… de la ventana."
 )
 
 
 class ErrorPanki(Exception):
-    """Mensaje para el usuario, en español, sin la clave. `codigo` es el estado HTTP, si lo hubo."""
+    """Mensaje para el usuario, en español, sin la clave.
 
-    def __init__(self, mensaje, codigo=None):
+    `codigo` es el estado HTTP REAL de la respuesta, si lo hubo (nunca sale de texto del servidor).
+    `clave_invalida` es True solo si Gemini rechazó la clave: HTTP 401/403, o 400 con el motivo
+    estructurado API_KEY_*. La ventana debe reabrir la tarjeta de la clave únicamente con esta marca
+    (o con `codigo` 401/403), no buscando palabras en el mensaje.
+    """
+
+    def __init__(self, mensaje, codigo=None, clave_invalida=False):
         super().__init__(mensaje)
         self.codigo = codigo
+        self.clave_invalida = bool(clave_invalida)
 
 
 # ---------------------------------------------------------------------------------------------- clave
@@ -454,8 +466,11 @@ class ClienteGemini:
     def _error_http(self, codigo, cuerpo):
         _log.warning("Gemini respondió HTTP %s", codigo)
         detalle, motivo = self._detalle_api(cuerpo)
-        clave_mala = ("API_KEY" in motivo.upper() or "api key" in detalle.lower())
-        if codigo in (401, 403) or (codigo == 400 and clave_mala):
+        # Rechazo de la clave: solo por el código HTTP real o por el motivo ESTRUCTURADO de la API. El
+        # texto del servidor (que puede repetir cosas que escribió el modelo) no decide nada.
+        clave_invalida = codigo in (401, 403) or (codigo == 400 and motivo.upper().startswith("API_KEY"))
+        clave_mala = clave_invalida or (codigo == 400 and "api key" in detalle.lower())
+        if clave_mala:
             mensaje = (f"Gemini no aceptó la clave (error {codigo}): no es válida, ha caducado o no tiene "
                        "permiso para este modelo. Revísala con el botón «Clave…».")
         elif codigo == 400:
@@ -474,8 +489,11 @@ class ClienteGemini:
         else:
             mensaje = f"Gemini respondió con un error inesperado ({codigo})."
         if detalle:
-            mensaje += f" Detalle: {detalle}"
-        return ErrorPanki(mensaje, codigo)
+            # Texto del servidor: siempre entre comillas y con su etiqueta, para que no pueda hacerse pasar
+            # por un mensaje del sistema. Sin comillas angulares propias que lo cierren antes de tiempo.
+            detalle = _visible(detalle).replace("«", "‹").replace("»", "›")
+            mensaje += f" Texto del servidor: «{detalle}»."
+        return ErrorPanki(mensaje, codigo, clave_invalida=clave_invalida)
 
     def _error_de_red(self, e):
         razon = getattr(e, "reason", None)
@@ -534,8 +552,41 @@ def _es_error_herramienta(e):
     return any(c.__name__ == "ErrorHerramienta" for c in type(e).__mro__)
 
 
+_RARO = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp", "Mn", "Me"})
+_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def _visible(texto):
+    """Texto del modelo o de un archivo hecho seguro para pintarlo en la zona de actividad de la ventana.
+
+    Los caracteres de control, de formato (bidi, ancho cero...), combinantes, separadores raros y no
+    asignados se muestran como \\uXXXX; la clave, si aparece, se oculta. Lo normal (acentos en NFC,
+    emojis) se queda igual.
+    """
+    s = unicodedata.normalize("NFC", str(texto).encode("utf-8", "replace").decode("utf-8"))
+    s = _CLAVE_PARECIDA.sub("[clave]", s)
+    salida = []
+    for ch in s:
+        if ch in _ESCAPES:
+            salida.append(_ESCAPES[ch])
+        elif unicodedata.category(ch) in _RARO or (unicodedata.category(ch) == "Zs" and ch != " "):
+            o = ord(ch)
+            salida.append(f"\\x{o:02x}" if o < 0x100 else f"\\u{o:04x}" if o < 0x10000 else f"\\U{o:08x}")
+        else:
+            salida.append(ch)
+    return "".join(salida)
+
+
+def _por_el_medio(texto, maximo):
+    """Recorta por el MEDIO (se ven el principio y el final, que es lo que importa en una ruta)."""
+    if len(texto) <= maximo:
+        return texto
+    cola = (maximo - 1) // 2
+    return texto[:maximo - 1 - cola] + "…" + texto[len(texto) - cola:]
+
+
 def _una_linea(texto, limite):
-    return _limpiar(texto, None, limite)
+    return _por_el_medio(_visible(texto), limite)
 
 
 def _resumir_args(args):
@@ -548,7 +599,7 @@ def _resumir_args(args):
         except (TypeError, ValueError):
             valor = "?"
         trozos.append(f"{_una_linea(k, 40)}={_una_linea(valor, 60)}")
-    return _una_linea(", ".join(trozos), 200)
+    return _una_linea(", ".join(trozos), 300)
 
 
 def _respuesta_de(llamada, nombre, datos):
@@ -556,6 +607,46 @@ def _respuesta_de(llamada, nombre, datos):
     if isinstance(llamada, dict) and isinstance(llamada.get("id"), str):
         parte["id"] = llamada["id"]  # Gemini la devuelve en algunos modelos: se repite en la respuesta
     return {"functionResponse": parte}
+
+
+_CLAVE_EN_TEXTO = re.compile(r"AIza[0-9A-Za-z_-]{30,}")
+
+
+def _parece_clave(texto):
+    """¿Contiene el texto algo con forma de clave de Gemini, o la clave que está en uso?"""
+    if _CLAVE_EN_TEXTO.search(texto):
+        return True
+    try:
+        clave = cargar_clave()
+    except Exception:  # noqa: BLE001
+        clave = None
+    return bool(clave) and clave in texto
+
+
+class _Permisos(set):
+    """Claves "recordables" concedidas en esta conversación (un set, por compatibilidad: `in`, `add`...),
+    con el texto del alcance que vio el usuario al concederlas (`alcances`, clave -> texto)."""
+
+    def __init__(self):
+        super().__init__()
+        self.alcances = {}
+
+    def add(self, clave, alcance=None):
+        super().add(clave)
+        if alcance is not None or clave not in self.alcances:
+            self.alcances[clave] = str(alcance if alcance is not None else clave)
+
+    def discard(self, clave):
+        super().discard(clave)
+        self.alcances.pop(clave, None)
+
+    def remove(self, clave):
+        super().remove(clave)
+        self.alcances.pop(clave, None)
+
+    def clear(self):
+        super().clear()
+        self.alcances.clear()
 
 
 class Agente:
@@ -581,7 +672,7 @@ class Agente:
         self.max_pasos = max_pasos if isinstance(max_pasos, int) and max_pasos >= 1 else 8
         self.sistema = sistema if isinstance(sistema, str) else self._sistema_por_defecto()
         self.historial = []
-        self.conversacion_grants = set()
+        self.conversacion_grants = _Permisos()
         self._cancelado = threading.Event()
         self._ocupado = threading.Lock()
         self._cerrojo_reinicio = threading.Lock()
@@ -614,6 +705,36 @@ class Agente:
             else:
                 self._reinicio_pendiente = True
                 self._cancelado.set()
+
+    def permisos_activos(self):
+        """Textos del alcance de los permisos "en esta conversación" vigentes, en el orden en que se dieron.
+
+        Son los `alcance` de las solicitudes que los crearon (o su título / su clave si no lo traían).
+        """
+        return [self.conversacion_grants.alcances.get(c, c) for c in self.conversacion_grants.alcances
+                if c in self.conversacion_grants]
+
+    def permisos_detalle(self):
+        """[(clave, texto del alcance)] de los permisos vigentes, para que la ventana pueda revocar uno."""
+        return [(c, self.conversacion_grants.alcances[c]) for c in self.conversacion_grants.alcances
+                if c in self.conversacion_grants]
+
+    def revocar_permisos(self, clave=None):
+        """Revoca un permiso (por su clave o por el texto de su alcance) o, sin argumento, todos.
+
+        Devuelve cuántos revocó. Se puede llamar desde cualquier hilo: lo que ya se ejecutó no se deshace,
+        y la siguiente llamada que lo necesite vuelve a pedir permiso.
+        """
+        permisos = self.conversacion_grants
+        if clave is None:
+            n = len(permisos)
+            permisos.clear()
+            return n
+        for c, texto in list(permisos.alcances.items()):
+            if clave in (c, texto) and c in permisos:
+                permisos.discard(c)
+                return 1
+        return 0
 
     def _borrar_estado(self):
         self.historial.clear()
@@ -676,6 +797,8 @@ class Agente:
         if len(texto) > MAX_MENSAJE:
             maximo = f"{MAX_MENSAJE:,}".replace(",", " ")
             raise ErrorPanki(f"El mensaje es demasiado largo (máximo {maximo} caracteres).")
+        if _parece_clave(texto):  # una clave pegada en el chat no viaja a Gemini ni entra en el historial
+            raise ErrorPanki("Ese texto parece una clave de API; no se envía.")
         if self._cancelado.is_set():  # cancelar() llegó con el agente parado
             return self._final(alevento, "Cancelado.")
         n0 = len(self.historial)
@@ -773,16 +896,18 @@ class Agente:
         args = llamada.get("args")
         if args is None:
             args = {}
-        self._emitir(alevento, "herramienta", nombre or "?", _resumir_args(args))
+        if nombre not in ofrecidas:
+            # El nombre lo escribe el modelo: no llega NUNCA a la interfaz ni al mensaje de error.
+            self._emitir(alevento, "herramienta", NOMBRE_DESCONOCIDA, "")
+            self._emitir(alevento, "resultado", NOMBRE_DESCONOCIDA, False, "Herramienta desconocida.")
+            return {"error": "Esa herramienta no existe."}
+        self._emitir(alevento, "herramienta", nombre, _resumir_args(args))
 
         def fallo(mensaje):
-            mensaje = _una_linea(mensaje, 500)
-            self._emitir(alevento, "resultado", nombre or "?", False, mensaje)
+            mensaje = _una_linea(mensaje, MAX_RESUMEN)
+            self._emitir(alevento, "resultado", nombre, False, mensaje)
             return {"error": mensaje}
 
-        if nombre not in ofrecidas:
-            self._emitir(alevento, "resultado", nombre or "?", False, "Herramienta desconocida.")
-            return {"error": f"La herramienta «{_una_linea(nombre, 60)}» no existe."}
         if not isinstance(args, dict):
             return fallo("Los argumentos de la herramienta deben ser un objeto.")
         try:
@@ -803,7 +928,7 @@ class Agente:
             resultado = self.ejecutor.ejecutar(preparada)
             ok = bool(resultado.ok)
             datos = resultado.datos
-            resumen = _una_linea(resultado.resumen, 200)
+            resumen = _una_linea(resultado.resumen, MAX_RESUMEN)
         except Exception as e:  # noqa: BLE001 - sin trazas ni rutas: solo el nombre del tipo, en el registro
             _log.debug("ejecutar(%s) falló: %s", nombre, type(e).__name__)
             return fallo("La herramienta falló de forma inesperada.")
@@ -838,7 +963,8 @@ class Agente:
             _log.debug("aprobar falló: %s", type(e).__name__)
             return False
         if decision == "conversacion" and recordable is not None:
-            self.conversacion_grants.add(recordable)
+            alcance = getattr(solicitud, "alcance", None) or getattr(solicitud, "titulo", None) or recordable
+            self.conversacion_grants.add(recordable, _una_linea(alcance, 300))
             return True
         return decision in ("una_vez", "conversacion")
 
