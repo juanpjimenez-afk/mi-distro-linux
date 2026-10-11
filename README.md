@@ -78,7 +78,7 @@ Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://r
 
 | Atajo | Acción |
 |---|---|
-| `Super + Espacio` o clic en el **orbe ∞** | Buscador (apps, calculadora, `> comando`, web) + apagar/reiniciar |
+| `Super + Espacio` o clic en el **orbe ∞** | Buscador (apps, calculadora, `> comando`, `? pregunta` para pAnkI, web) + apagar/reiniciar |
 | `Super + Enter` | Terminal (cristal translúcido) |
 | `Super + E` / `Super + B` | Archivos / Navegador |
 | `Super + Q` | Cerrar ventana |
@@ -87,6 +87,7 @@ Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://r
 | `Super + 1…5` | Escritorios · con `Shift`, enviar ventana |
 | `Super + L` | Bloquear la pantalla: hora gigante a la derecha (también se bloquea sola a los 10 min) |
 | `Super + ,` | **Ajustes** del sistema (ver abajo) |
+| `Super + N` o la **burbuja** del borde derecho | **pAnkI**, el agente virtual (ver abajo) |
 | `Impr` / `Shift + Impr` | Captura de región al portapapeles / pantalla completa a `~/Imágenes` |
 | `Super` + arrastrar (izq./der.) | Mover / redimensionar ventana |
 
@@ -155,6 +156,41 @@ Para saber qué renderizador usa el escritorio, en una terminal (`Super + Enter`
 Viene configurado para **Chile**: idioma `es_CL`, teclado **Latinoamérica** (el teclado chileno estándar) y
 zona horaria de **Santiago** (con cambio de horario de verano). Para otro país edita
 [`build/config.env`](build/config.env) y vuelve a construir.
+
+### pAnkI, el agente virtual
+
+pAnkI es un asistente con el que se habla para **responder dudas, organizar carpetas y manejar el escritorio**.
+Vive en una **burbuja de cristal** en el borde derecho de la pantalla (hermana del logo ∞), y se abre también con
+`Super + N`, escribiendo `? tu pregunta` en el buscador o desde el menú de aplicaciones. Nace de la app
+*NovaOS AI*, hecha en Google AI Studio.
+
+**Qué necesita:** una clave de Gemini **tuya** (se pega la primera vez en su ventana) y conexión a internet. La ISO
+no lleva ninguna clave. La clave se guarda en `~/.config/infinity/panki/clave` (solo legible por ti) y no va en
+`ajustes.json`, ni se exporta, ni se escribe en ningún registro.
+
+**Qué se envía a Google:** todo lo que escribes y lo que pAnkI llega a ver con sus herramientas (nombres de
+archivos de una carpeta, si se lo permites; contenido de un archivo, si se lo permites). No se guarda el
+historial: al cerrar la ventana se pierde. No hay telemetría.
+
+**Qué puede hacer** (siempre te enseña la acción exacta y espera tu permiso):
+
+- Ver información del equipo, los ajustes de Infinity y las apps instaladas.
+- Listar, buscar y leer archivos de **tu carpeta personal** (nunca claves ni perfiles del navegador).
+- Proponer cómo organizar una carpeta (por tipo o por fecha); si aceptas, mueve los archivos **sin sobrescribir
+  ni borrar nada**, y se puede deshacer.
+- Crear carpetas, mover archivos, abrir apps y webs, cambiar ajustes del sistema (validados como en Ajustes).
+- Ejecutar comandos de terminal solo si lo activas en Ajustes (*pAnkI (IA)*); desactivado por defecto. Nunca
+  usa `sudo`, no apaga el equipo y no borra.
+
+**Seguridad:** lo que pAnkI lee (archivos, webs) se trata como datos, no como órdenes. Aun así, un modelo puede
+equivocarse o ser engañado: **lee cada permiso antes de aceptarlo**. Los permisos de leer o listar pueden
+concederse "para esta conversación"; los que modifican algo se piden siempre.
+
+**Lo que no está probado:** no se ha probado contra Gemini real (en el entorno de desarrollo no hay clave ni
+acceso a esa API); todo se probó con un servidor falso que imita su formato, así que **el primer uso real puede
+necesitar ajustes**. El nombre del modelo es un campo editable en Ajustes porque esos nombres cambian. La
+posición de la burbuja y de la ventana en Hyprland solo está comprobada con la configuración y con capturas
+simuladas, no en una sesión real. Detalles de diseño en [`docs/panki-diseno.md`](docs/panki-diseno.md).
 
 ## Optimización
 
@@ -255,11 +291,11 @@ build/            construcción de la ISO
 overlay/          archivos que se copian tal cual al sistema (/etc, /usr…)
   etc/skel/.config/hypr/hyprland.conf   ← el aspecto "cristal" y los atajos
 overlay-pre/      configuración de apt/dpkg que debe existir ANTES de instalar paquetes
-shell/            el shell propio: orbe, dock, estado y buscador (Python + GTK4)
+shell/            el shell propio: orbe, dock, estado, buscador y pAnkI (Python + GTK4)
   infinity_shell/style.css              ← el estilo de cristal de las piezas
   tests/                                 pruebas automáticas (incluye un Hyprland simulado)
 branding/         logo (SVG), fotos de referencia, fondos, fuente de la hora e imagen del menú de arranque
-docs/             capturas
+docs/             capturas, diseño de pAnkI e informe de revisión
 .github/workflows/build-iso.yml   construye la ISO en GitHub
 ```
 
