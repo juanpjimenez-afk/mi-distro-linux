@@ -168,8 +168,9 @@ Vive en una **burbuja de cristal** en el borde derecho de la pantalla (hermana d
 no lleva ninguna clave. La clave se guarda en `~/.config/infinity/panki/clave` (solo legible por ti) y no va en
 `ajustes.json`, ni se exporta, ni se escribe en ningún registro.
 
-**Qué se envía a Google:** todo lo que escribes y lo que pAnkI llega a ver con sus herramientas (nombres de
-archivos de una carpeta, si se lo permites; contenido de un archivo, si se lo permites). No se guarda el
+**Qué se envía a Google:** todo lo que escribes, tu nombre de usuario del sistema y la ruta de tu carpeta personal
+(van en las instrucciones de pAnkI), y lo que pAnkI llega a ver con sus herramientas (nombres de archivos de una
+carpeta, si se lo permites; contenido de un archivo, si se lo permites). No se guarda el
 historial: al cerrar la ventana se pierde. No hay telemetría.
 
 **Qué puede hacer** (siempre te enseña la acción exacta y espera tu permiso):

@@ -55,9 +55,12 @@ pAnkI vive en una **burbuja de cristal** en el escritorio, hermana de la esfera 
 3. La clave de Gemini es del usuario. Se guarda en `~/.config/infinity/panki/clave` (carpeta 0700, archivo
    0600) o se toma de la variable de entorno `GEMINI_API_KEY`. **Nunca** va en `ajustes.json` (que se
    exporta), nunca en un registro, nunca en una URL (va en la cabecera `x-goog-api-key`), nunca en un mensaje de
-   error. La ISO no lleva ninguna clave.
+   error. La ISO no lleva ninguna clave. Además, el núcleo sustituye por `[clave]` cualquier aparición de la
+   clave del equipo (la de `GEMINI_API_KEY` y la del archivo) en lo que las herramientas devuelven al modelo
+   (p. ej. la salida de `env`), en los eventos hacia la ventana y en el texto final.
 4. No se guarda el historial de conversaciones. Al cerrar la ventana se pierde.
-5. Sin telemetría. Lo único que sale del equipo es la llamada a la API de Gemini y lo que el usuario apruebe
+5. El prompt del sistema lleva el nombre de usuario y la ruta del hogar (`{usuario}`, `{hogar}`); se avisa en el README.
+6. Sin telemetría. Lo único que sale del equipo es la llamada a la API de Gemini y lo que el usuario apruebe
    (`abrir_url`, `ejecutar_comando`).
 
 ## Seguridad de las herramientas
@@ -205,6 +208,12 @@ def crear_agente(aprobar, valores=None, hogar=None) -> Agente
   `finishReason` `SAFETY`). El texto del error **nunca** incluye la clave ni la URL con la clave.
 - El historial se recorta: los resultados de herramientas antiguos se sustituyen por `[contenido omitido]`
   cuando el total supera 200 000 caracteres.
+- Límites de robustez: como máximo 16 `functionCall` por paso (`MAX_LLAMADAS`; cada una recibe su respuesta, las
+  que sobran con un error); una respuesta del modelo o un resultado de herramienta con más de 64 niveles de
+  anidamiento (`MAX_PROFUNDIDAD`) se rechaza; `NaN` e `Infinity` no entran en el historial (un resultado los
+  lleva a `null`; una respuesta del servidor que los traiga se rechaza como JSON no válido). Una excepción
+  inesperada a mitad de un turno lo cierra como si se hubiera cancelado (el historial sigue siendo válido) y
+  llega a la ventana como `ErrorPanki("Error interno de pAnkI…")`, sin detalles.
 - `crear_agente` lee `panki.modelo` y `panki.comandos` con `ajustes.valor` (con valores por defecto si el
   esquema aún no los tiene) y lanza `ErrorPanki("falta la clave de Gemini…")` si no hay clave.
 

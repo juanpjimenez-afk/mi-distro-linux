@@ -8,6 +8,7 @@ Higiene de la clave: cada prueba con servidor comprueba al terminar (tearDown) q
 en la cabecera x-goog-api-key y que no aparece en ningún registro.
 """
 import copy
+import errno
 import io
 import json
 import logging
@@ -208,6 +209,28 @@ def validar_historial(caso, h, cerrado=True):
     if cerrado:
         caso.assertEqual(h[-1]["role"], "model")
         caso.assertFalse([p for p in h[-1]["parts"] if "functionCall" in p])
+
+
+def anidado(n):
+    """Un dict con `n` niveles de anidamiento, hecho sin recursión."""
+    raiz = actual = {}
+    for _ in range(n):
+        actual["a"] = {}
+        actual = actual["a"]
+    return raiz
+
+
+def textos_de(x):
+    """Todas las cadenas (claves y valores) de una estructura JSON."""
+    if isinstance(x, str):
+        yield x
+    elif isinstance(x, dict):
+        for k, v in x.items():
+            yield from textos_de(k)
+            yield from textos_de(v)
+    elif isinstance(x, (list, tuple)):
+        for v in x:
+            yield from textos_de(v)
 
 
 class ClienteFalso:
@@ -470,6 +493,16 @@ class TestClave(unittest.TestCase):
         self.assertNotIn(self.tmp.name, str(cm.exception))
         self.assertIsNone(cm.exception.__context__)
 
+    def test_un_error_de_lectura_del_archivo_no_lanza_nada(self):
+        # existe_clave() lo llama la ventana al enviar: un fallo de disco (EIO) no puede salir como excepción.
+        N.guardar_clave(CLAVE)
+        with mock.patch.object(N.os, "read", side_effect=OSError(errno.EIO, "fallo de disco")):
+            self.assertIsNone(N.cargar_clave())
+            self.assertFalse(N.existe_clave())
+        with mock.patch.object(N.os, "fstat", side_effect=OSError(errno.EIO, "fallo de disco")):
+            self.assertIsNone(N.cargar_clave())
+        self.assertEqual(N.cargar_clave(), CLAVE)
+
     def test_la_clave_no_va_a_ajustes_json(self):
         N.guardar_clave(CLAVE)
         for raiz, _, nombres in os.walk(self.tmp.name):
@@ -670,6 +703,27 @@ class TestClienteGemini(ConServidor):
                 self.srv.guion = [{"crudo": crudo}]
                 with self.assertRaises(N.ErrorPanki):
                     self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
+
+    def test_respuesta_con_nan_o_infinito_no_es_json_valido(self):
+        # json.loads los acepta, pero no son JSON: entrarían en el historial y todas las peticiones siguientes
+        # llevarían "NaN", que Google rechaza (la conversación quedaría rota).
+        for constante in (b"NaN", b"Infinity", b"-Infinity"):
+            with self.subTest(constante=constante):
+                crudo = (b'{"candidates":[{"content":{"role":"model","parts":[{"functionCall":'
+                         b'{"name":"a","args":{"x":' + constante + b"}}}]}}]}")
+                self.srv.guion = [{"crudo": crudo}]
+                with self.assertRaises(N.ErrorPanki) as cm:
+                    self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
+                self.assertIn("JSON", str(cm.exception))
+
+    def test_la_peticion_nunca_lleva_nan_ni_infinito(self):
+        for valor in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(valor=valor):
+                respuesta = {"functionResponse": {"name": "a", "response": {"x": valor}}}
+                contenidos = [{"role": "user", "parts": [respuesta]}]
+                with self.assertRaises(N.ErrorPanki):
+                    self.cliente().generar(contenidos, "s", [])
+        self.assertEqual(self.srv.peticiones, [])
 
     def test_respuesta_sin_candidatos(self):
         for cuerpo in ({}, {"candidates": []}, {"candidates": "x"}, {"candidates": [5]}):
@@ -1549,6 +1603,210 @@ class TestAgente(ConServidor):
         self.srv.guion = [r_texto("de cero")]
         self.assertEqual(self.enviar(agente, "hola"), "de cero")
         self.assertEqual(len(agente.historial), 2)
+
+    # -- revisión defensiva: privacidad de la clave en lo que devuelven las herramientas
+    def test_la_clave_en_el_resultado_de_una_herramienta_no_llega_al_modelo(self):
+        # Un `env` (ejecutar_comando) mostraría GEMINI_API_KEY: ese texto iría al historial, es decir, a Google, y
+        # el modelo podría repetirlo en la conversación o meterlo en un argumento.
+        self.ejecutor.ejecutar = lambda p: Resultado(
+            True, {"salida": f"HOME=/home/u\nGEMINI_API_KEY={CLAVE}\n", "lista": [CLAVE]}, f"entorno ({CLAVE})")
+        self.srv.guion = [r_llamadas(("info_sistema", {})), r_texto(f"Tu clave es {CLAVE}.")]
+        agente = self.agente()
+        final = self.enviar(agente)
+        enviado = self.srv.peticiones[1]["cuerpo"].decode("utf-8")
+        self.assertNotIn(CLAVE, enviado)
+        self.assertIn("[clave]", enviado)
+        self.assertNotIn(CLAVE, json.dumps(agente.historial[2], ensure_ascii=False))
+        self.assertNotIn(CLAVE, json.dumps(self.eventos, ensure_ascii=False))
+        self.assertNotIn(CLAVE, final)
+        self.assertEqual(self.eventos[-1], ("texto", final))
+
+    def test_una_clave_sin_forma_de_google_tambien_se_oculta_en_datos_eventos_y_texto(self):
+        propia = 'mi"clave\\propia-0123456789abcdef'  # con comilla y barra: en JSON va escapada
+        os.environ[N.VARIABLE_CLAVE] = propia
+        self.ejecutor.ejecutar = lambda p: Resultado(True, {"salida": f"K={propia}", propia: [propia]}, f"K={propia}")
+        cliente = ClienteFalso([resp_dict(("info_sistema", {"pista": propia})), resp_dict(texto=f"Es {propia}.")])
+        agente = N.Agente(cliente, self.ejecutor, self.aprobar)
+        final = agente.enviar("hola", self.eventos.append)
+        for texto in textos_de(cliente.recibidos[1][2]):
+            self.assertNotIn(propia, texto)
+        self.assertIn("[clave]", json.dumps(cliente.recibidos[1][2]))
+        for texto in textos_de(self.eventos):
+            self.assertNotIn(propia, texto)
+        self.assertNotIn(propia, final)
+
+    def test_las_claves_del_entorno_y_del_archivo_se_ocultan_las_dos(self):
+        N.guardar_clave(OTRA_CLAVE)
+        os.environ[N.VARIABLE_CLAVE] = CLAVE
+        self.ejecutor.ejecutar = lambda p: Resultado(True, {"a": CLAVE, "b": OTRA_CLAVE}, "ok")
+        cliente = ClienteFalso([resp_dict(("info_sistema", {})), resp_dict(texto="fin")])
+        N.Agente(cliente, self.ejecutor, self.aprobar).enviar("hola", None)
+        self.assertEqual(cliente.recibidos[1][2]["parts"][0]["functionResponse"]["response"],
+                         {"a": "[clave]", "b": "[clave]"})
+
+    # -- revisión defensiva: respuestas raras y errores inesperados a mitad de un turno
+    def test_un_error_inesperado_a_mitad_del_turno_deja_el_historial_valido_y_sin_detalles(self):
+        class Rara:
+            def __str__(self):
+                raise RuntimeError(f"fallo en {SECRETO_INTERNO}")
+        self.ejecutor.alcance_leer = Rara()  # revienta al registrar el permiso "en esta conversación"
+        self.respuesta_aprobar = "conversacion"
+        self.srv.guion = [r_llamadas(("leer_archivo", {"ruta": "a"})), r_texto("sigo")]
+        agente = self.agente()
+        with self.assertRaises(N.ErrorPanki) as cm:
+            self.enviar(agente)
+        self.assertNotIn(SECRETO_INTERNO, str(cm.exception))
+        self.assertIsNone(cm.exception.__context__)
+        self.assertIsNone(cm.exception.__cause__)
+        validar_historial(self, agente.historial)  # sin functionCall huérfanas: la API no rechazará lo siguiente
+        self.ejecutor.alcance_leer = "Leer ~/Docs"
+        self.srv.guion = [r_texto("de nuevo")]
+        self.assertEqual(self.enviar(agente, "otra"), "de nuevo")
+        validar_historial(self, self.cuerpo(1)["contents"], cerrado=False)
+        validar_historial(self, agente.historial)
+
+    def test_argumentos_con_anidamiento_excesivo_se_rechazan_y_la_conversacion_sigue(self):
+        for nivel in (100, 30000):  # 30000 pasa de la recursión de json.dumps: antes escapaba un RecursionError
+            with self.subTest(nivel=nivel):
+                self.ejecutor.preparadas.clear()
+                cliente = ClienteFalso([resp_dict(("info_sistema", anidado(nivel))), resp_dict(texto="bien")])
+                agente = N.Agente(cliente, self.ejecutor, self.aprobar)
+                with self.assertRaises(N.ErrorPanki) as cm:
+                    self.enviar(agente)
+                self.assertIn("formato inesperado", str(cm.exception))
+                self.assertEqual(agente.historial, [])
+                self.assertEqual(self.ejecutor.preparadas, [])
+                self.assertEqual(self.enviar(agente, "otra"), "bien")
+                validar_historial(self, agente.historial)
+
+    def test_argumentos_con_anidamiento_normal_se_aceptan(self):
+        self.srv.guion = [r_llamadas(("info_sistema", {"a": anidado(20), "b": [[[1, [2]]]]})), r_texto("ok")]
+        self.assertEqual(self.enviar(self.agente()), "ok")
+        self.assertEqual(self.ejecutor.ejecutadas, ["info_sistema"])
+
+    def test_resultado_con_anidamiento_excesivo_no_entra_en_el_historial(self):
+        self.ejecutor.ejecutar = lambda p: Resultado(True, {"x": anidado(100)}, "ok")
+        self.srv.guion = [r_llamadas(("info_sistema", {})), r_texto("ok")]
+        agente = self.agente()
+        self.enviar(agente)
+        respuesta = self.respuestas_de(1)[0]["response"]
+        self.assertEqual(list(respuesta), ["error"])
+        validar_historial(self, agente.historial)
+
+    def test_resultado_con_nan_o_infinito_no_envenena_la_conversacion(self):
+        # "NaN" no es JSON: Google rechazaría esta y todas las peticiones siguientes de la conversación.
+        self.ejecutor.ejecutar = lambda p: Resultado(
+            True, {"carga": float("nan"), "tope": float("inf"), "min": -float("inf"), "texto": "NaN", "n": 1.5}, "ok")
+        self.srv.guion = [r_llamadas(("info_sistema", {})), r_texto("ok"), r_texto("otra vez")]
+        agente = self.agente()
+        self.enviar(agente)
+        self.enviar(agente, "otra")
+
+        def estricto(constante):
+            raise ValueError(f"no es JSON: {constante}")
+        for i in (1, 2):
+            json.loads(self.srv.peticiones[i]["cuerpo"], parse_constant=estricto)
+        self.assertEqual(self.respuestas_de(1)[0]["response"],
+                         {"carga": None, "tope": None, "min": None, "texto": "NaN", "n": 1.5})
+
+    def test_demasiadas_llamadas_en_un_paso_se_limitan_pero_todas_reciben_respuesta(self):
+        total = 40
+        self.srv.guion = [r_llamadas(*[("info_sistema", {"i": i}) for i in range(total)]), r_texto("listo")]
+        agente = self.agente()
+        self.assertEqual(self.enviar(agente), "listo")
+        self.assertLess(len(self.ejecutor.ejecutadas), total)
+        self.assertEqual(len(self.ejecutor.ejecutadas), N.MAX_LLAMADAS)
+        respuestas = self.respuestas_de(1)
+        self.assertEqual(len(respuestas), total)  # cada functionCall con su functionResponse, en orden
+        self.assertTrue(all("error" not in r["response"] for r in respuestas[:N.MAX_LLAMADAS]))
+        self.assertTrue(all("Demasiadas" in r["response"]["error"] for r in respuestas[N.MAX_LLAMADAS:]))
+        self.assertEqual(len([e for e in self.eventos if e[0] == "herramienta"]), N.MAX_LLAMADAS)  # sin inundar la UI
+        validar_historial(self, agente.historial)
+
+    # -- revisión defensiva: hilos
+    def test_si_falla_el_borrado_posterior_el_agente_no_queda_bloqueado_para_siempre(self):
+        agente = self.agente()
+        self.ejecutor.al_ejecutar = lambda p: agente.reiniciar()  # con el agente ocupado, el borrado queda pendiente
+        self.srv.guion = [r_llamadas(("info_sistema", {})), r_texto("no")]
+        with mock.patch.object(agente, "_borrar_estado", side_effect=RuntimeError("fallo")):
+            with self.assertRaises(RuntimeError):
+                self.enviar(agente)
+        self.ejecutor.al_ejecutar = None
+        self.srv.guion = [r_texto("sigo")]
+        self.assertEqual(self.enviar(agente, "otra"), "sigo")  # antes: "ya está trabajando" para siempre
+
+    def test_listar_los_permisos_aguanta_que_otro_hilo_los_conceda_o_quite(self):
+        agente = self.agente()
+        permisos = agente.conversacion_grants
+        for i in range(200):
+            permisos.add(f"base{i}", f"alcance {i}")
+        intervalo = sys.getswitchinterval()
+        sys.setswitchinterval(1e-6)
+        self.addCleanup(sys.setswitchinterval, intervalo)
+        parar = threading.Event()
+
+        def escritor():
+            i = 0
+            while not parar.is_set():
+                for j in range(100):
+                    permisos.add(f"n{i}-{j}", "x")
+                for j in range(100):
+                    permisos.discard(f"n{i}-{j}")
+                i += 1
+        hilo = threading.Thread(target=escritor, daemon=True)
+        hilo.start()
+        fallos = []
+        limite = time.monotonic() + 0.8
+        try:
+            while time.monotonic() < limite and not fallos:
+                try:
+                    agente.permisos_activos()
+                    agente.permisos_detalle()
+                except RuntimeError as e:  # "dictionary changed size during iteration"
+                    fallos.append(str(e))
+        finally:
+            parar.set()
+            hilo.join(5)
+        self.assertEqual(fallos, [])
+
+    def test_enviar_cancelar_y_reiniciar_a_la_vez_no_rompen_nada(self):
+        class Cliente:
+            def generar(self, contenidos, sistema, herramientas):
+                time.sleep(0.001)
+                return resp_dict(("info_sistema", {}), ("leer_archivo", {})) if len(contenidos) % 4 == 1 \
+                    else resp_dict(texto="ok")
+        agente = N.Agente(Cliente(), EjecutorFalso(), lambda s: "conversacion", max_pasos=4)
+        parar = threading.Event()
+        inesperados = []
+
+        def envia():
+            while not parar.is_set():
+                try:
+                    agente.enviar("hola", lambda e: None)
+                except N.ErrorPanki as e:
+                    if "ya está trabajando" not in str(e):
+                        inesperados.append(str(e))
+                except BaseException as e:  # noqa: BLE001
+                    inesperados.append(repr(e))
+
+        def molesta(accion):
+            while not parar.is_set():
+                accion()
+                time.sleep(0.002)
+        hilos = [threading.Thread(target=envia, daemon=True) for _ in range(2)]
+        hilos += [threading.Thread(target=molesta, args=(a,), daemon=True) for a in (agente.cancelar, agente.reiniciar)]
+        for h in hilos:
+            h.start()
+        time.sleep(1.0)
+        parar.set()
+        for h in hilos:
+            h.join(10)
+            self.assertFalse(h.is_alive())
+        self.assertEqual(inesperados, [])
+        self.assertTrue(agente._ocupado.acquire(blocking=False), "el cerrojo quedó tomado")
+        agente._ocupado.release()
+        if agente.historial:
+            validar_historial(self, agente.historial)
 
 
 # ======================================================================================= Recorte del historial

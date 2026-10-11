@@ -18,7 +18,11 @@ rompen cada una a propósito para comprobar que alguna prueba falla):
   * El modelo propone y el usuario decide: toda acción con `solicitud` pasa por `aprobar`. Una respuesta
     de `aprobar` que no sea "una_vez" o "conversacion" se trata como "no".
   * Una excepción inesperada dentro de una herramienta no tumba el bucle y no llega al modelo con
-    trazas ni rutas internas.
+    trazas ni rutas internas. Una excepción inesperada en cualquier otro punto del turno lo cierra (el
+    historial sigue siendo válido para la API) y llega a la ventana como un ErrorPanki sin detalles.
+  * Ninguna clave de Gemini del equipo (la de GEMINI_API_KEY ni la del archivo) sale en lo que las
+    herramientas devuelven al modelo, ni en los eventos, ni en el texto final: se sustituye por "[clave]".
+  * Al historial solo entra JSON de verdad: sin NaN ni Infinity, y con una profundidad acotada.
 """
 import copy
 import datetime
@@ -59,6 +63,8 @@ MAX_RESULTADO = 100_000           # caracteres de un resultado de herramienta qu
 OMITIDO = "[contenido omitido]"
 NOMBRE_DESCONOCIDA = "herramienta desconocida"
 MAX_RESUMEN = 600                 # caracteres del resumen de un resultado (se recorta por el medio)
+MAX_LLAMADAS = 16                 # functionCall que se atienden en un mismo paso (el resto recibe un error)
+MAX_PROFUNDIDAD = 64              # niveles de anidamiento de la respuesta del modelo y de un resultado de herramienta
 
 _MODELO_OK = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,59}")
 _CLAVE_OK = re.compile(r"[\x21-\x7e]{20,200}")
@@ -175,11 +181,8 @@ def _problema_de_clave(clave):
     return "La clave de Gemini solo puede tener caracteres ASCII visibles."
 
 
-def cargar_clave():
-    """La clave de Gemini: GEMINI_API_KEY primero; si no, el archivo. None si no hay ninguna."""
-    desde_entorno = (os.environ.get(VARIABLE_CLAVE) or "").strip()
-    if desde_entorno:
-        return desde_entorno
+def _clave_del_archivo():
+    """La clave guardada en el archivo, o None. Nunca lanza: un fallo de disco es "no hay clave"."""
     try:
         fd = _abrir_dir_clave(crear=False)
     except OSError:  # enlace simbólico, de otro usuario...: no se usa
@@ -196,6 +199,8 @@ def cargar_clave():
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
                 return None
             datos = os.read(f, 1024)
+        except OSError:  # EIO y similares: existe_clave() lo llama la ventana, no puede lanzar
+            return None
         finally:
             os.close(f)
     finally:
@@ -204,6 +209,23 @@ def cargar_clave():
         return datos.decode("ascii").strip() or None
     except UnicodeDecodeError:
         return None
+
+
+def cargar_clave():
+    """La clave de Gemini: GEMINI_API_KEY primero; si no, el archivo. None si no hay ninguna."""
+    desde_entorno = (os.environ.get(VARIABLE_CLAVE) or "").strip()
+    if desde_entorno:
+        return desde_entorno
+    return _clave_del_archivo()
+
+
+def _claves_a_ocultar(cliente=None):
+    """Las claves de Gemini de este equipo (la del cliente, la del entorno y la del archivo) que no deben salir
+    en ningún texto. Solo las de formato válido: una variable con "abc" no puede vaciar todos los "abc"."""
+    candidatas = (getattr(cliente, "_clave", None), (os.environ.get(VARIABLE_CLAVE) or "").strip(),
+                  _clave_del_archivo())
+    claves = {c for c in candidatas if isinstance(c, str) and _CLAVE_OK.fullmatch(c)}
+    return tuple(sorted(claves, key=len, reverse=True))  # primero la más larga, por si una contiene a otra
 
 
 def existe_clave():
@@ -295,6 +317,12 @@ def _limpiar(texto, clave=None, limite=MAX_ERROR_API):
 
 
 # -------------------------------------------------------------------------------------- cliente HTTP
+def _constante_no_json(constante):
+    """NaN, Infinity y -Infinity no son JSON: json.loads los acepta, pero Google rechazaría el historial que
+    los llevara (y la conversación entera quedaría rota)."""
+    raise ValueError(f"constante {constante} no válida en JSON")
+
+
 class _SinRedirecciones(urllib.request.HTTPRedirectHandler):
     """No se sigue ninguna redirección: urllib reenviaría la cabecera con la clave."""
 
@@ -376,7 +404,7 @@ class ClienteGemini:
         cuerpo["generationConfig"] = {"temperature": 0.3}
         datos = None
         try:
-            datos = json.dumps(cuerpo, ensure_ascii=False).encode("utf-8", "replace")
+            datos = json.dumps(cuerpo, ensure_ascii=False, allow_nan=False).encode("utf-8", "replace")
         except (TypeError, ValueError, RecursionError):
             pass
         if datos is None:
@@ -508,7 +536,7 @@ class ClienteGemini:
     def _interpretar(self, cuerpo):
         datos = None
         try:
-            datos = json.loads(cuerpo.decode("utf-8"))
+            datos = json.loads(cuerpo.decode("utf-8"), parse_constant=_constante_no_json)
         except (ValueError, RecursionError):  # UnicodeDecodeError es un ValueError
             pass
         if not isinstance(datos, dict):
@@ -596,10 +624,31 @@ def _resumir_args(args):
     for k, v in args.items():
         try:
             valor = json.dumps(v, ensure_ascii=False)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
             valor = "?"
         trozos.append(f"{_una_linea(k, 40)}={_una_linea(valor, 60)}")
     return _una_linea(", ".join(trozos), 300)
+
+
+def _profundidad(x, maximo=MAX_PROFUNDIDAD):
+    """Niveles de listas/dicts anidados de `x` (0 si es un valor simple). Se cuenta sin recursión y se para en
+    cuanto pasa de `maximo`, así que nunca falla con una estructura enorme o muy anidada."""
+    mayor = 0
+    pila = [(x, 1)]
+    while pila:
+        actual, nivel = pila.pop()
+        if isinstance(actual, dict):
+            hijos = actual.values()
+        elif isinstance(actual, list):
+            hijos = actual
+        else:
+            continue
+        if nivel > mayor:
+            mayor = nivel
+            if mayor > maximo:
+                return mayor
+        pila.extend((hijo, nivel + 1) for hijo in hijos)
+    return mayor
 
 
 def _respuesta_de(llamada, nombre, datos):
@@ -635,6 +684,11 @@ class _Permisos(set):
         super().add(clave)
         if alcance is not None or clave not in self.alcances:
             self.alcances[clave] = str(alcance if alcance is not None else clave)
+
+    def vigentes(self):
+        """[(clave, alcance)] en el orden en que se concedieron. Se puede llamar mientras otro hilo concede o
+        revoca: se recorre una copia (recorrer el dict vivo lanzaría "changed size during iteration")."""
+        return [(c, texto) for c, texto in list(self.alcances.items()) if c in self]
 
     def discard(self, clave):
         super().discard(clave)
@@ -677,6 +731,7 @@ class Agente:
         self._ocupado = threading.Lock()
         self._cerrojo_reinicio = threading.Lock()
         self._reinicio_pendiente = False
+        self._claves = ()  # claves de Gemini que no deben salir en ningún texto (se leen al empezar cada envío)
 
     @staticmethod
     def _sistema_por_defecto():
@@ -711,13 +766,11 @@ class Agente:
 
         Son los `alcance` de las solicitudes que los crearon (o su título / su clave si no lo traían).
         """
-        return [self.conversacion_grants.alcances.get(c, c) for c in self.conversacion_grants.alcances
-                if c in self.conversacion_grants]
+        return [texto for _, texto in self.conversacion_grants.vigentes()]
 
     def permisos_detalle(self):
         """[(clave, texto del alcance)] de los permisos vigentes, para que la ventana pueda revocar uno."""
-        return [(c, self.conversacion_grants.alcances[c]) for c in self.conversacion_grants.alcances
-                if c in self.conversacion_grants]
+        return self.conversacion_grants.vigentes()
 
     def revocar_permisos(self, clave=None):
         """Revoca un permiso (por su clave o por el texto de su alcance) o, sin argumento, todos.
@@ -751,22 +804,43 @@ class Agente:
         try:
             return self._enviar(texto, alevento)
         finally:
+            # La liberación va DENTRO del cerrojo: así reiniciar() no puede ver "ocupado" justo cuando ya no
+            # queda nadie que atienda su petición.
             with self._cerrojo_reinicio:
-                self._cancelado.clear()
-                if self._reinicio_pendiente:
-                    self._reinicio_pendiente = False
-                    self._borrar_estado()
-                self._ocupado.release()
+                try:
+                    self._cancelado.clear()
+                    if self._reinicio_pendiente:
+                        self._reinicio_pendiente = False
+                        self._borrar_estado()
+                finally:
+                    self._ocupado.release()  # pase lo que pase, el agente no queda bloqueado para siempre
 
-    @staticmethod
-    def _emitir(alevento, *evento):
+    def _ocultar(self, texto):
+        """El texto sin ninguna clave de Gemini del equipo."""
+        for clave in self._claves:
+            if clave in texto:
+                texto = texto.replace(clave, "[clave]")
+        return texto
+
+    def _sin_claves(self, x):
+        """Copia de una estructura JSON sin ninguna clave de Gemini (en valores ni en nombres de campo)."""
+        if isinstance(x, str):
+            return self._ocultar(x)
+        if isinstance(x, list):
+            return [self._sin_claves(v) for v in x]
+        if isinstance(x, dict):
+            return {self._sin_claves(k): self._sin_claves(v) for k, v in x.items()}
+        return x
+
+    def _emitir(self, alevento, *evento):
         try:
             if alevento is not None:
-                alevento(tuple(evento))
+                alevento(tuple(self._ocultar(e) if isinstance(e, str) else e for e in evento))
         except Exception as e:  # noqa: BLE001 - un fallo de la interfaz no tumba al agente
             _log.debug("alevento falló: %s", type(e).__name__)
 
     def _final(self, alevento, texto):
+        texto = self._ocultar(texto)  # lo que devuelve enviar() es lo mismo que el último evento "texto"
         self._emitir(alevento, "texto", texto)
         return texto
 
@@ -791,6 +865,7 @@ class Agente:
         return self._final(alevento, "Cancelado.")
 
     def _enviar(self, texto, alevento):
+        self._claves = _claves_a_ocultar(self.cliente)
         if not isinstance(texto, str) or not texto.strip():
             raise ErrorPanki("Escribe un mensaje para pAnkI.")
         texto = texto.strip()
@@ -803,6 +878,20 @@ class Agente:
             return self._final(alevento, "Cancelado.")
         n0 = len(self.historial)
         self.historial.append({"role": "user", "parts": [{"text": texto}]})
+        error = None
+        try:
+            return self._turno(n0, alevento)
+        except ErrorPanki:
+            raise  # los de aquí ya dejaron el historial cerrado
+        except Exception as e:  # noqa: BLE001 - lo inesperado no llega a la ventana con trazas ni rutas
+            _log.debug("Fallo inesperado en el turno: %s", type(e).__name__)
+            error = ErrorPanki("Error interno de pAnkI. La conversación sigue; inténtalo de nuevo.")
+        # Fuera del `except`: el error no arrastra la excepción original en __context__.
+        self._cerrar_turno(n0, "[La respuesta se interrumpió por un error interno.]")
+        raise error
+
+    def _turno(self, n0, alevento):
+        """El bucle de pasos de un mensaje ya añadido al historial (en la posición n0)."""
         for _ in range(self.max_pasos):
             if self._cancelado.is_set():
                 return self._cancelar_turno(n0, alevento)
@@ -871,7 +960,9 @@ class Agente:
             fin = candidato.get("finishReason")
         except (KeyError, IndexError, TypeError, AttributeError):
             contenido = None
-        if contenido is None:
+        # Un anidamiento absurdo (que json.loads aún acepta) rompería luego json.dumps y dejaría la
+        # conversación inservible: se rechaza antes de que entre en el historial.
+        if contenido is None or _profundidad(contenido) > MAX_PROFUNDIDAD:
             raise ErrorPanki("Gemini devolvió una respuesta con un formato inesperado.")
         if "role" not in contenido:
             contenido["role"] = "model"
@@ -882,12 +973,20 @@ class Agente:
         """Atiende TODAS las functionCall de un turno, en orden. Devuelve las functionResponse (partes)."""
         ofrecidas = {d.get("name") for d in declaraciones if isinstance(d, dict)}
         partes = []
-        for llamada in llamadas:
+        for i, llamada in enumerate(llamadas):
             nombre = llamada.get("name") if isinstance(llamada.get("name"), str) else ""
             if self._cancelado.is_set():
                 datos = {"error": "Cancelado por el usuario."}
+            elif i >= MAX_LLAMADAS:  # cada functionCall debe tener su respuesta, pero no se ejecutan todas
+                datos = {"error": f"Demasiadas llamadas a herramientas a la vez (máximo {MAX_LLAMADAS}); "
+                                  "esta no se ejecutó. Pídelas por partes."}
             else:
                 datos = self._una_llamada(llamada, nombre, ofrecidas, alevento)
+            if self._claves:  # lo que ve el modelo no lleva nunca la clave de Gemini
+                try:
+                    datos = self._sin_claves(datos)
+                except RecursionError:
+                    datos = {"error": "La herramienta devolvió datos que no se pueden enviar."}
             partes.append(_respuesta_de(llamada, nombre or "desconocida", datos))
         return partes
 
@@ -945,7 +1044,11 @@ class Agente:
             texto = json.dumps(datos, ensure_ascii=False)
             if len(texto) > MAX_RESULTADO:
                 return {"error": "El resultado es demasiado grande para enviarlo al modelo."}
-            return json.loads(texto)
+            # NaN e Infinity (que dumps escribe tal cual y Google no admite) pasan a null.
+            datos = json.loads(texto, parse_constant=lambda _constante: None)
+            if _profundidad(datos) > MAX_PROFUNDIDAD:
+                return {"error": "El resultado está demasiado anidado para enviarlo al modelo."}
+            return datos
         except (TypeError, ValueError, RecursionError):
             return {"error": "La herramienta devolvió datos que no se pueden enviar."}
 
