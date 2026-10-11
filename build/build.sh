@@ -229,7 +229,7 @@ etapa_iso() {
 case "${1:-all}" in
   rootfs) etapa_rootfs ;;
   iso) etapa_iso ;;
-  all) etapa_rootfs && etapa_iso ;;
+  all) etapa_rootfs; etapa_iso ;;
   clean) umount_chroot; rm -rf "$WORK" "$OUT"; echo "limpio" ;;
   *) die "uso: $0 [all|rootfs|iso|clean]" ;;
 esac
