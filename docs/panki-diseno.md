@@ -1,11 +1,11 @@
-# Nova, el agente virtual de Infinity OS
+# pAnkI, el agente virtual de Infinity OS
 
-Nova es el agente virtual del sistema: responde dudas, organiza archivos y automatiza el escritorio
+pAnkI es el agente virtual del sistema: responde dudas, organiza archivos y automatiza el escritorio
 conversando. Nace de la app "NovaOS AI" (React + Express + `@google/genai`, hecha en Google AI Studio:
 "copiloto y organizador para tu sistema operativo"). De esa app solo se conservaban `metadata.json`,
 `index.html`, `.env.example` y `bun.lock`; el código (`src/`, el servidor y los prompts) no estaba. Esta
 versión es una reconstrucción nativa a partir de su descripción y de sus dependencias, no un port línea a
-línea. Si aparece el código original, sus prompts se pueden portar a `SISTEMA` en `nova_nucleo.py`.
+línea. Si aparece el código original, sus prompts se pueden portar a `SISTEMA` en `panki_nucleo.py`.
 
 Decisión de arquitectura: **nativa en Python + GTK4**, sin Node ni Bun en la ISO. Habla con la API REST de
 Gemini con `urllib` (sin dependencias nuevas) y usa "function calling" para actuar sobre el sistema.
@@ -14,24 +14,45 @@ Gemini con `urllib` (sin dependencias nuevas) y usa "function calling" para actu
 
 | Archivo | Qué contiene | GTK |
 |---|---|---|
-| `shell/infinity_shell/nova_herramientas.py` | Herramientas del agente, política de rutas, plan de organización y deshacer | no |
-| `shell/infinity_shell/nova_nucleo.py` | Clave, cliente de Gemini, bucle del agente, prompt del sistema | no |
-| `shell/infinity_shell/nova_texto.py` | Markdown de Gemini a Pango (escapado seguro) | no |
-| `shell/infinity_shell/nova_app.py` | Ventana de chat (`org.infinity.Nova`) | sí |
-| `overlay/usr/bin/infinity-nova` | Lanzador (como `infinity-ajustes`) | — |
-| `overlay/usr/share/applications/infinity-nova.desktop` | Entrada del menú | — |
-| `branding/nova.png` y su instalación en `build/build.sh` | Icono | — |
-| `shell/infinity_shell/ajustes.py` / `ajustes_app.py` | Página "Nova (IA)" con `nova.modelo` y `nova.comandos` | parcial |
-| `shell/infinity_shell/launcher.py` | Prefijo `?` en el buscador: "Preguntar a Nova" | sí |
+| `shell/infinity_shell/panki_herramientas.py` | Herramientas del agente, política de rutas, plan de organización y deshacer | no |
+| `shell/infinity_shell/panki_nucleo.py` | Clave, cliente de Gemini, bucle del agente, prompt del sistema | no |
+| `shell/infinity_shell/panki_texto.py` | Markdown de Gemini a Pango (escapado seguro) | no |
+| `shell/infinity_shell/panki_app.py` | Ventana de chat (`org.infinity.Panki`) | sí |
+| `shell/infinity_shell/panki_burbuja.py` | La burbuja de cristal de pAnkI en el escritorio (a la derecha) | sí |
+| `overlay/usr/bin/infinity-panki` | Lanzador (como `infinity-ajustes`) | — |
+| `overlay/usr/share/applications/infinity-panki.desktop` | Entrada del menú | — |
+| `branding/panki-white.svg`, `branding/panki.png` y su instalación en `build/build.sh` | Marca de pAnkI (la burbuja usa el SVG blanco; el menú, el PNG) | — |
+| `shell/infinity_shell/ajustes.py` / `ajustes_app.py` | Página "pAnkI (IA)" con `panki.modelo`, `panki.comandos` y `panki.burbuja` | parcial |
+| `shell/infinity_shell/main.py`, `style.css` | Crea la burbuja con el shell; estilo `button.orb.panki` | sí |
+| `shell/infinity_shell/launcher.py` | Prefijo `?` en el buscador: "Preguntar a pAnkI" | sí |
 | `overlay/etc/skel/.config/hypr/hyprland.conf` | Atajo Super+N y regla de ventana | — |
+
+## La burbuja
+
+pAnkI vive en una **burbuja de cristal** en el escritorio, hermana de la esfera del logo ∞ (el `Orbe` de
+`dock.py`, abajo a la izquierda), pero **a la derecha**.
+
+- Es una ventana de capa (`gtk4-layer-shell`) del propio shell, namespace `infinity-panki`: hereda el
+  desenfoque de la regla `layerrule` de los paneles `infinity-*`.
+- Misma esfera de 60 px y mismo estilo `button.orb` que el logo, más una clase `panki` para el matiz propio.
+  Dentro lleva la marca de pAnkI en blanco (`panki-white.svg`, una chispa de cuatro puntas con el mismo trazo
+  que el ∞).
+- Posición: borde derecho, **encima** de la píldora de estado (volumen, batería, red, hora), que ya ocupa
+  la esquina inferior derecha. Nunca debe tapar esa píldora ni el dock.
+- Al pulsarla abre o cierra la ventana de chat: `gapplication action org.infinity.Panki alternar ||
+  infinity-panki`. La ventana de chat sale cerca de la burbuja (abajo a la derecha) con una regla de
+  ventana de Hyprland.
+- Se puede ocultar con el ajuste `panki.burbuja` (bool, por defecto `True`, "Mostrar la burbuja de pAnkI en
+  el escritorio"), que se aplica con la recarga del shell.
+- Consume lo mismo que el logo: ninguna animación ni temporizador propio.
 
 ## Privacidad (lo que el usuario tiene que saber, y la app tiene que decirlo)
 
-1. Cada mensaje, y lo que Nova vea con sus herramientas, **se envía a Google (Gemini)**. Nova no funciona sin
+1. Cada mensaje, y lo que pAnkI vea con sus herramientas, **se envía a Google (Gemini)**. pAnkI no funciona sin
    conexión ni sin la clave del propio usuario.
-2. Nova ve **nombres de archivos** de una carpeta solo si el usuario lo permite (por carpeta), y el
+2. pAnkI ve **nombres de archivos** de una carpeta solo si el usuario lo permite (por carpeta), y el
    **contenido** de un archivo solo si el usuario lo permite (por archivo o por carpeta, nunca global).
-3. La clave de Gemini es del usuario. Se guarda en `~/.config/infinity/nova/clave` (carpeta 0700, archivo
+3. La clave de Gemini es del usuario. Se guarda en `~/.config/infinity/panki/clave` (carpeta 0700, archivo
    0600) o se toma de la variable de entorno `GEMINI_API_KEY`. **Nunca** va en `ajustes.json` (que se
    exporta), nunca en un registro, nunca en una URL (va en la cabecera `x-goog-api-key`), nunca en un mensaje de
    error. La ISO no lleva ninguna clave.
@@ -54,13 +75,13 @@ pueden contener instrucciones maliciosas (inyección de prompt). Por eso:
 - Se valida **antes** de preguntar: una llamada con argumentos inválidos devuelve un error al modelo sin
   molestar al usuario.
 
-### Política de rutas (`nova_herramientas.py`)
+### Política de rutas (`panki_herramientas.py`)
 
 - Raíz permitida: el directorio personal (`$HOME`). Nada fuera de él.
 - Se resuelve con `os.path.realpath` **antes** de comprobar: un enlace simbólico que sale del directorio
   personal se rechaza. `..` y rutas relativas se rechazan (solo `~/...` o absolutas dentro de `$HOME`).
 - Lista negra dentro de `$HOME` (ni listar, ni leer, ni mover desde/hacia): `.ssh`, `.gnupg`,
-  `.local/share/keyrings`, `.config/infinity/nova`, `.mozilla`, `.config/epiphany`, `.local/share/epiphany`,
+  `.local/share/keyrings`, `.config/infinity/panki`, `.mozilla`, `.config/epiphany`, `.local/share/epiphany`,
   `.config/chromium`, `.config/google-chrome`, `.password-store`, y cualquier archivo cuyo nombre empiece por
   `.env` o sea `id_rsa`, `id_ed25519`, `*.pem`, `*.key`.
 - Los archivos ocultos no se listan salvo `mostrar_ocultos=true`; la lista negra se aplica siempre.
@@ -87,7 +108,7 @@ Todas devuelven un objeto JSON-serializable. Los errores van como `{"error": "me
 | `abrir_app(app)` | por app, "esta conversación" | Lanza un `.desktop` por id (de `buscar_apps`) |
 | `abrir_url(url)` | siempre | Solo `http` y `https`, sin usuario ni contraseña, hasta 2 000 caracteres. Riesgo alto si la URL lleva consulta larga (puede enviar datos) |
 | `cambiar_ajuste(id, valor)` | siempre, muestra valor viejo y nuevo | Valida con el esquema de Ajustes; aplica con las mismas acciones de recarga que la app de Ajustes |
-| `ejecutar_comando(argv, carpeta)` | siempre, riesgo alto, **solo si `nova.comandos` está activo** | Lista `argv` sin shell, tiempo máximo 30 s, salida recortada. Rechaza `sudo`, `su`, `pkexec`, `doas`, `chroot`, `dd`, `mkfs*`, `shred`, `wipefs`, `fdisk`, `parted`, `shutdown`, `reboot`, `poweroff`, `halt` y `rm -r`/`rm -rf` |
+| `ejecutar_comando(argv, carpeta)` | siempre, riesgo alto, **solo si `panki.comandos` está activo** | Lista `argv` sin shell, tiempo máximo 30 s, salida recortada. Rechaza `sudo`, `su`, `pkexec`, `doas`, `chroot`, `dd`, `mkfs*`, `shred`, `wipefs`, `fdisk`, `parted`, `shutdown`, `reboot`, `poweroff`, `halt` y `rm -r`/`rm -rf` |
 
 Categorías de `proponer_organizacion` con criterio `tipo`: Imágenes, Vídeos, Música, Documentos, Hojas de
 cálculo, Presentaciones, Comprimidos, Programas, Código, Otros. Solo mueve archivos sueltos de la carpeta
@@ -96,7 +117,7 @@ cálculo, Presentaciones, Comprimidos, Programas, Código, Otros. Solo mueve arc
 ## Contrato entre módulos
 
 ```python
-# nova_herramientas.py
+# panki_herramientas.py
 class ErrorHerramienta(Exception): ...        # mensaje para el modelo y para el usuario, en español
 
 @dataclass
@@ -127,8 +148,8 @@ class Ejecutor:
 ```
 
 ```python
-# nova_nucleo.py
-class ErrorNova(Exception): ...                   # mensaje para el usuario, en español, sin la clave
+# panki_nucleo.py
+class ErrorpAnkI(Exception): ...                   # mensaje para el usuario, en español, sin la clave
 
 def existe_clave() -> bool
 def cargar_clave() -> str | None                  # variable GEMINI_API_KEY primero; si no, el archivo
@@ -159,29 +180,29 @@ def crear_agente(aprobar, valores=None, hogar=None) -> Agente
   firmas de pensamiento, `thoughtSignature`), porque los modelos con razonamiento fallan si no se devuelven.
   Con varias `functionCall` en un turno, responde con **todas** las `functionResponse` en un único mensaje de
   rol `user`, en el mismo orden.
-- Errores de la API → `ErrorNova` con mensaje claro: 400 (petición o modelo no válido), 401/403 (clave no
+- Errores de la API → `ErrorpAnkI` con mensaje claro: 400 (petición o modelo no válido), 401/403 (clave no
   válida o sin permiso), 404 (modelo no existe: sugerir cambiarlo en Ajustes), 429 (cuota), 5xx (servicio),
   red caída, tiempo agotado, respuesta no JSON, respuesta bloqueada (`promptFeedback.blockReason`, o
   `finishReason` `SAFETY`). El texto del error **nunca** incluye la clave ni la URL con la clave.
 - El historial se recorta: los resultados de herramientas antiguos se sustituyen por `[contenido omitido]`
   cuando el total supera 200 000 caracteres.
-- `crear_agente` lee `nova.modelo` y `nova.comandos` con `ajustes.valor` (con valores por defecto si el
-  esquema aún no los tiene) y lanza `ErrorNova("falta la clave de Gemini…")` si no hay clave.
+- `crear_agente` lee `panki.modelo` y `panki.comandos` con `ajustes.valor` (con valores por defecto si el
+  esquema aún no los tiene) y lanza `ErrorpAnkI("falta la clave de Gemini…")` si no hay clave.
 
 ### Ajustes (`ajustes.py`)
 
-- `nova.modelo`: tipo `texto`, por defecto `gemini-flash-latest`, máximo 60 caracteres. Texto libre a propósito:
+- `panki.modelo`: tipo `texto`, por defecto `gemini-flash-latest`, máximo 60 caracteres. Texto libre a propósito:
   los nombres de modelo cambian y el usuario puede poner el que admita su clave.
-- `nova.comandos`: tipo `bool`, por defecto `False`. "Permitir que Nova proponga comandos de terminal.
+- `panki.comandos`: tipo `bool`, por defecto `False`. "Permitir que pAnkI proponga comandos de terminal.
   Siempre pide confirmación."
-- Página nueva `nova` ("Nova (IA)") en `PAGINAS`, antes de `atajos`. Sin acciones de recarga. Un texto
-  explica que la clave se guarda desde la ventana de Nova y que los mensajes se envían a Google.
+- Página nueva `panki` ("pAnkI (IA)") en `PAGINAS`, antes de `atajos`. Sin acciones de recarga. Un texto
+  explica que la clave se guarda desde la ventana de pAnkI y que los mensajes se envían a Google.
 
-## Ventana (`nova_app.py`)
+## Ventana (`panki_app.py`)
 
-- `Gtk.Application` con id `org.infinity.Nova`, una sola instancia: una segunda llamada
-  (`infinity-nova --preguntar "texto"`) activa la ventana y envía el texto.
-- Burbujas: usuario a la derecha, Nova a la izquierda. El texto de Nova pasa por `nova_texto` (Pango, escapado).
+- `Gtk.Application` con id `org.infinity.Panki`, una sola instancia: una segunda llamada
+  (`infinity-panki --preguntar "texto"`) activa la ventana y envía el texto.
+- Burbujas: usuario a la derecha, pAnkI a la izquierda. El texto de pAnkI pasa por `panki_texto` (Pango, escapado).
 - Entrada abajo: Intro envía, Mayús+Intro nueva línea. Botón "Parar" mientras trabaja. Botón "Nueva
   conversación".
 - Tarjeta de aprobación **en línea**: título, detalle desplazable, riesgo con color, botones "Permitir",
@@ -196,12 +217,12 @@ def crear_agente(aprobar, valores=None, hogar=None) -> Agente
 
 ## Integración con el sistema
 
-- `infinity-nova`: igual que `infinity-ajustes` (`PYTHONPATH=/usr/lib/infinity`, `GSK_RENDERER=cairo` por
-  defecto, `exec python3 -m infinity_shell.nova_app "$@"`).
-- Atajo `Super+N`. Regla de ventana flotante y centrada para la clase `org.infinity.Nova`, con la misma sintaxis
+- `infinity-panki`: igual que `infinity-ajustes` (`PYTHONPATH=/usr/lib/infinity`, `GSK_RENDERER=cairo` por
+  defecto, `exec python3 -m infinity_shell.panki_app "$@"`).
+- Atajo `Super+N` (alterna la ventana; si no está abierta, la abre). Regla de ventana flotante y centrada para la clase `org.infinity.Panki`, con la misma sintaxis
   que ya usa la regla de Juegos; comprobada con `Hyprland --verify-config` (el binario está en `work/rootfs`).
-- Buscador: `? pregunta` muestra "Preguntar a Nova: pregunta"; Enter abre Nova con esa pregunta.
-- Icono `nova.png` instalado en `/usr/share/infinity/` (hay que añadirlo a la lista de `build/build.sh`).
+- Buscador: `? pregunta` muestra "Preguntar a pAnkI: pregunta"; Enter abre pAnkI con esa pregunta.
+- Icono `panki.png` instalado en `/usr/share/infinity/` (hay que añadirlo a la lista de `build/build.sh`).
 
 ## Lo que no se puede probar aquí (y se dice en el README)
 
@@ -212,15 +233,15 @@ def crear_agente(aprobar, valores=None, hogar=None) -> Agente
 
 ## Pruebas que debe haber
 
-- `test_nova_herramientas.py`: política de rutas (enlace simbólico que escapa, `..`, lista negra, ocultos),
+- `test_panki_herramientas.py`: política de rutas (enlace simbólico que escapa, `..`, lista negra, ocultos),
   límites, plan de organización por tipo y por fecha, aplicar sin sobrescribir, deshacer, `cambiar_ajuste`
   (inválido, válido), `abrir_url` (esquemas, usuario en la URL, longitud), `ejecutar_comando` (lista
   negra, desactivado por defecto, tiempo, recorte), contenido envuelto en `contenido_no_confiable`.
-- `test_nova_nucleo.py`: servidor falso con respuestas guionizadas (solo texto; llamada y respuesta;
+- `test_panki_nucleo.py`: servidor falso con respuestas guionizadas (solo texto; llamada y respuesta;
   llamadas paralelas; firma de pensamiento conservada; aprobación denegada; `max_pasos`; 400/401/403/404/429/
   500; JSON roto; respuesta bloqueada; cancelar), la clave nunca aparece en errores ni en registros, permisos
   0600, la variable de entorno tiene prioridad, el recorte del historial.
-- `test_nova_texto.py`: escapado (`<b>`, `&`, comillas), negrita, cursiva, código, listas.
-- `test_nova_ventana.py` (GTK, se salta sin pantalla): tarjeta de aprobación, hilo no bloqueado, cerrar
+- `test_panki_texto.py`: escapado (`<b>`, `&`, comillas), negrita, cursiva, código, listas.
+- `test_panki_ventana.py` (GTK, se salta sin pantalla): tarjeta de aprobación, hilo no bloqueado, cerrar
   cancela.
 - Ampliar `test_ajustes.py` y `test_launcher.py` para lo nuevo.

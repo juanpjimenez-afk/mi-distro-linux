@@ -18,6 +18,11 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 from . import ajustes as A  # noqa: E402
 
 APP_ID = "org.infinity.Ajustes"
+# Frase que se añade a la descripción de los ajustes que no recargan nada al aplicar.
+AYUDA_APLICA = {
+    "nuevo": "Se aplica a las ventanas que abras después.",
+    "conversacion": "Se aplica en la próxima conversación de Nova.",
+}
 _BIND = re.compile(r"^\s*(bind[a-z]*)\s*=\s*(.*)$")
 
 
@@ -144,6 +149,8 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         elif clave == "sistema":
             self._pagina_sistema(caja)
         else:
+            if clave == "nova":
+                self._nota_nova(caja)
             for a in A.SCHEMA:
                 if a.pagina == clave:
                     caja.append(self._fila(a))
@@ -159,9 +166,7 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         titulo = Gtk.Label(label=a.etiqueta, xalign=0, wrap=True)
         titulo.add_css_class("heading")
         textos.append(titulo)
-        ayuda = " ".join(p for p in (a.descripcion,
-                                     "Se aplica a las ventanas que abras después." if a.aplica == "nuevo" else "")
-                         if p)
+        ayuda = " ".join(p for p in (a.descripcion, AYUDA_APLICA.get(a.aplica, "")) if p)
         if ayuda:
             etiqueta_ayuda = Gtk.Label(label=ayuda, xalign=0, wrap=True)
             etiqueta_ayuda.add_css_class("dim-label")
@@ -195,6 +200,17 @@ class VentanaAjustes(Gtk.ApplicationWindow):
             w.connect("changed", self._cambio)
         self.controles[a.id] = w
         return w
+
+    @staticmethod
+    def _nota_nova(caja):
+        """Lo que hay que saber de Nova antes de tocar sus ajustes: dónde va la clave y a dónde se envía todo."""
+        nota = Gtk.Label(label="La clave de Gemini no se guarda aquí: se pega en la ventana de Nova "
+                               "(Super + N), con el botón «Clave…». Los mensajes que escribas a Nova y lo que "
+                               "ella vea con sus herramientas se envían a Google (Gemini).",
+                         xalign=0, wrap=True)
+        nota.add_css_class("dim-label")
+        nota.set_margin_bottom(10)
+        caja.append(nota)
 
     def _pagina_atajos(self, caja):
         ruta = os.path.join(A.dir_config(), "hypr", "hyprland.conf")

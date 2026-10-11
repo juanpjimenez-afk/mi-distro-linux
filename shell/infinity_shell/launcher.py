@@ -96,7 +96,7 @@ class Launcher(Gtk.Window):
 
         self.entrada = Gtk.Entry()
         self.entrada.add_css_class("launcher-entry")
-        self.entrada.set_placeholder_text("Buscar apps, calcular, escribir  > comando…")
+        self.entrada.set_placeholder_text("Buscar apps, calcular, > comando, ? preguntar a Nova…")
         self.entrada.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-search-symbolic")
         self.entrada.connect("changed", lambda *_: self._programar_busqueda())
         self.entrada.connect("activate", lambda *_: self._activar_seleccion())
@@ -219,6 +219,18 @@ class Launcher(Gtk.Window):
             if cmd:
                 res.append(Resultado(f"Ejecutar: {cmd}", "En una terminal", "utilities-terminal",
                                      lambda c=cmd: self._lanzar(["foot", "--hold", "sh", "-c", c])))
+            return res
+        if q.startswith("?"):
+            # Como ">": un prefijo manda sobre todo lo demás, así que no se mezcla con la calculadora,
+            # las apps ni la búsqueda web. La pregunta va a Nova como un argumento más: sin shell.
+            pregunta = q[1:].strip()
+            if pregunta:
+                res.append(Resultado(f"Preguntar a Nova: {pregunta}", "Se envía a Google (Gemini)",
+                                     "dialog-question",
+                                     lambda p=pregunta: self._lanzar(["infinity-nova", "--preguntar", p])))
+            else:
+                res.append(Resultado("Abrir Nova", "El agente virtual · escribe ? y tu pregunta",
+                                     "dialog-question", lambda: self._lanzar(["infinity-nova"])))
             return res
 
         valor = calcular(q) if q else None

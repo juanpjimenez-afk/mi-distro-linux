@@ -162,7 +162,7 @@ etapa_configurar() {
   # Marca
   install -m644 "$ROOT/branding/logo-white.svg" "$ROOT/branding/logo.svg" "$ROOT/branding/wallpaper.jpg" \
     "$ROOT/branding/logo-white-256.png" "$ROOT/branding/gear-white.png" \
-    "$ROOT/branding/game-optimizer.png" "$ROOTFS/usr/share/infinity/"
+    "$ROOT/branding/game-optimizer.png" "$ROOT/branding/nova.png" "$ROOTFS/usr/share/infinity/"
   mkdir -p "$ROOTFS/usr/share/infinity/lock/fondos"
   install -m644 "$ROOT"/branding/fondos-bloqueo/*.jpg "$ROOTFS/usr/share/infinity/lock/fondos/"
   install -m644 "$ROOT/branding/logo-white.svg" "$ROOTFS/usr/share/pixmaps/infinity.svg"

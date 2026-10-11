@@ -34,6 +34,7 @@ PAGINAS = [
     ("bloqueo", "Bloqueo y energía"),
     ("teclado", "Teclado y ratón"),
     ("terminal", "Terminal"),
+    ("nova", "Nova (IA)"),
     ("atajos", "Atajos"),
     ("sistema", "Sistema"),
 ]
@@ -112,18 +113,29 @@ SCHEMA = [
     _a("terminal.opacidad", "terminal", "Transparencia de la terminal",
        "1 = opaca. Con el efecto cristal se ve lo que hay detrás.", "float", 0.55, "nuevo",
        minimo=0.2, maximo=1.0),
+
+    # ------------------------------------------------------------------- nova
+    # La clave de Gemini NO es un ajuste: ajustes.json se exporta. Se guarda desde la ventana de Nova.
+    _a("nova.modelo", "nova", "Modelo de Gemini",
+       "Nombre del modelo que usa Nova. Es texto libre porque los nombres cambian: pon el que admita tu clave.",
+       "texto", "gemini-flash-latest", "conversacion", maximo=60),
+    _a("nova.comandos", "nova", "Permitir que Nova proponga comandos de terminal",
+       "Siempre pide confirmación, y la acción se muestra completa antes de ejecutarse.",
+       "bool", False, "conversacion"),
 ]
 
 DEFECTOS = {a.id: a.defecto for a in SCHEMA}
 _POR_ID = {a.id: a for a in SCHEMA}
 
 # Qué recargar según "aplica". "nuevo" no recarga nada: afecta a lo que se abra después.
+# "conversacion" tampoco: Nova lee el ajuste al empezar una conversación nueva (ver nova_app.py).
 ACCION_POR_APLICA = {
     "hypr": ("hypr",),
     "hypridle": ("hypridle",),
     "fondo": ("wallpaper", "shell"),
     "shell": ("shell",),
     "nuevo": (),
+    "conversacion": (),
 }
 ORDEN_ACCIONES = ("hypr", "hypridle", "wallpaper", "shell")
 

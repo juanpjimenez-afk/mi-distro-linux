@@ -1,0 +1,10 @@
+#!/bin/sh
+# Nova, el agente virtual de Infinity OS: responde dudas, organiza archivos y automatiza el escritorio.
+# Cada mensaje se envía a Google (Gemini) con la clave del propio usuario; la ventana lo explica la
+# primera vez. Ventana: shell/infinity_shell/nova_app.py (se instala en /usr/lib/infinity).
+#
+#   infinity-nova                     abre Nova
+#   infinity-nova --preguntar TEXTO   abre Nova (o usa la que ya está abierta) y le envía el texto
+export PYTHONPATH=/usr/lib/infinity
+export GSK_RENDERER="${GSK_RENDERER:-cairo}"
+exec python3 -m infinity_shell.nova_app "$@"
