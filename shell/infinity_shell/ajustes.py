@@ -34,7 +34,7 @@ PAGINAS = [
     ("bloqueo", "Bloqueo y energía"),
     ("teclado", "Teclado y ratón"),
     ("terminal", "Terminal"),
-    ("nova", "Nova (IA)"),
+    ("panki", "pAnkI (IA)"),
     ("atajos", "Atajos"),
     ("sistema", "Sistema"),
 ]
@@ -114,21 +114,24 @@ SCHEMA = [
        "1 = opaca. Con el efecto cristal se ve lo que hay detrás.", "float", 0.55, "nuevo",
        minimo=0.2, maximo=1.0),
 
-    # ------------------------------------------------------------------- nova
-    # La clave de Gemini NO es un ajuste: ajustes.json se exporta. Se guarda desde la ventana de Nova.
-    _a("nova.modelo", "nova", "Modelo de Gemini",
-       "Nombre del modelo que usa Nova. Es texto libre porque los nombres cambian: pon el que admita tu clave.",
+    # ----------------------------------------------------------------- pAnkI
+    # La clave de Gemini NO es un ajuste: ajustes.json se exporta. Se guarda desde la ventana de pAnkI.
+    _a("panki.modelo", "panki", "Modelo de Gemini",
+       "Nombre del modelo que usa pAnkI. Es texto libre porque los nombres cambian: pon el que admita tu clave.",
        "texto", "gemini-flash-latest", "conversacion", maximo=60),
-    _a("nova.comandos", "nova", "Permitir que Nova proponga comandos de terminal",
+    _a("panki.comandos", "panki", "Permitir que pAnkI proponga comandos de terminal",
        "Siempre pide confirmación, y la acción se muestra completa antes de ejecutarse.",
        "bool", False, "conversacion"),
+    _a("panki.burbuja", "panki", "Mostrar la burbuja de pAnkI en el escritorio",
+       "La esfera de cristal de la derecha: al pulsarla se abre o se cierra la ventana de pAnkI.",
+       "bool", True, "shell"),
 ]
 
 DEFECTOS = {a.id: a.defecto for a in SCHEMA}
 _POR_ID = {a.id: a for a in SCHEMA}
 
 # Qué recargar según "aplica". "nuevo" no recarga nada: afecta a lo que se abra después.
-# "conversacion" tampoco: Nova lee el ajuste al empezar una conversación nueva (ver nova_app.py).
+# "conversacion" tampoco: pAnkI lee el ajuste al empezar una conversación nueva (ver panki_app.py).
 ACCION_POR_APLICA = {
     "hypr": ("hypr",),
     "hypridle": ("hypridle",),

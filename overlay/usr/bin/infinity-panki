@@ -1,0 +1,13 @@
+#!/bin/sh
+# pAnkI, el agente virtual de Infinity OS: responde dudas, organiza archivos y automatiza el escritorio.
+# Cada mensaje se envía a Google (Gemini) con la clave del propio usuario; la ventana lo explica la
+# primera vez. Ventana: shell/infinity_shell/panki_app.py (se instala en /usr/lib/infinity).
+#
+#   infinity-panki                     abre pAnkI
+#   infinity-panki --preguntar TEXTO   abre pAnkI (o usa la que ya está abierta) y le envía el texto
+#
+# Con pAnkI en marcha, la burbuja y el atajo la muestran u ocultan sin lanzar otro proceso:
+#   gapplication action org.infinity.Panki alternar || infinity-panki
+export PYTHONPATH=/usr/lib/infinity
+export GSK_RENDERER="${GSK_RENDERER:-cairo}"
+exec python3 -m infinity_shell.panki_app "$@"

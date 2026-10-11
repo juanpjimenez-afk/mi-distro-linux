@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=pAnkI
+Comment=Agente virtual de Infinity OS
+Exec=infinity-panki
+Icon=/usr/share/infinity/panki.png
+Terminal=false
+Categories=Utility;
+Keywords=panki;ia;asistente;agente;gemini;chat;
+StartupWMClass=org.infinity.Panki

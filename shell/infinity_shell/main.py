@@ -1,4 +1,4 @@
-"""Infinity Shell: orbe + dock + estado + buscador, en un único proceso ligero.
+"""Infinity Shell: orbe + dock + estado + buscador + burbuja de pAnkI, en un único proceso ligero.
 
     infinity-shell                    inicia el shell
     infinity-shell --toggle-launcher  abre/cierra el buscador (en la instancia ya iniciada)
@@ -11,6 +11,8 @@ Para atajos de teclado es MUCHO más rápido hablar con la instancia ya abierta 
     gapplication action org.infinity.Shell toggle-launcher
     gapplication action org.infinity.Shell refresh
     gapplication action org.infinity.Shell recargar   (tras cambiar algo en Ajustes)
+
+La burbuja de pAnkI (derecha, sobre el estado) se oculta con el ajuste panki.burbuja; "recargar" lo relee.
 """
 import os
 import sys
@@ -51,6 +53,7 @@ from .dock import Dock, Estado, Orbe  # noqa: E402
 from .hypr import Hyprland  # noqa: E402
 from .launcher import Launcher  # noqa: E402
 from .marca import Marca, fondo_modo  # noqa: E402
+from .panki_burbuja import BurbujaPanki  # noqa: E402
 
 APP_ID = "org.infinity.Shell"
 CSS = os.path.join(os.path.dirname(__file__), "style.css")
@@ -62,6 +65,7 @@ class Shell(Gtk.Application):
         self.indice = None
         self.hypr = None
         self.dock = self.orbe = self.estado = None
+        self.burbuja = None  # la burbuja de pAnkI (se crea con la interfaz; Ajustes puede ocultarla)
         self.launcher = None  # se crea la primera vez que se usa (ahorra RAM)
         self.biblioteca_ventana = None  # idem
         self.marca = None  # solo existe con el fondo de color y la marca activada
@@ -112,12 +116,18 @@ class Shell(Gtk.Application):
             self.marca.destroy()
             self.marca = None
 
+    def _sincronizar_burbuja(self):
+        """La burbuja de pAnkI se ve si el ajuste panki.burbuja está activo (sin definir = activo)."""
+        if self.burbuja is not None:
+            self.burbuja.actualizar_visibilidad(ajuste("panki.burbuja"))
+
     def _accion_recargar(self, *_):
-        """Relee lo que la app de Ajustes cambia en el shell: estilo, marca y formato de la hora."""
+        """Relee lo que la app de Ajustes cambia en el shell: estilo, marca, burbuja y formato de la hora."""
         if self.dock is None:
             return
         self._recargar_estilo_usuario()
         self._sincronizar_marca()
+        self._sincronizar_burbuja()
         self.estado.recargar_reloj()
 
     def _accion_buscador(self, *_):
@@ -150,8 +160,10 @@ class Shell(Gtk.Application):
         self.dock = Dock(self, self.indice, self.hypr, lambda: self._biblioteca().alternar())
         self.orbe = Orbe(self, lambda: self._launcher().alternar())
         self.estado = Estado(self)
+        self.burbuja = BurbujaPanki(self)
         for ventana in (self.dock, self.orbe, self.estado):
             ventana.present()
+        self._sincronizar_burbuja()  # la burbuja (a la derecha, sobre el estado) se muestra según Ajustes
         self._sincronizar_marca()  # con el fondo de color, la marca ∞ se ve en el centro (marca.py)
 
     def _launcher(self):
