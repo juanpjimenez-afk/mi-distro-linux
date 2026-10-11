@@ -36,7 +36,7 @@ def _leer(*partes):
 
 
 # ------------------------------------------------------------------------------------------ falsos
-class ErrorpAnkI(Exception):
+class ErrorPanki(Exception):
     """Como la del núcleo: mensaje para el usuario y, si la hubo, el código HTTP."""
 
     def __init__(self, mensaje, codigo=None):
@@ -45,7 +45,7 @@ class ErrorpAnkI(Exception):
 
 
 class NucleoFalso:
-    ErrorpAnkI = ErrorpAnkI
+    ErrorPanki = ErrorPanki
 
     def __init__(self, clave=True):
         self.clave = clave
@@ -365,7 +365,7 @@ class TestVentana(_BaseVentana):
         self.assertFalse(etiqueta.get_use_markup())
         self.assertEqual(etiqueta.get_text(), peligroso)
 
-    def test_la_respuesta_de_pAnkI_usa_el_marcado_validado(self):
+    def test_la_respuesta_de_panki_usa_el_marcado_validado(self):
         v = self.ventana(guion=lambda a, t, ev: ev(("texto", "**hola**")) or "**hola**",
                          a_pango=lambda t: "<b>hola</b>")
         self.enviar(v, "di hola")
@@ -399,7 +399,7 @@ class TestVentana(_BaseVentana):
 
     def test_un_error_de_la_api_sale_como_burbuja_de_error_y_el_texto_vuelve_a_la_entrada(self):
         def guion(agente, texto, alevento):
-            raise ErrorpAnkI("Se superó la cuota de Gemini (error 429). Espera un momento.", 429)
+            raise ErrorPanki("Se superó la cuota de Gemini (error 429). Espera un momento.", 429)
 
         v = self.ventana(guion)
         self.enviar(v, "pregunta larga")
@@ -752,7 +752,7 @@ class TestVentana(_BaseVentana):
 
     def test_clave_rechazada_por_el_formato_se_dice_sin_mostrar_la_clave(self):
         nucleo = NucleoFalso(clave=False)
-        nucleo.rechazar_con = ErrorpAnkI(f"La clave {CLAVE_FALSA} no es válida: demasiado corta.")
+        nucleo.rechazar_con = ErrorPanki(f"La clave {CLAVE_FALSA} no es válida: demasiado corta.")
         v = self.ventana(nucleo=nucleo)
         t = v.tarjeta_clave
         self.widgets(t, self.Gtk.PasswordEntry)[0].set_text(CLAVE_FALSA)
@@ -772,7 +772,7 @@ class TestVentana(_BaseVentana):
 
     def test_error_de_clave_de_la_api_muestra_el_error_y_vuelve_a_pedirla(self):
         def guion(agente, texto, alevento):
-            raise ErrorpAnkI("Gemini no aceptó la clave (error 403): no es válida, ha caducado o no tiene permiso "
+            raise ErrorPanki("Gemini no aceptó la clave (error 403): no es válida, ha caducado o no tiene permiso "
                              "para este modelo. Revísala con el botón «Clave…».", 403)
 
         v = self.ventana(guion)
@@ -945,7 +945,7 @@ class TestConAgenteReal(_BaseVentana):
     def llamada_a_crear_carpeta(self):
         return _gemini({"functionCall": {"name": "crear_carpeta", "args": {"ruta": "~/Proyectos"}}})
 
-    def test_permitir_crea_la_carpeta_y_pAnkI_lo_cuenta(self):
+    def test_permitir_crea_la_carpeta_y_panki_lo_cuenta(self):
         v = self.ventana_real()
         self.respuestas = [self.llamada_a_crear_carpeta(), _gemini({"text": "Carpeta creada."})]
         self.enviar(v, "crea la carpeta Proyectos")

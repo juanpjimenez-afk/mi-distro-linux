@@ -149,7 +149,7 @@ class Ejecutor:
 
 ```python
 # panki_nucleo.py
-class ErrorpAnkI(Exception): ...                   # mensaje para el usuario, en español, sin la clave
+class ErrorPanki(Exception): ...                   # mensaje para el usuario, en español, sin la clave
 
 def existe_clave() -> bool
 def cargar_clave() -> str | None                  # variable GEMINI_API_KEY primero; si no, el archivo
@@ -180,14 +180,14 @@ def crear_agente(aprobar, valores=None, hogar=None) -> Agente
   firmas de pensamiento, `thoughtSignature`), porque los modelos con razonamiento fallan si no se devuelven.
   Con varias `functionCall` en un turno, responde con **todas** las `functionResponse` en un único mensaje de
   rol `user`, en el mismo orden.
-- Errores de la API → `ErrorpAnkI` con mensaje claro: 400 (petición o modelo no válido), 401/403 (clave no
+- Errores de la API → `ErrorPanki` con mensaje claro: 400 (petición o modelo no válido), 401/403 (clave no
   válida o sin permiso), 404 (modelo no existe: sugerir cambiarlo en Ajustes), 429 (cuota), 5xx (servicio),
   red caída, tiempo agotado, respuesta no JSON, respuesta bloqueada (`promptFeedback.blockReason`, o
   `finishReason` `SAFETY`). El texto del error **nunca** incluye la clave ni la URL con la clave.
 - El historial se recorta: los resultados de herramientas antiguos se sustituyen por `[contenido omitido]`
   cuando el total supera 200 000 caracteres.
 - `crear_agente` lee `panki.modelo` y `panki.comandos` con `ajustes.valor` (con valores por defecto si el
-  esquema aún no los tiene) y lanza `ErrorpAnkI("falta la clave de Gemini…")` si no hay clave.
+  esquema aún no los tiene) y lanza `ErrorPanki("falta la clave de Gemini…")` si no hay clave.
 
 ### Ajustes (`ajustes.py`)
 

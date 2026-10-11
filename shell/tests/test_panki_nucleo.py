@@ -348,7 +348,7 @@ class TestClave(unittest.TestCase):
     def test_reemplazo_atomico_si_falla_no_se_pierde_la_clave_anterior(self):
         N.guardar_clave(CLAVE)
         with mock.patch.object(N.os, "replace", side_effect=OSError(28, "No space left on device")):
-            with self.assertRaises(N.ErrorpAnkI) as cm:
+            with self.assertRaises(N.ErrorPanki) as cm:
                 N.guardar_clave(OTRA_CLAVE)
         self.assertNotIn(OTRA_CLAVE, str(cm.exception))
         self.assertNotIn(CLAVE, str(cm.exception))
@@ -381,7 +381,7 @@ class TestClave(unittest.TestCase):
                  "AIza\x7fdel0123456789abcdefghij", None, 123, b"AIza" + b"x" * 30, ["x"]]
         for mala in malas:
             with self.subTest(clave=repr(mala)[:40]):
-                with self.assertRaises(N.ErrorpAnkI) as cm:
+                with self.assertRaises(N.ErrorPanki) as cm:
                     N.guardar_clave(mala)
                 if isinstance(mala, str) and len(mala) >= 8:
                     self.assertNotIn(mala.strip(), str(cm.exception))
@@ -417,7 +417,7 @@ class TestClave(unittest.TestCase):
         with open(os.path.join(ajeno, "clave"), "w") as f:
             f.write(OTRA_CLAVE + "\n")
         self.assertIsNone(N.cargar_clave())
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             N.guardar_clave(CLAVE)
         self.assertIn("enlace", str(cm.exception))
         self.assertEqual(os.listdir(ajeno), ["clave"])
@@ -456,7 +456,7 @@ class TestClave(unittest.TestCase):
         os.makedirs(os.path.join(self.base, "infinity", "x"), exist_ok=True)
         with open(os.path.join(self.base, "infinity", "panki"), "w") as f:  # un archivo donde va la carpeta
             f.write("x")
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             N.guardar_clave(CLAVE)
         self.assertNotIn(CLAVE, str(cm.exception))
         self.assertNotIn(self.tmp.name, str(cm.exception))
@@ -503,7 +503,7 @@ class TestClienteGemini(ConServidor):
                       "-guion", "models/gemini", "a;b", "a@b", "a\\b", "a b", "<x>", "a'b", None, 5, b"gemini"]
         for modelo in peligrosos:
             with self.subTest(modelo=repr(modelo)):
-                with self.assertRaises(N.ErrorpAnkI):
+                with self.assertRaises(N.ErrorPanki):
                     self.cliente(modelo=modelo)
         self.assertEqual(self.srv.peticiones, [])
 
@@ -515,7 +515,7 @@ class TestClienteGemini(ConServidor):
     def test_el_modelo_se_revalida_al_generar(self):
         c = self.cliente()
         c.modelo = "../../otro/recurso"
-        with self.assertRaises(N.ErrorpAnkI):
+        with self.assertRaises(N.ErrorPanki):
             c.generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         self.assertEqual(self.srv.peticiones, [])
 
@@ -530,7 +530,7 @@ class TestClienteGemini(ConServidor):
                  "http://127.0.0.1:99999/x", None, 5]
         for url in malas:
             with self.subTest(url=repr(url)):
-                with self.assertRaises(N.ErrorpAnkI):
+                with self.assertRaises(N.ErrorPanki):
                     N.ClienteGemini(CLAVE, "gemini-x", base_url=url)
 
     def test_base_url_aceptadas(self):
@@ -545,7 +545,7 @@ class TestClienteGemini(ConServidor):
     def test_clave_con_formato_malo_no_se_repite_en_el_error(self):
         for mala in ("clave con espacios y mas cosas", CLAVE + "\n", "corta", None, ""):
             with self.subTest(clave=repr(mala)):
-                with self.assertRaises(N.ErrorpAnkI) as cm:
+                with self.assertRaises(N.ErrorPanki) as cm:
                     N.ClienteGemini(mala, "gemini-x", base_url=self.srv.base_url)
                 if mala:
                     self.assertNotIn(mala.strip(), str(cm.exception))
@@ -561,7 +561,7 @@ class TestClienteGemini(ConServidor):
             with self.subTest(codigo=codigo):
                 self.srv.guion = [{"status": codigo, "cabeceras": {"Location": otro.base_url + "/models/x:generateContent"},
                                    "json": {}}]
-                with self.assertRaises(N.ErrorpAnkI) as cm:
+                with self.assertRaises(N.ErrorPanki) as cm:
                     self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
                 self.assertIn("redirección", str(cm.exception))
                 self.assertSinClave(cm.exception)
@@ -574,7 +574,7 @@ class TestClienteGemini(ConServidor):
         for codigo, esperado in casos.items():
             with self.subTest(codigo=codigo):
                 self.srv.guion = [{"status": codigo, "json": {"error": {"code": codigo, "message": "detalle de la API"}}}]
-                with self.assertRaises(N.ErrorpAnkI) as cm:
+                with self.assertRaises(N.ErrorPanki) as cm:
                     self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
                 self.assertIn(esperado, str(cm.exception))
                 self.assertIn("detalle de la API", str(cm.exception))
@@ -583,7 +583,7 @@ class TestClienteGemini(ConServidor):
 
     def test_404_sugiere_cambiar_el_modelo_y_lo_nombra(self):
         self.srv.guion = [{"status": 404, "json": {"error": {"message": "models/x is not found"}}}]
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             self.cliente(modelo="modelo-que-no-existe").generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         self.assertIn("modelo-que-no-existe", str(cm.exception))
         self.assertIn("Ajustes", str(cm.exception))
@@ -592,14 +592,14 @@ class TestClienteGemini(ConServidor):
         cuerpo = {"error": {"code": 400, "message": "API key not valid. Please pass a valid API key.",
                             "status": "INVALID_ARGUMENT", "details": [{"@type": "x", "reason": "API_KEY_INVALID"}]}}
         self.srv.guion = [{"status": 400, "json": cuerpo}]
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         self.assertIn("no aceptó la clave", str(cm.exception))
         self.assertIn("Clave", str(cm.exception))
 
     def test_detalle_de_la_api_se_recorta_a_300(self):
         self.srv.guion = [{"status": 400, "json": {"error": {"message": "D" * 5000}}}]
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         mensaje = str(cm.exception)
         self.assertLessEqual(mensaje.count("D"), 300)
@@ -611,7 +611,7 @@ class TestClienteGemini(ConServidor):
                       f"x\n\r\ty\x00z {CLAVE}"):
             with self.subTest(texto=texto[:30]):
                 self.srv.guion = [{"status": 400, "json": {"error": {"message": texto}}}]
-                with self.assertRaises(N.ErrorpAnkI) as cm:
+                with self.assertRaises(N.ErrorPanki) as cm:
                     self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
                 self.assertNotIn(CLAVE, str(cm.exception))
                 self.assertNotIn("AIzaSyOTROTROTROTROTROTRO1234", str(cm.exception))
@@ -620,7 +620,7 @@ class TestClienteGemini(ConServidor):
 
     def test_clave_justo_en_el_corte_de_los_300_caracteres(self):
         self.srv.guion = [{"status": 400, "json": {"error": {"message": "R" * 285 + CLAVE + " fin"}}}]
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         mensaje = str(cm.exception)
         self.assertNotIn(CLAVE[:10], mensaje)  # ni siquiera un trozo
@@ -632,7 +632,7 @@ class TestClienteGemini(ConServidor):
                           {"status": 500, "crudo": b'{"error": {"message": 5, "details": 7}}'},
                           {"status": 500, "crudo": b"\xff\xfe"}]
         for _ in range(5):
-            with self.assertRaises(N.ErrorpAnkI) as cm:
+            with self.assertRaises(N.ErrorPanki) as cm:
                 self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
             self.assertNotIn("<html>", str(cm.exception))
             self.assertIn("Gemini", str(cm.exception))
@@ -642,7 +642,7 @@ class TestClienteGemini(ConServidor):
         for crudo in (b'{"candidates": [', b"esto no es json", b"", b"\xff\xfe\x00"):
             with self.subTest(crudo=crudo):
                 self.srv.guion = [{"crudo": crudo}]
-                with self.assertRaises(N.ErrorpAnkI) as cm:
+                with self.assertRaises(N.ErrorPanki) as cm:
                     self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
                 self.assertIn("JSON", str(cm.exception))
 
@@ -650,20 +650,20 @@ class TestClienteGemini(ConServidor):
         for crudo in (b"[1,2]", b'"texto"', b"null", b"5"):
             with self.subTest(crudo=crudo):
                 self.srv.guion = [{"crudo": crudo}]
-                with self.assertRaises(N.ErrorpAnkI):
+                with self.assertRaises(N.ErrorPanki):
                     self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
 
     def test_respuesta_sin_candidatos(self):
         for cuerpo in ({}, {"candidates": []}, {"candidates": "x"}, {"candidates": [5]}):
             with self.subTest(cuerpo=cuerpo):
                 self.srv.guion = [{"json": cuerpo}]
-                with self.assertRaises(N.ErrorpAnkI) as cm:
+                with self.assertRaises(N.ErrorPanki) as cm:
                     self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
                 self.assertIn("no devolvió ninguna respuesta", str(cm.exception))
 
     def test_respuesta_bloqueada_en_la_peticion(self):
         self.srv.guion = [{"json": {"promptFeedback": {"blockReason": "SAFETY"}}}]
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         self.assertIn("bloqueó", str(cm.exception))
         self.assertIn("SAFETY", str(cm.exception))
@@ -672,7 +672,7 @@ class TestClienteGemini(ConServidor):
         for fin in ("SAFETY", "PROHIBITED_CONTENT", "RECITATION", "BLOCKLIST"):
             with self.subTest(fin=fin):
                 self.srv.guion = [{"json": {"candidates": [{"finishReason": fin, "content": {"role": "model", "parts": [{"text": "x"}]}}]}}]
-                with self.assertRaises(N.ErrorpAnkI) as cm:
+                with self.assertRaises(N.ErrorPanki) as cm:
                     self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
                 self.assertIn("bloqueó", str(cm.exception))
 
@@ -682,14 +682,14 @@ class TestClienteGemini(ConServidor):
                           {"finishReason": "MALFORMED_FUNCTION_CALL"}):
             with self.subTest(candidato=candidato):
                 self.srv.guion = [{"json": {"candidates": [candidato]}}]
-                with self.assertRaises(N.ErrorpAnkI) as cm:
+                with self.assertRaises(N.ErrorPanki) as cm:
                     self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
                 self.assertIn("vacía", str(cm.exception))
 
     def test_tiempo_agotado(self):
         self.srv.guion = [{"retraso": 1.5, **r_texto("tarde")}]
         inicio = time.monotonic()
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             self.cliente(timeout=0.3).generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         self.assertLess(time.monotonic() - inicio, 1.4)
         self.assertIn("tardó demasiado", str(cm.exception))
@@ -700,7 +700,7 @@ class TestClienteGemini(ConServidor):
             s.bind(("127.0.0.1", 0))
             puerto = s.getsockname()[1]
         c = N.ClienteGemini(CLAVE, "gemini-x", base_url=f"http://127.0.0.1:{puerto}/v1beta", timeout=2)
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             c.generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         self.assertIn("conexión", str(cm.exception))
         self.assertSinClave(cm.exception)
@@ -724,25 +724,25 @@ class TestClienteGemini(ConServidor):
         self.addCleanup(httpd.server_close)
         self.addCleanup(httpd.shutdown)
         c = N.ClienteGemini(CLAVE, "gemini-x", base_url=f"http://127.0.0.1:{httpd.server_address[1]}/v1beta", timeout=2)
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             c.generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         self.assertSinClave(cm.exception)
 
     def test_respuesta_demasiado_grande(self):
         self.srv.guion = [{"crudo": b'{"candidates": [{"content": {"parts": [{"text": "' + b"x" * 5000 + b'"}]}}]}'}]
         with mock.patch.object(N, "MAX_RESPUESTA", 1000):
-            with self.assertRaises(N.ErrorpAnkI) as cm:
+            with self.assertRaises(N.ErrorPanki) as cm:
                 self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         self.assertIn("demasiado grande", str(cm.exception))
 
     def test_peticion_demasiado_grande_no_se_envia(self):
         with mock.patch.object(N, "MAX_PETICION", 100):
-            with self.assertRaises(N.ErrorpAnkI):
+            with self.assertRaises(N.ErrorPanki):
                 self.cliente().generar([{"role": "user", "parts": [{"text": "x" * 500}]}], "s", [])
         self.assertEqual(self.srv.peticiones, [])
 
     def test_contenido_no_serializable(self):
-        with self.assertRaises(N.ErrorpAnkI):
+        with self.assertRaises(N.ErrorPanki):
             self.cliente().generar([{"role": "user", "parts": [{"text": object()}]}], "s", [])
         self.assertEqual(self.srv.peticiones, [])
 
@@ -787,7 +787,7 @@ class TestClienteGemini(ConServidor):
             raise ValueError(f"Invalid header value {CLAVE!r}")
 
         c = N.ClienteGemini(CLAVE, "gemini-x", abrir=abrir)
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             c.generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         self.assertSinClave(cm.exception)
         self.assertNotIn(CLAVE, self.registro.getvalue())
@@ -805,7 +805,7 @@ class TestClienteGemini(ConServidor):
                     raise _e
 
                 c = N.ClienteGemini(CLAVE, "gemini-x", abrir=abrir)
-                with self.assertRaises(N.ErrorpAnkI) as cm:
+                with self.assertRaises(N.ErrorPanki) as cm:
                     c.generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
                 self.assertIn(esperado, str(cm.exception))
                 self.assertSinClave(cm.exception)
@@ -818,7 +818,7 @@ class TestClienteGemini(ConServidor):
             raise ue.HTTPError(solicitud.full_url, 403, "Forbidden", {}, cuerpo)
 
         c = N.ClienteGemini(CLAVE, "gemini-x", abrir=abrir)
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             c.generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
         self.assertIn("no aceptó la clave", str(cm.exception))
         self.assertSinClave(cm.exception)
@@ -828,7 +828,7 @@ class TestClienteGemini(ConServidor):
             self.srv.guion.append({"status": codigo, "json": {"error": {"message": f"eco {CLAVE} y x-goog-api-key: {CLAVE}"}}})
         self.srv.guion.append({"crudo": f"basura {CLAVE}".encode()})
         for _ in range(8):
-            with self.assertRaises(N.ErrorpAnkI) as cm:
+            with self.assertRaises(N.ErrorPanki) as cm:
                 self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
             self.assertSinClave(cm.exception)
 
@@ -1144,9 +1144,9 @@ class TestAgente(ConServidor):
     def test_mensaje_vacio_o_demasiado_largo(self):
         agente = self.agente()
         for texto in ("", "   \n", None, 5):
-            with self.assertRaises(N.ErrorpAnkI):
+            with self.assertRaises(N.ErrorPanki):
                 self.enviar(agente, texto)
-        with self.assertRaises(N.ErrorpAnkI):
+        with self.assertRaises(N.ErrorPanki):
             self.enviar(agente, "x" * (N.MAX_MENSAJE + 1))
         self.assertEqual(agente.historial, [])
         self.assertEqual(self.srv.peticiones, [])
@@ -1154,7 +1154,7 @@ class TestAgente(ConServidor):
     def test_respuesta_sin_texto_es_un_error(self):
         self.srv.guion = [{"json": {"candidates": [{"content": {"role": "model", "parts": [{"text": "   "}]}}]}}]
         agente = self.agente()
-        with self.assertRaises(N.ErrorpAnkI):
+        with self.assertRaises(N.ErrorPanki):
             self.enviar(agente)
         self.assertEqual(agente.historial, [])
 
@@ -1167,7 +1167,7 @@ class TestAgente(ConServidor):
         hilo = threading.Thread(target=lambda: resultados.append(agente.enviar("a", lambda e: None)))
         hilo.start()
         self.assertTrue(dentro.wait(5))
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             agente.enviar("b", lambda e: None)
         self.assertIn("ya está trabajando", str(cm.exception))
         liberar.set()
@@ -1179,7 +1179,7 @@ class TestAgente(ConServidor):
     def test_error_de_la_api_en_el_primer_paso_elimina_el_turno(self):
         self.srv.guion = [{"status": 429, "json": {"error": {"message": "cuota"}}}, r_texto("ya sí")]
         agente = self.agente()
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             self.enviar(agente, "hola")
         self.assertEqual(cm.exception.codigo, 429)
         self.assertEqual(agente.historial, [], "el mensaje no se envió: se puede reenviar")
@@ -1190,7 +1190,7 @@ class TestAgente(ConServidor):
     def test_error_de_la_api_despues_de_ejecutar_herramientas_conserva_lo_hecho(self):
         self.srv.guion = [r_llamadas(("info_sistema", {})), {"status": 500, "json": {}}, r_texto("Retomo.")]
         agente = self.agente()
-        with self.assertRaises(N.ErrorpAnkI):
+        with self.assertRaises(N.ErrorPanki):
             self.enviar(agente, "haz cosas")
         validar_historial(self, agente.historial)
         self.assertEqual(len(agente.historial), 4, "usuario, llamada, resultado y nota del modelo")
@@ -1202,7 +1202,7 @@ class TestAgente(ConServidor):
     def test_respuesta_bloqueada_a_mitad_deja_el_historial_valido(self):
         self.srv.guion = [r_llamadas(("info_sistema", {})), {"json": {"candidates": [{"finishReason": "SAFETY"}]}}]
         agente = self.agente()
-        with self.assertRaises(N.ErrorpAnkI):
+        with self.assertRaises(N.ErrorPanki):
             self.enviar(agente)
         validar_historial(self, agente.historial)
 
@@ -1407,7 +1407,7 @@ class TestCrearAgente(unittest.TestCase):
         self.addCleanup(parche.stop)
 
     def test_sin_clave(self):
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             N.crear_agente(lambda s: "no", valores={})
         self.assertIn("falta la clave de Gemini", str(cm.exception))
         self.assertEqual(self.creados, [])
@@ -1468,12 +1468,12 @@ class TestCrearAgente(unittest.TestCase):
         os.environ[N.VARIABLE_CLAVE] = CLAVE
         for modelo in ("a/b", "x?y=1", "con espacio", "a" * 61):
             with self.subTest(modelo=modelo):
-                with self.assertRaises(N.ErrorpAnkI):
+                with self.assertRaises(N.ErrorPanki):
                     N.crear_agente(lambda s: "no", valores={"panki.modelo": modelo})
 
     def test_clave_con_formato_malo_en_el_entorno(self):
         os.environ[N.VARIABLE_CLAVE] = "esto no es una clave"
-        with self.assertRaises(N.ErrorpAnkI) as cm:
+        with self.assertRaises(N.ErrorPanki) as cm:
             N.crear_agente(lambda s: "no", valores={})
         self.assertNotIn("esto no es una clave", str(cm.exception))
 

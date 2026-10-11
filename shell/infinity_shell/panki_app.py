@@ -300,13 +300,9 @@ def _a_pango_real():
 
 
 def _clases_de_error(nucleo):
-    """La clase de error del núcleo. El documento la llama ErrorpAnkI; se aceptan las grafías razonables."""
-    clases = []
-    for nombre in ("ErrorpAnkI", "ErrorPanki", "ErrorPankI", "ErrorPAnkI"):
-        c = getattr(nucleo, nombre, None)
-        if isinstance(c, type) and issubclass(c, Exception) and c not in clases:
-            clases.append(c)
-    return tuple(clases)
+    """La clase de error del núcleo: ErrorPanki."""
+    c = getattr(nucleo, "ErrorPanki", None)
+    return (c,) if isinstance(c, type) and issubclass(c, Exception) else ()
 
 
 class _Espera:

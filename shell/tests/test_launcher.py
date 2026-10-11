@@ -227,7 +227,7 @@ class TestBusquedaDiferida(unittest.TestCase):
         self.lz._al_dia()
         return self.lz.resultados
 
-    def test_pregunta_a_pAnkI(self):
+    def test_pregunta_a_panki(self):
         res = self.buscar("? qué hora es en Tokio")
         self.assertEqual(len(res), 1, "el prefijo manda: ni apps, ni calculadora, ni búsqueda web")
         self.assertEqual(res[0].titulo, "Preguntar a pAnkI: qué hora es en Tokio")
@@ -251,7 +251,7 @@ class TestBusquedaDiferida(unittest.TestCase):
         self.assertIsInstance(argv, list)
         self.assertEqual(argv[:2], ["infinity-panki", "--preguntar"])
 
-    def test_interrogacion_a_secas_abre_pAnkI(self):
+    def test_interrogacion_a_secas_abre_panki(self):
         for texto in ("?", "?   ", "  ?  "):
             with self.subTest(texto):
                 res = self.buscar(texto)

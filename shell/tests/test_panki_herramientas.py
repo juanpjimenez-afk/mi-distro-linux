@@ -1870,7 +1870,7 @@ class TestAjustes(Base):
             json.dump({"bloqueo.minutos": 10, "bloqueo.apagar_pantalla": 5}, f)
         self.assertTrue(self.hacer("cambiar_ajuste", id="ventanas.hueco", valor="9").ok)
 
-    def test_los_ajustes_de_pAnkI_no_se_cambian_desde_la_conversacion(self):
+    def test_los_ajustes_de_panki_no_se_cambian_desde_la_conversacion(self):
         propios = [A.Ajuste("panki.comandos", "panki", "Permitir comandos", "", "bool", False, "nuevo", None,
                             None, None),
                    A.Ajuste("panki.modelo", "panki", "Modelo", "", "texto", "gemini-flash-latest", "nuevo", None,

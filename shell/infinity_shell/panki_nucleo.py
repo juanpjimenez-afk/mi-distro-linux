@@ -80,7 +80,7 @@ SISTEMA = (
 )
 
 
-class ErrorpAnkI(Exception):
+class ErrorPanki(Exception):
     """Mensaje para el usuario, en español, sin la clave. `codigo` es el estado HTTP, si lo hubo."""
 
     def __init__(self, mensaje, codigo=None):
@@ -207,7 +207,7 @@ def guardar_clave(clave):
     """
     problema = _problema_de_clave(clave)
     if problema:
-        raise ErrorpAnkI(problema)
+        raise ErrorPanki(problema)
     error = None
     fd = None
     try:
@@ -236,7 +236,7 @@ def guardar_clave(clave):
         except OSError:
             pass
     except OSError as e:
-        error = ErrorpAnkI(f"No se pudo guardar la clave ({_motivo_os(e)}).")
+        error = ErrorPanki(f"No se pudo guardar la clave ({_motivo_os(e)}).")
     finally:
         if fd is not None:
             os.close(fd)
@@ -256,7 +256,7 @@ def borrar_clave():
             except FileNotFoundError:
                 pass
     except OSError as e:
-        error = ErrorpAnkI(f"No se pudo borrar la clave ({_motivo_os(e)}).")
+        error = ErrorPanki(f"No se pudo borrar la clave ({_motivo_os(e)}).")
     finally:
         if fd is not None:
             os.close(fd)
@@ -292,14 +292,14 @@ class _SinRedirecciones(urllib.request.HTTPRedirectHandler):
 
 def _comprobar_modelo(modelo):
     if not isinstance(modelo, str) or not _MODELO_OK.fullmatch(modelo):
-        raise ErrorpAnkI("El nombre del modelo no es válido: usa solo letras, números, punto, guion y "
+        raise ErrorPanki("El nombre del modelo no es válido: usa solo letras, números, punto, guion y "
                          "guion bajo (hasta 60). Cámbialo en Ajustes → pAnkI (IA).")
     return modelo
 
 
 def _comprobar_base_url(base_url):
     """Devuelve (base_sin_barra_final, es_local). Solo https, o http hacia 127.0.0.1 / localhost."""
-    mala = ErrorpAnkI("La dirección del servicio de Gemini no es válida o no es segura (se exige https).")
+    mala = ErrorPanki("La dirección del servicio de Gemini no es válida o no es segura (se exige https).")
     if not isinstance(base_url, str) or not _URL_OK.fullmatch(base_url):
         raise mala
     try:
@@ -328,9 +328,9 @@ class ClienteGemini:
 
     def __init__(self, clave, modelo, base_url=BASE_URL, timeout=60, abrir=None):
         if not clave:
-            raise ErrorpAnkI("Falta la clave de Gemini. Pégala con el botón «Clave…» de la ventana de pAnkI.")
+            raise ErrorPanki("Falta la clave de Gemini. Pégala con el botón «Clave…» de la ventana de pAnkI.")
         if _problema_de_clave(clave):
-            raise ErrorpAnkI("La clave de Gemini (la guardada o la de GEMINI_API_KEY) no tiene un formato "
+            raise ErrorPanki("La clave de Gemini (la guardada o la de GEMINI_API_KEY) no tiene un formato "
                              "válido. Vuelve a pegarla con el botón «Clave…».")
         self._clave = clave
         self.modelo = _comprobar_modelo(modelo)
@@ -351,7 +351,7 @@ class ClienteGemini:
     def generar(self, contenidos, sistema, herramientas):
         """Una llamada generateContent. Devuelve la respuesta de Gemini (dict) ya comprobada.
 
-        Garantiza que `candidates[0].content.parts` existe y no está vacío. Lanza ErrorpAnkI en cualquier
+        Garantiza que `candidates[0].content.parts` existe y no está vacío. Lanza ErrorPanki en cualquier
         fallo (red, HTTP, JSON, respuesta bloqueada o vacía).
         """
         _comprobar_modelo(self.modelo)
@@ -368,14 +368,14 @@ class ClienteGemini:
         except (TypeError, ValueError, RecursionError):
             pass
         if datos is None:
-            raise ErrorpAnkI("No se pudo preparar la petición para Gemini.")
+            raise ErrorPanki("No se pudo preparar la petición para Gemini.")
         if len(datos) > MAX_PETICION:
-            raise ErrorpAnkI("La conversación es demasiado grande para enviarla. Empieza una nueva.")
+            raise ErrorPanki("La conversación es demasiado grande para enviarla. Empieza una nueva.")
         texto = self._enviar(datos)
         return self._interpretar(texto)
 
     def _enviar(self, datos):
-        """POST. Devuelve el cuerpo (bytes) de una respuesta 200 o lanza ErrorpAnkI."""
+        """POST. Devuelve el cuerpo (bytes) de una respuesta 200 o lanza ErrorPanki."""
         solicitud = urllib.request.Request(
             f"{self.base_url}/models/{self.modelo}:generateContent",
             data=datos, method="POST",
@@ -398,16 +398,16 @@ class ClienteGemini:
         except urllib.error.HTTPError as e:
             error = self._error_http(e.code, self._cuerpo_de_error(e))
         except TimeoutError:
-            error = ErrorpAnkI("Gemini tardó demasiado en responder. Inténtalo de nuevo.")
+            error = ErrorPanki("Gemini tardó demasiado en responder. Inténtalo de nuevo.")
         except urllib.error.URLError as e:
             error = self._error_de_red(e)
-        except ErrorpAnkI as e:
+        except ErrorPanki as e:
             error = e
         except (http.client.HTTPException, OSError):
-            error = ErrorpAnkI("Se perdió la conexión con Gemini. Comprueba tu red e inténtalo de nuevo.")
+            error = ErrorPanki("Se perdió la conexión con Gemini. Comprueba tu red e inténtalo de nuevo.")
         except Exception as e:  # noqa: BLE001 - nada de lo que falle aquí puede arrastrar la clave
             _log.debug("Fallo inesperado al llamar a Gemini: %s", type(e).__name__)
-            error = ErrorpAnkI("Error inesperado al hablar con Gemini.")
+            error = ErrorPanki("Error inesperado al hablar con Gemini.")
         if error is not None:
             raise error
         _log.debug("Gemini %s: HTTP 200, %d bytes", self.modelo, len(cuerpo))
@@ -424,9 +424,9 @@ class ClienteGemini:
             trozos.append(trozo)
             total += len(trozo)
             if total > MAX_RESPUESTA:
-                raise ErrorpAnkI("La respuesta de Gemini es demasiado grande.")
+                raise ErrorPanki("La respuesta de Gemini es demasiado grande.")
             if time.monotonic() > limite_tiempo:
-                raise ErrorpAnkI("Gemini tardó demasiado en responder. Inténtalo de nuevo.")
+                raise ErrorPanki("Gemini tardó demasiado en responder. Inténtalo de nuevo.")
         return b"".join(trozos)
 
     def _cuerpo_de_error(self, e):
@@ -475,16 +475,16 @@ class ClienteGemini:
             mensaje = f"Gemini respondió con un error inesperado ({codigo})."
         if detalle:
             mensaje += f" Detalle: {detalle}"
-        return ErrorpAnkI(mensaje, codigo)
+        return ErrorPanki(mensaje, codigo)
 
     def _error_de_red(self, e):
         razon = getattr(e, "reason", None)
         if isinstance(razon, TimeoutError):
-            return ErrorpAnkI("Gemini tardó demasiado en responder. Inténtalo de nuevo.")
+            return ErrorPanki("Gemini tardó demasiado en responder. Inténtalo de nuevo.")
         _log.warning("Sin conexión con Gemini: %s", type(razon).__name__)
         if "CERTIFICATE" in str(razon).upper():
-            return ErrorpAnkI("No se pudo verificar el certificado de Gemini. Comprueba la fecha y la red.")
-        return ErrorpAnkI("No hay conexión con Gemini. Comprueba tu conexión a Internet.")
+            return ErrorPanki("No se pudo verificar el certificado de Gemini. Comprueba la fecha y la red.")
+        return ErrorPanki("No hay conexión con Gemini. Comprueba tu conexión a Internet.")
 
     # -- respuesta
     def _interpretar(self, cuerpo):
@@ -494,24 +494,24 @@ class ClienteGemini:
         except (ValueError, RecursionError):  # UnicodeDecodeError es un ValueError
             pass
         if not isinstance(datos, dict):
-            raise ErrorpAnkI("Gemini devolvió una respuesta que no es JSON válido. Inténtalo de nuevo.")
+            raise ErrorPanki("Gemini devolvió una respuesta que no es JSON válido. Inténtalo de nuevo.")
         retro = datos.get("promptFeedback")
         if isinstance(retro, dict) and retro.get("blockReason"):
-            raise ErrorpAnkI("Gemini bloqueó el mensaje (motivo: "
+            raise ErrorPanki("Gemini bloqueó el mensaje (motivo: "
                              f"{_limpiar(retro['blockReason'], self._clave, 40)}). Reformúlalo e inténtalo de nuevo.")
         candidatos = datos.get("candidates")
         if not isinstance(candidatos, list) or not candidatos or not isinstance(candidatos[0], dict):
-            raise ErrorpAnkI("Gemini no devolvió ninguna respuesta. Inténtalo de nuevo.")
+            raise ErrorPanki("Gemini no devolvió ninguna respuesta. Inténtalo de nuevo.")
         candidato = candidatos[0]
         fin = candidato.get("finishReason")
         fin = _limpiar(fin, self._clave, 40) if isinstance(fin, str) else ""
         if fin in _FIN_BLOQUEADO:
-            raise ErrorpAnkI(f"Gemini bloqueó la respuesta (motivo: {fin}). Prueba a reformular la pregunta.")
+            raise ErrorPanki(f"Gemini bloqueó la respuesta (motivo: {fin}). Prueba a reformular la pregunta.")
         contenido = candidato.get("content")
         partes = contenido.get("parts") if isinstance(contenido, dict) else None
         if not isinstance(partes, list) or not partes or not all(isinstance(p, dict) for p in partes):
             extra = f" (motivo: {fin})" if fin else ""
-            raise ErrorpAnkI(f"Gemini devolvió una respuesta vacía{extra}. Inténtalo de nuevo.")
+            raise ErrorPanki(f"Gemini devolvió una respuesta vacía{extra}. Inténtalo de nuevo.")
         return datos
 
 
@@ -623,10 +623,10 @@ class Agente:
     def enviar(self, texto, alevento):
         """Procesa un mensaje del usuario. Devuelve el texto final (el mismo que el último evento "texto").
 
-        Lanza ErrorpAnkI si falla la API o si ya hay un envío en curso.
+        Lanza ErrorPanki si falla la API o si ya hay un envío en curso.
         """
         if not self._ocupado.acquire(blocking=False):
-            raise ErrorpAnkI("pAnkI ya está trabajando en otra petición.")
+            raise ErrorPanki("pAnkI ya está trabajando en otra petición.")
         try:
             return self._enviar(texto, alevento)
         finally:
@@ -671,11 +671,11 @@ class Agente:
 
     def _enviar(self, texto, alevento):
         if not isinstance(texto, str) or not texto.strip():
-            raise ErrorpAnkI("Escribe un mensaje para pAnkI.")
+            raise ErrorPanki("Escribe un mensaje para pAnkI.")
         texto = texto.strip()
         if len(texto) > MAX_MENSAJE:
             maximo = f"{MAX_MENSAJE:,}".replace(",", " ")
-            raise ErrorpAnkI(f"El mensaje es demasiado largo (máximo {maximo} caracteres).")
+            raise ErrorPanki(f"El mensaje es demasiado largo (máximo {maximo} caracteres).")
         if self._cancelado.is_set():  # cancelar() llegó con el agente parado
             return self._final(alevento, "Cancelado.")
         n0 = len(self.historial)
@@ -693,11 +693,11 @@ class Agente:
             try:
                 declaraciones = list(self.ejecutor.declaraciones())
                 respuesta = self.cliente.generar(list(self.historial), self.sistema, declaraciones)
-            except ErrorpAnkI as e:
+            except ErrorPanki as e:
                 error = e
             except Exception as e:  # noqa: BLE001 - lo que no sea nuestro no llega al usuario con detalles
                 _log.debug("Fallo inesperado al generar: %s", type(e).__name__)
-                error = ErrorpAnkI("Error inesperado al hablar con Gemini.")
+                error = ErrorPanki("Error inesperado al hablar con Gemini.")
             if error is not None:
                 self._cerrar_turno(n0, "[La respuesta se interrumpió por un error del servicio.]")
                 raise error
@@ -705,7 +705,7 @@ class Agente:
                 return self._cancelar_turno(n0, alevento)
             try:
                 contenido, textos, llamadas, fin = self._leer_respuesta(respuesta)
-            except ErrorpAnkI as e:
+            except ErrorPanki as e:
                 error = e
             if error is not None:
                 self._cerrar_turno(n0, "[La respuesta se interrumpió por un error del servicio.]")
@@ -714,7 +714,7 @@ class Agente:
                 final = "".join(textos).strip()
                 if not final:
                     self._cerrar_turno(n0, "[Gemini no devolvió texto.]")
-                    raise ErrorpAnkI("Gemini no devolvió texto. Inténtalo de nuevo.")
+                    raise ErrorPanki("Gemini no devolvió texto. Inténtalo de nuevo.")
                 self.historial.append(contenido)
                 if fin == "MAX_TOKENS":
                     final += "\n\n(La respuesta se cortó por su longitud.)"
@@ -734,7 +734,7 @@ class Agente:
 
     @staticmethod
     def _leer_respuesta(respuesta):
-        """(content tal cual, textos, functionCall, finishReason). Lanza ErrorpAnkI si no es lo esperado."""
+        """(content tal cual, textos, functionCall, finishReason). Lanza ErrorPanki si no es lo esperado."""
         try:
             candidato = respuesta["candidates"][0]
             contenido = candidato["content"]
@@ -749,7 +749,7 @@ class Agente:
         except (KeyError, IndexError, TypeError, AttributeError):
             contenido = None
         if contenido is None:
-            raise ErrorpAnkI("Gemini devolvió una respuesta con un formato inesperado.")
+            raise ErrorPanki("Gemini devolvió una respuesta con un formato inesperado.")
         if "role" not in contenido:
             contenido["role"] = "model"
         return contenido, textos, llamadas, fin
@@ -892,7 +892,7 @@ def _usuario():
 def crear_agente(aprobar, valores=None, hogar=None):
     """El agente listo para usar. Lee `panki.modelo` y `panki.comandos` de Ajustes.
 
-    `valores` (dict) sustituye a `ajustes.valor` en las pruebas. Lanza ErrorpAnkI si no hay clave o si el
+    `valores` (dict) sustituye a `ajustes.valor` en las pruebas. Lanza ErrorPanki si no hay clave o si el
     modelo no es un nombre válido.
     """
     # TEMPORAL: importación perezosa para que este módulo cargue aunque panki_herramientas.py no exista aún.
@@ -907,7 +907,7 @@ def crear_agente(aprobar, valores=None, hogar=None):
 
     clave = cargar_clave()
     if not clave:
-        raise ErrorpAnkI("No se puede iniciar pAnkI: falta la clave de Gemini. Pégala con el botón «Clave…» "
+        raise ErrorPanki("No se puede iniciar pAnkI: falta la clave de Gemini. Pégala con el botón «Clave…» "
                          f"de la ventana de pAnkI o define la variable {VARIABLE_CLAVE}.")
     modelo = valor("panki.modelo", MODELO_DEFECTO)
     comandos = valor("panki.comandos", False) is True

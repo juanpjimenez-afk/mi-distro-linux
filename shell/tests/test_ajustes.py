@@ -277,7 +277,7 @@ class TestPanki(unittest.TestCase):
         for a in A.SCHEMA:
             self.assertNotRegex(a.id.lower(), r"clave|key|token|secret", a.id)
 
-    def test_los_ajustes_de_pAnkI_no_tocan_los_ficheros_generados(self):
+    def test_los_ajustes_de_panki_no_tocan_los_ficheros_generados(self):
         base = A.generar(A.DEFECTOS)
         cambiado = A.generar(dict(A.DEFECTOS, **{"panki.modelo": "otro-modelo", "panki.comandos": True,
                                                  "panki.burbuja": False}))
