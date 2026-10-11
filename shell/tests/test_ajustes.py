@@ -6,12 +6,14 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, os.path.join(HERE, ".."))
 
 from infinity_shell import ajustes as A  # noqa: E402
+from infinity_shell import fondos as F  # noqa: E402
 
 SKEL = os.path.join(ROOT, "overlay", "etc", "skel", ".config")
 STYLE = os.path.join(ROOT, "shell", "infinity_shell", "style.css")
@@ -366,7 +368,8 @@ class TestEscribir(unittest.TestCase):
     def test_escribe_todos_los_ficheros(self):
         A.escribir(A.DEFECTOS, self.base)
         for rel in ("infinity/ajustes.json", "hypr/infinity-ajustes.conf", "hypr/hypridle.conf",
-                    "gtklock/config.ini", "foot/foot.ini", "infinity/estilo.css", "infinity/fondo"):
+                    "gtklock/config.ini", "foot/foot.ini", "infinity/estilo.css", "infinity/fondo",
+                    "infinity/fondo-bloqueo"):
             self.assertTrue(os.path.exists(os.path.join(self.base, rel)), rel)
         self.assertEqual(A.cargar(os.path.join(self.base, "infinity", "ajustes.json")), (A.DEFECTOS, []))
 
@@ -420,6 +423,162 @@ class TestRecarga(unittest.TestCase):
         self.assertEqual([c for c, _ in llamadas],
                          ["hyprctl", "pkill", "hypridle", "pkill", "infinity-wallpaper", "gapplication"])
         self.assertIn(("hypridle", True), llamadas)
+
+
+class TestFondosEnAjustes(unittest.TestCase):
+    """Los ajustes escritorio.fondo y bloqueo.fondo: compatibilidad con «imagen»/«color» y los ids de fondo."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="ajustes-fondos-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.fondos = os.path.join(self.tmp, "sistema")
+        self.usuario = os.path.join(self.tmp, "usuario")
+        os.makedirs(self.fondos)
+        entradas = []
+        for i in ("cascada", "islandia", "lago"):
+            os.makedirs(os.path.join(self.fondos, i))
+            for n in ("escritorio.jpg", "bloqueo-1920x1080.jpg"):
+                with open(os.path.join(self.fondos, i, n), "wb") as f:
+                    f.write(b"\xff\xd8\xff")
+            entradas.append({"id": i, "nombre": i.capitalize(), "escritorio": f"{i}/escritorio.jpg",
+                             "bloqueo": {"1920x1080": f"{i}/bloqueo-1920x1080.jpg"}})
+        with open(os.path.join(self.fondos, "fondos.json"), "w", encoding="utf-8") as f:
+            json.dump({"version": 1, "fondos": entradas}, f)
+        self.rutas = F.Rutas(sistema=(self.fondos,), usuario=self.usuario, legado_escritorio=(), legado_bloqueo=())
+        parche = mock.patch.object(F, "rutas_por_defecto", return_value=self.rutas)
+        parche.start()
+        self.addCleanup(parche.stop)
+
+    def valida(self, **cambios):
+        valores = dict(A.DEFECTOS)
+        valores.update({k.replace("__", "."): v for k, v in cambios.items()})
+        return A.validar(valores)
+
+    def fondo_usuario(self, id_="u-mio", escritorio=True, bloqueo=True):
+        d = os.path.join(self.usuario, id_)
+        os.makedirs(d)
+        if escritorio:
+            with open(os.path.join(d, "escritorio.jpg"), "wb") as f:
+                f.write(b"\xff\xd8\xff")
+        if bloqueo:
+            with open(os.path.join(d, "bloqueo-1920x1080.jpg"), "wb") as f:
+                f.write(b"\xff\xd8\xff")
+        with open(os.path.join(d, "meta.json"), "w", encoding="utf-8") as f:
+            json.dump({"nombre": "Mío"}, f)
+
+    # --- compatibilidad con lo que ya había
+    def test_valores_antiguos_siguen_valiendo(self):
+        for v in ("imagen", "color"):
+            normal, errores = self.valida(escritorio__fondo=v)
+            self.assertEqual((errores, normal["escritorio.fondo"]), ([], v))
+
+    def test_los_defectos_no_cambian(self):
+        self.assertEqual(A.DEFECTOS["escritorio.fondo"], "imagen")
+        self.assertEqual(A.DEFECTOS["bloqueo.fondo"], "islandia")
+
+    def test_configuracion_antigua_sin_el_ajuste_nuevo_carga_sin_migrar(self):
+        ruta = os.path.join(self.tmp, "ajustes.json")
+        antigua = {k: v for k, v in A.DEFECTOS.items() if k != "bloqueo.fondo"}
+        antigua["escritorio.fondo"] = "color"
+        with open(ruta, "w", encoding="utf-8") as f:
+            json.dump(antigua, f)
+        valores, avisos = A.cargar(ruta)
+        self.assertEqual(avisos, [])
+        self.assertEqual((valores["escritorio.fondo"], valores["bloqueo.fondo"]), ("color", "islandia"))
+
+    def test_cascada_es_otro_nombre_de_imagen(self):
+        self.assertEqual(self.valida(escritorio__fondo="cascada")[0]["escritorio.fondo"], "imagen")
+
+    # --- ids de fondo
+    def test_acepta_ids_del_catalogo_y_del_usuario(self):
+        self.fondo_usuario()
+        normal, errores = self.valida(escritorio__fondo="lago", bloqueo__fondo="u-mio")
+        self.assertEqual((errores, normal["escritorio.fondo"], normal["bloqueo.fondo"]), ([], "lago", "u-mio"))
+        self.assertEqual(self.valida(escritorio__fondo="u-mio")[1], [])
+
+    def test_rechaza_ids_que_no_existen_o_son_peligrosos(self):
+        for malo in ("azul", "", "u-no-existe", "../../etc/passwd", "lago/..", "LAGO", " lago", "lago\n", "a" * 300,
+                     None, 5, True, ["lago"], "u-../lago"):
+            for ajuste in ("escritorio__fondo", "bloqueo__fondo"):
+                self.assertNotEqual(self.valida(**{ajuste: malo})[1], [], (ajuste, malo))
+
+    def test_un_fondo_solo_de_bloqueo_no_vale_para_el_escritorio(self):
+        self.fondo_usuario("u-solo-bloqueo", escritorio=False)
+        self.assertNotEqual(self.valida(escritorio__fondo="u-solo-bloqueo")[1], [])
+        self.assertEqual(self.valida(bloqueo__fondo="u-solo-bloqueo")[1], [])
+
+    def test_el_defecto_del_bloqueo_vale_aunque_falte_el_catalogo(self):
+        with mock.patch.object(F, "rutas_por_defecto",
+                               return_value=F.Rutas(sistema=(), usuario=self.usuario, legado_escritorio=(), legado_bloqueo=())):
+            self.assertEqual(self.valida(bloqueo__fondo="islandia")[1], [])
+            self.assertEqual(self.valida(escritorio__fondo="cascada")[0]["escritorio.fondo"], "imagen")
+            self.assertEqual(self.valida(escritorio__fondo="imagen")[1], [])
+
+    def test_un_fondo_borrado_en_el_json_vuelve_al_defecto_con_aviso(self):
+        ruta = os.path.join(self.tmp, "ajustes.json")
+        with open(ruta, "w", encoding="utf-8") as f:
+            json.dump({"escritorio.fondo": "u-ya-no-esta", "bloqueo.fondo": "u-tampoco", "dock.reloj": "12h"}, f)
+        valores, avisos = A.cargar(ruta)
+        self.assertEqual((valores["escritorio.fondo"], valores["bloqueo.fondo"]), ("imagen", "islandia"))
+        self.assertEqual(valores["dock.reloj"], "12h")      # lo demás se conserva
+        self.assertEqual(len(avisos), 2)
+        self.assertTrue(all("ya no existe" in a or "no existe" in a for a in avisos), avisos)
+
+    def test_opciones_son_pares_valor_etiqueta_con_lo_que_hay(self):
+        self.fondo_usuario()
+        por = {a.id: a for a in A.SCHEMA}
+        escritorio = list(por["escritorio.fondo"].opciones)
+        self.assertEqual(escritorio[:2], [("imagen", "Cascada"), ("color", "Color sólido")])
+        self.assertEqual([v for v, _ in escritorio[2:]], ["islandia", "lago", "u-mio"])    # la cascada ya es «imagen»
+        self.assertEqual([v for v, _ in por["bloqueo.fondo"].opciones], ["cascada", "islandia", "lago", "u-mio"])
+        for valor, etiqueta in escritorio:
+            self.assertIsInstance(valor, str)
+            self.assertIsInstance(etiqueta, str)
+
+    def test_importar_ajustes_de_otro_equipo_no_se_rechaza_por_un_fondo_ajeno(self):
+        ruta = os.path.join(self.tmp, "exportado.json")
+        with open(ruta, "w", encoding="utf-8") as f:
+            json.dump({"escritorio.fondo": "u-de-otro-pc", "bloqueo.fondo": "u-otro", "dock.reloj": "12h"}, f)
+        valores, errores = A.importar(ruta)
+        self.assertEqual(errores, [])
+        self.assertEqual((valores["escritorio.fondo"], valores["bloqueo.fondo"], valores["dock.reloj"]),
+                         ("imagen", "islandia", "12h"))
+
+    def test_importar_ajustes_sigue_rechazando_lo_demas(self):
+        ruta = os.path.join(self.tmp, "exportado.json")
+        with open(ruta, "w", encoding="utf-8") as f:
+            json.dump({"escritorio.fondo": 5, "dock.reloj": "99h"}, f)
+        _, errores = A.importar(ruta)
+        self.assertEqual({i for i, _ in errores}, {"escritorio.fondo", "dock.reloj"})
+
+    # --- acciones y ficheros
+    def test_acciones(self):
+        self.assertEqual(A.acciones_para(["escritorio.fondo"]), ["wallpaper", "shell"])    # al momento
+        self.assertEqual(A.acciones_para(["bloqueo.fondo"]), [])                          # en el siguiente bloqueo
+        self.assertEqual(A.acciones_para(["bloqueo.fondo", "escritorio.fondo"]), ["wallpaper", "shell"])
+
+    def test_el_ajuste_de_bloqueo_esta_en_la_pagina_de_bloqueo(self):
+        a = next(x for x in A.SCHEMA if x.id == "bloqueo.fondo")
+        self.assertEqual(a.pagina, "bloqueo")
+        self.assertEqual(a.aplica, "bloqueo")
+        self.assertEqual(a.tipo, "choice")
+
+    def test_generar_escribe_los_dos_ficheros_que_leen_los_scripts(self):
+        v = dict(A.DEFECTOS, **{"escritorio.fondo": "lago", "bloqueo.fondo": "u-mio"})
+        g = A.generar(v)
+        self.assertEqual(g["infinity/fondo"], "lago\n")
+        self.assertEqual(g["infinity/fondo-bloqueo"], "u-mio\n")
+        g = A.generar(A.DEFECTOS)
+        self.assertEqual((g["infinity/fondo"], g["infinity/fondo-bloqueo"]), ("imagen\n", "islandia\n"))
+
+    def test_escribir_deja_los_ficheros_en_la_carpeta_de_configuracion(self):
+        self.fondo_usuario()
+        base = os.path.join(self.tmp, "config")
+        A.escribir(dict(A.DEFECTOS, **{"bloqueo.fondo": "u-mio"}), base)
+        self.assertEqual(_leer(base, "infinity", "fondo-bloqueo"), "u-mio\n")
+        self.assertEqual(_leer(base, "infinity", "fondo"), "imagen\n")
+        valores, avisos = A.cargar(os.path.join(base, "infinity", "ajustes.json"))
+        self.assertEqual((valores["bloqueo.fondo"], avisos), ("u-mio", []))
 
 
 if __name__ == "__main__":

@@ -641,9 +641,15 @@ class TestPastillas(unittest.TestCase):
         cls.C.LayerShell = cls.capa
         cls.app = Gtk.Application(application_id=f"org.infinity.test.controles{time.time_ns()}")
         cls.app.register(None)
-        prov = Gtk.CssProvider()
-        prov.load_from_path(CSS)
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        cls.proveedor = Gtk.CssProvider()
+        cls.proveedor.load_from_path(CSS)
+        cls.display = Gdk.Display.get_default()
+        Gtk.StyleContext.add_provider_for_display(cls.display, cls.proveedor, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    @classmethod
+    def tearDownClass(cls):
+        # El CSS del shell es global: si se queda puesto, cambia lo que miden los widgets de las pruebas que vienen después
+        cls.Gtk.StyleContext.remove_provider_for_display(cls.display, cls.proveedor)
 
     def setUp(self):
         self.pulsados = []

@@ -69,6 +69,7 @@ MAESTRO = (2880, 1620)
 MINIATURA = (320, 180)
 CALIDAD = 93                      # JPEG de escritorio y bloqueo (>= 92)
 CALIDAD_MINIATURA = 88
+TESELA, MARGEN = 256, 24          # teselas de la IA y margen descartado (px de la fuente)
 GRANO = 1.1                       # sigma del grano, en niveles de 8 bits
 
 # Luminancia media (Rec. 709, valores sRGB de 8 bits) del wallpaper.jpg de la cascada de antes de esta
@@ -92,19 +93,19 @@ FONDOS = [
          ventana=(2, 0, 622, 350), ia=True, mezcla=0.10,
          nota="Aportada por el usuario; parece generada por IA. Licencia sin verificar."),
     dict(id="lago-montanas", nombre="Lago entre montañas", fuente="fotos/fondo-lago-montanas.webp",
-         ventana=(0, 45, 672, 378), ia=True, mezcla=0.20,
+         ventana=(0, 45, 672, 378), ia=True, mezcla=0.10,
          nota="Aportada por el usuario; lámina cromolitográfica antigua, de aspecto de dominio público "
               "pero sin verificar."),
     dict(id="salto-de-agua", nombre="Salto de agua", fuente="fotos/fondo-salto-de-agua.webp",
-         ventana=(4, 745, 1264, 711), ia=True, mezcla=0.30,
+         ventana=(4, 745, 1264, 711), ia=True, mezcla=0.35,
          nota="Aportada por el usuario (foto vertical recortada a 16:9). Licencia sin verificar."),
     dict(id="abstracto-colores", nombre="Abstracto de colores", fuente="fotos/fondo-abstracto-colores.webp",
-         ventana=(0, 130, 1500, 844), ia=True, mezcla=0.30,
+         ventana=(0, 130, 1500, 844), ia=True, mezcla=0.25,
          nota="Aportada por el usuario. La fuente lleva una marca de agua comercial (todo cuadros / tutti Quadri "
               "/ artwork vault / tudo Quadros) en la franja inferior derecha, que queda FUERA del recorte. "
               "Procede de una web de venta de cuadros: licencia dudosa."),
     dict(id="noche-estrellada", nombre="La noche estrellada", fuente="fotos/fondo-noche-estrellada.webp",
-         ventana=(26, 12, 1228, 691), ia=True, mezcla=0.30,
+         ventana=(26, 12, 1228, 691), ia=True, mezcla=0.20,
          nota="«La noche estrellada» (Van Gogh, 1889): obra de dominio público. La reproducción es la aportada "
               "por el usuario, licencia de la fotografía sin verificar; se recortan los bordes del lienzo."),
 ]
@@ -183,15 +184,23 @@ def cargar_ia():
 
 
 def ia_x4(ventana_img, Realesrgan, cache=None, clave=""):
-    """Real-ESRGAN x4plus en CPU (gpuid=-1), por teselas de 200 px."""
+    """Real-ESRGAN x4plus en CPU (gpuid=-1). Se procesa por teselas de TESELA px con un margen de MARGEN px
+    que se descarta (el campo receptivo de la red es local, no se ven costuras) para no gastar gigas de RAM."""
     ruta = None
     if cache:
         h = hashlib.sha1(ventana_img.tobytes() + clave.encode()).hexdigest()[:12]
         ruta = Path(cache) / f"{clave}-{h}-x4.png"
         if ruta.exists():
             return Image.open(ruta).convert("RGB")
-    r = Realesrgan(gpuid=-1, model=4, tilesize=200)      # modelo 4 = realesrgan-x4plus
-    out = r.process_pil(ventana_img)
+    r = Realesrgan(gpuid=-1, model=4, tilesize=0)        # modelo 4 = realesrgan-x4plus
+    w, h = ventana_img.size
+    out = Image.new("RGB", (w * 4, h * 4))
+    for y in range(0, h, TESELA):
+        for x in range(0, w, TESELA):
+            x1, y1 = min(w, x + TESELA), min(h, y + TESELA)
+            a, b, c, d = max(0, x - MARGEN), max(0, y - MARGEN), min(w, x1 + MARGEN), min(h, y1 + MARGEN)
+            t = r.process_pil(ventana_img.crop((a, b, c, d)))
+            out.paste(t.crop(((x - a) * 4, (y - b) * 4, (x1 - a) * 4, (y1 - b) * 4)), (x * 4, y * 4))
     if ruta:
         Path(cache).mkdir(parents=True, exist_ok=True)
         out.save(ruta)

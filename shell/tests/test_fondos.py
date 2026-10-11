@@ -555,7 +555,6 @@ class TestImportar(Entorno):
             "texto": (b"hola" * 100, "no es una imagen"),
             "jpeg-cortado": (self.leer(self.imagen("c.jpg", 640, 360, "jpeg"))[:300], "dañada"),
             "jpeg-a-medias": (self.leer(self.imagen("m.jpg", 640, 360, "jpeg"))[:-300], "dañada"),
-            "gif-cortado": (self.leer(self.imagen("c.gif", 640, 360, "gif"))[:-5], "dañada"),
             "bmp-cortado": (self.leer(self.imagen("c.bmp", 64, 64, "bmp"))[:-50], "dañada"),
             "jpeg-roto": (b"\xff\xd8\xff\xe0" + os.urandom(2000), "dañada"),
             "png-cortado": (self.leer(self.imagen("c.png", 640, 360, "png"))[:100], "dañada"),
@@ -706,6 +705,19 @@ class TestImportar(Entorno):
 
 
 class TestImportarSinGdkPixbuf(Entorno):
+    def test_detecta_archivos_cortados_por_formato(self):
+        gif = b"GIF89a\x40\x00\x40\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff,\x00\x00\x00\x00\x40\x00\x40\x00\x00\x02\x02D\x01\x00;"
+        png = _png_con_cabecera(10, 10)
+        jpeg = b"\xff\xd8\xff\xe0" + b"x" * 500 + b"\xff\xd9"
+        bmp = b"BM" + struct.pack("<I", 100) + b"\x00" * 94
+        webp = b"RIFF" + struct.pack("<I", 96) + b"WEBP" + b"\x00" * 92
+        for nombre, completo in (("gif", gif), ("png", png), ("jpeg", jpeg), ("bmp", bmp), ("webp", webp)):
+            self.assertTrue(F._esta_completa(completo), nombre)
+            self.assertTrue(F._esta_completa(completo + b"\x00" * 8), nombre + " con relleno")
+            self.assertFalse(F._esta_completa(completo[:-20]), nombre + " cortado")
+            self.assertFalse(F._esta_completa(completo[:30]), nombre + " muy cortado")
+        self.assertTrue(F._esta_completa(b"texto cualquiera"))     # lo que no se reconoce lo decide el cargador
+
     def test_las_comprobaciones_previas_no_necesitan_gdkpixbuf(self):
         # Vacío, carpeta o inexistente se rechazan antes de intentar decodificar nada.
         vacio = escribe(os.path.join(self.tmp, "vacio.png"), b"")
@@ -755,6 +767,18 @@ class TestFondoRuta(Entorno):
         for contenido in ("color", "COLOR\n"):
             self.ajuste("fondo", contenido)
             self.assertEqual(self.escritorio(), (None, 3))
+
+    def test_un_id_con_rutas_no_sale_de_las_carpetas_de_fondos(self):
+        # «../fuera» apunta a una carpeta que existe y tiene un JPEG válido: aun así no se usa.
+        self.catalogo()
+        escribe(os.path.join(self.share, "fuera", "escritorio.jpg"))
+        escribe(os.path.join(self.share, "fuera", "bloqueo-1920x1080.jpg"))
+        escribe(os.path.join(self.usuario, "u-x", "escritorio.jpg"))
+        for malo in ("../fuera", "../../share/fuera", "./../fuera", "cascada/../../fuera", "u-x/../../../../share/fuera"):
+            self.ajuste("fondo", malo)
+            self.ajuste("fondo-bloqueo", malo)
+            self.assertEqual(self.rel(self.escritorio()[0]), "share/fondos/cascada/escritorio.jpg", malo)
+            self.assertEqual(self.rel(self.bloqueo()[0]), "share/fondos/islandia/bloqueo-1920x1080.jpg", malo)
 
     def test_escritorio_sin_fichero_de_ajuste_usa_la_cascada(self):
         self.catalogo()
