@@ -764,12 +764,14 @@ class TestVentana(_BaseVentana):
         self.assertIn("Respuesta a: hola", self.textos(v.conversacion))
         self.assertEqual(self.agentes[0].reinicios, 0)
 
-    def test_alternar_no_oculta_con_una_aprobacion_pendiente(self):
+    def test_alternar_con_una_aprobacion_pendiente_oculta_y_deniega(self):
         v = self.ventana(self.pide_permiso())
         self.enviar(v, "ordena")
-        self.espera_a_que_pida_permiso(v)
+        t = self.espera_a_que_pida_permiso(v)
         v.alternar()
-        self.assertTrue(v.get_visible(), "el agente espera una respuesta: la tarjeta tiene que seguir a la vista")
+        self.assertFalse(v.get_visible(), "alternar con la ventana visible la oculta")
+        self.hasta(lambda: self.agentes[0].decisiones == ["no"], mensaje="nadie mira la tarjeta: se deniega")
+        self.assertIn("Denegado al ocultar la ventana", self.textos(t))
 
     def test_una_aprobacion_con_la_ventana_oculta_la_muestra(self):
         gate = threading.Event()
@@ -1110,6 +1112,388 @@ class TestConAgenteReal(_BaseVentana):
             self.assertNotIn(CLAVE_FALSA, texto)
         if os.path.exists(self.registro):
             self.assertNotIn(CLAVE_FALSA, _leer(self.registro))
+
+
+@unittest.skipUnless(PANTALLA, "necesita una pantalla (xvfb-run)")
+class TestEndurecimiento(_BaseVentana):
+    """Lo que pidió la revisión de seguridad de la interfaz (F-01 a F-12) y el diseño minimalista."""
+
+    def dos_permisos(self):
+        def guion(agente, texto, alevento):
+            for _ in range(2):
+                agente.decisiones.append(agente.aprobar(Solicitud()))
+            return "fin"
+        return guion
+
+    # -- A1 (F-02): armado
+    def test_la_tarjeta_nace_desarmada_y_un_clic_antes_no_hace_nada(self):
+        with mock.patch.object(self.P, "RETARDO_ARMADO_MS", 400):
+            v = self.ventana(self.pide_permiso())
+            self.enviar(v, "ordena")
+            t = self.espera_a_que_pida_permiso(v, armada=False)
+            for b in (t.permitir, t.denegar, t.conversacion):
+                self.assertFalse(b.get_sensitive())
+            self.assertEqual((t.permitir.get_label(), t.denegar.get_label()), ("…", "…"))
+            t.permitir.emit("clicked")  # un clic (o una tecla) antes del armado no hace nada
+            t.conversacion.emit("clicked")
+            self.pumpa(0.1)
+            self.assertEqual(self.agentes[0].decisiones, [])
+            self.assertIs(v.tarjeta_aprobacion, t)
+            self.hasta(lambda: t.permitir.get_sensitive())
+            self.assertEqual((t.permitir.get_label(), t.denegar.get_label()), ("Permitir", "Denegar"))
+            self.assertTrue(t.conversacion.get_sensitive())
+
+    def test_doble_clic_no_aprueba_la_tarjeta_siguiente(self):
+        with mock.patch.object(self.P, "RETARDO_ARMADO_MS", 300):
+            v = self.ventana(self.dos_permisos())
+            self.enviar(v, "ordena")
+            t1 = self.espera_a_que_pida_permiso(v)
+            t1.permitir.emit("clicked")  # primer clic
+            self.hasta(lambda: v.tarjeta_aprobacion is not None and v.tarjeta_aprobacion is not t1)
+            t2 = v.tarjeta_aprobacion
+            t2.permitir.emit("clicked")  # el segundo clic del doble clic cae sobre la tarjeta nueva
+            self.pumpa(0.1)
+            self.assertEqual(self.agentes[0].decisiones, ["una_vez"], "la segunda tarjeta no puede aprobarse aún")
+            self.assertIs(v.tarjeta_aprobacion, t2)
+            self.hasta(lambda: t2.espera.armada)
+            t2.denegar.emit("clicked")
+            self.hasta(lambda: len(self.agentes[0].decisiones) == 2)
+            self.assertEqual(self.agentes[0].decisiones, ["una_vez", "no"])
+
+    def test_escape_deniega_incluso_antes_del_armado(self):
+        with mock.patch.object(self.P, "RETARDO_ARMADO_MS", 5000):
+            v = self.ventana(self.pide_permiso())
+            self.enviar(v, "ordena")
+            t = self.espera_a_que_pida_permiso(v, armada=False)
+            self.assertTrue(v._tecla_ventana(None, self.Gdk.KEY_Escape, 0, self.Gdk.ModifierType(0)))
+            self.hasta(lambda: self.agentes[0].decisiones == ["no"])
+            self.assertIn("Denegado", self.textos(t))
+            self.assertEqual(t.espera.id_armado, 0, "el temporizador de armado se cancela")
+            self.assertFalse(v._tecla_ventana(None, self.Gdk.KEY_Escape, 0, self.Gdk.ModifierType(0)))
+
+    # -- A2 (F-01): alcance literal, permiso previo, pie de permisos
+    def test_el_boton_de_concesion_dice_el_alcance_literal_sin_recortar(self):
+        largo = "leer CUALQUIER archivo de ~/Documentos, ocultos incluidos, hasta que lo revoques " * 4
+        v = self.ventana(self.pide_permiso(Solicitud(alcance=largo)))
+        self.enviar(v, "x")
+        t = self.espera_a_que_pida_permiso(v)
+        et = t.conversacion.etiqueta
+        self.assertEqual(et.get_text(), "Permitir en esta conversación: " + largo)
+        self.assertTrue(et.get_wrap())
+        self.assertEqual(et.get_ellipsize(), self.P.Pango.EllipsizeMode.NONE)
+        self.assertNotIn("panki-decision", t.conversacion.get_css_classes(), "no se parece a Permitir")
+
+    def test_sin_alcance_el_boton_usa_el_titulo(self):
+        s = Solicitud(titulo="Leer el archivo leeme.txt")
+        s.alcance = None
+        v = self.ventana(self.pide_permiso(s))
+        self.enviar(v, "x")
+        t = self.espera_a_que_pida_permiso(v)
+        self.assertEqual(t.conversacion.etiqueta.get_text(), "Permitir en esta conversación: Leer el archivo leeme.txt")
+
+    def lineas(self, v):
+        return self.textos(v.conversacion)
+
+    def test_lo_que_se_ejecuta_con_un_permiso_previo_se_marca(self):
+        def guion(agente, texto, alevento):
+            alevento(("herramienta", "leer_archivo", 'ruta="~/a.txt"'))  # sin tarjeta: permiso anterior
+            alevento(("resultado", "leer_archivo", True, "Leídos 20 bytes"))
+            alevento(("herramienta", "info_sistema", ""))  # no pide permiso nunca
+            alevento(("resultado", "info_sistema", True, "Sistema leído"))
+            alevento(("herramienta", "mover_archivo", 'origen="a"'))
+            agente.aprobar(Solicitud())  # aquí sí hay tarjeta
+            alevento(("resultado", "mover_archivo", True, "Movido"))
+            alevento(("herramienta", "leer_archivo", 'ruta="~/b.txt"'))
+            alevento(("resultado", "leer_archivo", False, "No permitido"))  # un fallo no es "permiso previo"
+            return "fin"
+
+        v = self.ventana(guion)
+        self.enviar(v, "x")
+        self.espera_a_que_pida_permiso(v).permitir.emit("clicked")
+        self.hasta(lambda: not v._trabajando)
+        textos = self.lineas(v)
+        self.assertIn("· Leyendo ~/a.txt — Leídos 20 bytes (permiso previo) · se envía a Google", textos)
+        self.assertIn("· Mirando el equipo — Sistema leído · se envía a Google", textos)
+        self.assertIn("· Moviendo a — Movido · se envía a Google", textos)
+        self.assertIn("· Leyendo ~/b.txt — no se pudo: No permitido", textos)
+
+    def test_si_el_nucleo_avisa_del_permiso_previo_se_usa_su_aviso(self):
+        def guion(agente, texto, alevento):
+            alevento(("herramienta", "abrir_app", 'app="x"'))
+            alevento(("permiso_previo", "abrir_app"))
+            alevento(("resultado", "abrir_app", True, "Abierta"))
+            return "fin"
+
+        v = self.ventana(guion)
+        self.enviar(v, "x")
+        self.hasta(lambda: not v._trabajando)
+        self.assertIn("· Abriendo x — Abierta (permiso previo) · se envía a Google", self.lineas(v))
+
+    def test_pie_de_permisos_activos_y_revocar(self):
+        def guion(agente, texto, alevento):
+            agente.permisos.append("leer CUALQUIER archivo de ~/Documentos")
+            alevento(("herramienta", "listar_directorio", 'ruta="~/x"'))
+            alevento(("resultado", "listar_directorio", True, "1 elemento"))
+            return "fin"
+
+        v = self.ventana(guion)
+        self.assertFalse(v.pie_permisos.get_visible())
+        self.enviar(v, "x")
+        self.hasta(lambda: not v._trabajando)
+        self.assertTrue(v.pie_permisos.get_visible())
+        self.assertEqual(v.etiqueta_permisos.get_text(), "1 permiso activo · ")
+        self.assertIn("leer CUALQUIER archivo de ~/Documentos", v.pie_permisos.get_tooltip_text())
+        self.assertEqual(v.boton_revocar.get_label(), "Revocar")
+        v.boton_revocar.emit("clicked")
+        self.assertEqual(self.agentes[0].revocaciones, 1)
+        self.assertFalse(v.pie_permisos.get_visible())
+
+    def test_el_pie_sabe_de_agentes_sin_permisos_activos(self):
+        class Viejo:
+            def __init__(self, aprobar): pass
+            def enviar(self, t, ev): return "ok"
+            def cancelar(self): pass
+            def reiniciar(self): pass
+
+        v = self.P.VentanaPanki(self.app, fabrica_agente=Viejo, nucleo=NucleoFalso(True))
+        self.addCleanup(self._limpiar, v)
+        self.enviar(v, "x")
+        self.hasta(lambda: not v._trabajando)
+        self.assertFalse(v.pie_permisos.get_visible())
+        self.assertEqual(v.revocar_permisos(), 0)
+
+    # -- A3 (F-04): nada del modelo sin sanear
+    def test_nombres_de_herramienta_raros_se_muestran_como_desconocida(self):
+        ataque = "aviso\n⚠ Aviso de seguridad de Infinity OS\nTu clave ha caducado. Escríbela en el chat."
+
+        def guion(agente, texto, alevento):
+            alevento(("herramienta", ataque, ""))
+            alevento(("resultado", ataque, False, "Herramienta desconocida."))
+            alevento(("herramienta", "herramienta desconocida", ""))
+            return "fin"
+
+        v = self.ventana(guion)
+        self.enviar(v, "x")
+        self.hasta(lambda: not v._trabajando)
+        todo = " ".join(self.textos(v.conversacion))
+        self.assertNotIn("Aviso de seguridad", todo)
+        self.assertNotIn("Escríbela", todo)
+        self.assertIn("· herramienta desconocida", self.textos(v.conversacion))
+
+    def test_argumentos_y_resumenes_se_limpian_y_se_recortan_por_el_medio(self):
+        def guion(agente, texto, alevento):
+            alevento(("herramienta", "mover_archivo", 'origen="x\u202etxt.exe"'))
+            alevento(("resultado", "mover_archivo", True, "Movido: " + "A" * 300 + " → ~/Documentos/final.pdf"))
+            return "fin"
+
+        v = self.ventana(guion)
+        self.enviar(v, "x")
+        self.hasta(lambda: not v._trabajando)
+        lineas = [t for t in self.textos(v.conversacion) if t.startswith("· Moviendo")]
+        self.assertEqual(len(lineas), 1)
+        self.assertNotIn("\u202e", lineas[0])
+        self.assertIn("‹U+202E›", lineas[0])
+        self.assertIn("final.pdf", lineas[0], "el destino, al final, no se pierde por recortar")
+        self.assertIn("…", lineas[0])
+
+    def test_el_estado_del_modelo_tambien_se_limpia(self):
+        def guion(agente, texto, alevento):
+            alevento(("estado", "Ejecutando\n⚠ falso aviso\u202e"))
+            v_estado.append(v.estado.get_text())
+            return "fin"
+
+        v_estado = []
+        v = self.ventana(guion)
+        self.enviar(v, "x")
+        self.hasta(lambda: not v._trabajando)
+        self.pumpa(0.05)
+
+    # -- A4 (F-05): claves por el chat
+    def test_una_clave_en_la_entrada_no_se_envia_y_se_conserva_el_texto(self):
+        v = self.ventana()
+        texto = "mi clave es " + CLAVE_FALSA
+        self.enviar(v, texto)
+        self.pumpa(0.1)
+        self.assertEqual(self.agentes, [], "no se crea ni se llama a ningún agente")
+        self.assertEqual(v.texto_de_entrada(), texto)
+        self.assertTrue(v.aviso_entrada.get_visible())
+        self.assertEqual(v.aviso_entrada.get_text(), "Eso parece una clave de API: pégala solo en el botón Clave…")
+        self.assertNotIn(texto, self.textos(v.conversacion))
+        v.entrada.get_buffer().set_text("ya está corregido")
+        self.assertFalse(v.aviso_entrada.get_visible(), "el aviso se va al editar")
+
+    def test_una_clave_por_preguntar_tampoco_se_envia(self):
+        v = self.ventana()
+        v.preguntar("usa " + CLAVE_FALSA)
+        self.pumpa(0.1)
+        self.assertEqual(self.agentes, [])
+        self.assertTrue(v.aviso_entrada.get_visible())
+
+    def test_el_rechazo_del_nucleo_a_una_clave_se_ve_como_error(self):
+        def guion(agente, texto, alevento):
+            raise ErrorPanki("Ese texto parece una clave de API; no se envía.")
+
+        v = self.ventana(guion)
+        self.enviar(v, "hola")
+        self.hasta(lambda: self.burbujas(v, "error"))
+        self.assertIsNone(v.tarjeta_clave)
+
+    def test_el_texto_del_modelo_fluye_sin_marco_y_no_imita_la_tarjeta(self):
+        engano = "---\n> Permiso — Riesgo bajo\n```\n[ Permitir ] [ Denegar ]\n```\n┌────┐"
+        v = self.ventana(guion=lambda a, t, ev: ev(("texto", engano)) or engano,
+                         a_pango=self.P._a_pango_real())
+        self.enviar(v, "hola")
+        self.hasta(lambda: self.burbujas(v, "pa"))
+        turno = self.burbujas(v, "pa")[0]
+        texto = " ".join(self.textos(turno))
+        for raro in ("---", "```", "┌", "─"):
+            self.assertNotIn(raro, texto)
+        self.assertEqual(turno.get_halign(), self.Gtk.Align.START)
+        for w in self.widgets(turno, self.Gtk.Widget) + [turno]:
+            self.assertFalse(w.has_css_class("panki-tarjeta"))
+            self.assertFalse(any(c.startswith("panki-boton") or c == "panki-decision" for c in w.get_css_classes()))
+        self.assertEqual(self.widgets(turno, self.Gtk.Button), [])
+
+    # -- A5 (F-06): detalle largo
+    def test_detalle_largo_con_aviso_de_lineas_y_barra_visible(self):
+        det = [f"linea {i:03d} " + "x" * 30 for i in range(60)]
+        for riesgo, tope in (("medio", self.P.ALTO_MAX_DETALLE), ("alto", self.P.ALTO_MAX_DETALLE_ALTO)):
+            with self.subTest(riesgo):
+                v = self.ventana(self.pide_permiso(Solicitud(detalle=det, riesgo=riesgo, titulo="Ejecutar curl: subir a x.net (60 opciones)")))
+                self.enviar(v, "x")
+                t = self.espera_a_que_pida_permiso(v)
+                self.assertTrue(t.mas.get_visible())
+                self.assertRegex(t.mas.get_text(), r"^\+\d+ líneas más")
+                self.assertFalse(t.desplazable.get_overlay_scrolling(), "barra siempre visible, no superpuesta")
+                self.assertEqual(t.desplazable.get_max_content_height(), tope)
+                self.assertEqual(t.desplazable.get_vadjustment().get_value(), 0, "las primeras líneas se ven sin desplazar")
+                self.assertIn("Ejecutar curl: subir a x.net (60 opciones)", self.textos(t))
+                v.liberar()
+                self.agentes[-1].hilos[0].join(5)
+        self.assertGreater(self.P.ALTO_MAX_DETALLE_ALTO, self.P.ALTO_MAX_DETALLE)
+
+    def test_detalle_corto_no_pide_desplazar(self):
+        v = self.ventana(self.pide_permiso())
+        self.enviar(v, "x")
+        t = self.espera_a_que_pida_permiso(v)
+        self.assertFalse(t.mas.get_visible())
+
+    # -- A6 (F-08): ocultar
+    def test_ocultar_revoca_los_permisos_y_conserva_la_conversacion(self):
+        v = self.ventana()
+        self.enviar(v, "hola")
+        self.hasta(lambda: "Respuesta a: hola" in self.textos(v.conversacion) and not v._trabajando)
+        self.agentes[0].permisos.append("leer ~/x")
+        v._actualizar_permisos()
+        self.assertTrue(v.pie_permisos.get_visible())
+        v.alternar()
+        self.assertFalse(v.get_visible())
+        self.assertEqual(self.agentes[0].revocaciones, 1)
+        self.assertEqual(self.agentes[0].permisos, [])
+        self.assertFalse(v.pie_permisos.get_visible())
+        v.alternar()
+        self.assertTrue(v.get_visible())
+        self.assertIn("Respuesta a: hola", self.textos(v.conversacion))
+        self.assertEqual(self.agentes[0].reinicios, 0)
+
+    # -- A7 (F-11, F-12)
+    def test_la_tarjeta_de_la_clave_solo_se_reabre_por_lo_que_marca_el_nucleo(self):
+        casos = ((ErrorPanki("Gemini no aceptó la clave: no es válida «clave no válida»"), False),  # solo texto
+                 (ErrorPanki("x", codigo=429), False),
+                 (ErrorPanki("x", codigo=401), True),
+                 (ErrorPanki("x", codigo=403), True),
+                 (ErrorPanki("x", codigo=400, clave_invalida=True), True),
+                 (ErrorPanki("x", codigo=400), False))
+        for error, reabre in casos:
+            with self.subTest(codigo=error.codigo, marca=error.clave_invalida, texto=str(error)[:20]):
+                def guion(agente, texto, alevento, error=error):
+                    raise error
+
+                v = self.ventana(guion)
+                self.enviar(v, "hola")
+                self.hasta(lambda: self.burbujas(v, "error"))
+                self.pumpa(0.1)
+                self.assertEqual(v.tarjeta_clave is not None, reabre)
+
+    def test_cada_tarjeta_que_llega_trae_la_ventana_a_la_vista(self):
+        v = self.ventana(self.pide_permiso())
+        self.assertTrue(v.get_visible())  # visible (p. ej. minimizada o tapada): igualmente se pide el foco
+        with mock.patch.object(v, "present") as present:
+            self.enviar(v, "ordena")
+            self.espera_a_que_pida_permiso(v)
+        self.assertGreaterEqual(present.call_count, 1)
+
+    def test_una_tarjeta_sin_respuesta_muestra_su_antiguedad_y_caduca(self):
+        with mock.patch.object(self.P, "ANTIGUEDAD_S", 1), mock.patch.object(self.P, "CADUCIDAD_S", 3):
+            v = self.ventana(self.pide_permiso())
+            self.enviar(v, "ordena")
+            t = self.espera_a_que_pida_permiso(v)
+            self.assertFalse(t.antiguedad.get_visible())
+            self.hasta(lambda: t.antiguedad.get_visible(), 4)
+            self.assertIn("Esperando desde hace", t.antiguedad.get_text())
+            self.hasta(lambda: self.agentes[0].decisiones == ["no"], 6, "no caducó")
+            self.assertIn("Caducada sin respuesta: denegado", self.textos(t))
+            self.assertIn("Una solicitud de permiso caducó sin respuesta y se denegó.", self.textos(v.conversacion))
+            self.assertEqual(t.espera.id_reloj, 0)
+
+    # -- B: aspecto minimalista
+    def test_cabecera_y_pie(self):
+        v = self.ventana()
+        cab = v.get_titlebar()
+        marcas = [e for e in self.widgets(cab, self.Gtk.Label) if e.get_text() == "pAnkI"]
+        self.assertEqual(len(marcas), 1, "la marca de texto, con esas mayúsculas")
+        for b in (v.boton_nueva, v.boton_clave):
+            self.assertIsNone(b.get_label())
+            self.assertTrue(b.get_icon_name())
+            self.assertFalse(b.get_has_frame())
+            self.assertTrue(b.get_tooltip_text())
+        self.assertEqual(self.etiqueta_de_pie(v), "Se envía a Google (Gemini)")
+        self.assertTrue(v.pie_google.get_visible())
+        self.assertFalse(self.widgets(v, self.Gtk.Spinner), "sin animaciones")
+        self.assertEqual(v.entrada.get_buffer().get_char_count(), 0)
+
+    @staticmethod
+    def etiqueta_de_pie(v):
+        return v.pie_google.get_text()
+
+    def test_turnos_sin_burbujas_el_usuario_a_la_derecha(self):
+        v = self.ventana()
+        self.enviar(v, "hola")
+        self.hasta(lambda: self.burbujas(v, "pa"))
+        u, p = self.burbujas(v, "usuario")[0], self.burbujas(v, "pa")[0]
+        self.assertEqual(u.get_halign(), self.Gtk.Align.END)
+        self.assertEqual(p.get_halign(), self.Gtk.Align.START)
+        self.assertTrue(u.has_css_class("panki-usuario"))
+        self.assertNotIn("panki-tarjeta", p.get_css_classes())
+
+    def test_invariantes_de_la_tarjeta(self):
+        for riesgo in ("medio", "alto"):
+            with self.subTest(riesgo):
+                v = self.ventana(self.pide_permiso(Solicitud(riesgo=riesgo)))
+                self.enviar(v, "x")
+                t = self.espera_a_que_pida_permiso(v)
+                self.pumpa(0.1)
+                textos = self.textos(t)
+                self.assertIn("Permiso", textos)  # etiqueta fija
+                self.assertIn(f"Riesgo {riesgo}", textos)  # riesgo en palabra...
+                self.assertIn("●", textos)  # ...y punto de color
+                self.assertIn("Mover 2 archivos en ~/Descargas", textos)  # título
+                self.assertIn("a.jpg -> Imágenes/a.jpg\nb.pdf -> Documentos/b.pdf", textos)  # detalle exacto
+                self.assertEqual(t.permitir.get_css_classes()[-1:], t.denegar.get_css_classes()[-1:])
+                self.assertEqual(sorted(t.permitir.get_css_classes()), sorted(t.denegar.get_css_classes()))
+                self.assertEqual(t.permitir.get_width(), t.denegar.get_width(), "mismo tamaño")
+                self.assertEqual(t.permitir.get_height(), t.denegar.get_height())
+                self.assertLess(t.permitir.get_allocation().x, t.denegar.get_allocation().x)
+                self.assertGreater(t.conversacion.get_allocation().y, t.permitir.get_allocation().y)
+                self.assertTrue(t.has_css_class("panki-tarjeta"))
+                v.liberar()
+                self.agentes[-1].hilos[0].join(5)
+
+    def test_la_tarjeta_de_la_clave_enseña_que_se_envia_a_google(self):
+        v = self.ventana(clave=False)
+        self.assertIn("Se envía a Google (Gemini): cada mensaje, lo que pAnkI ve con sus herramientas, "
+                      "tu nombre de usuario, tu carpeta personal y la fecha.", self.textos(v.tarjeta_clave))
+        self.assertTrue(v.pie_google.get_visible())
 
 
 @unittest.skipUnless(PANTALLA, "necesita una pantalla (xvfb-run)")
