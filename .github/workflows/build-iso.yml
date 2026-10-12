@@ -68,7 +68,7 @@ jobs:
             out/*.iso
             out/*.sha256
           compression-level: 0 # la ISO ya está comprimida
-          retention-days: 7
+          retention-days: 1   # las ISO pesan ~1,2 GB: con 7 días se agota la cuota de almacenamiento de GitHub
           if-no-files-found: error
 
       - name: Publicar en Releases (solo con tag)
