@@ -153,6 +153,16 @@ etapa_configurar() {
   rsync -a --chown=root:root "$ROOT/overlay/" "$ROOTFS/"
   aplicar_plantillas "$ROOT/overlay" "$ROOTFS"
 
+  # Clave de Gemini para pAnkI (opcional). Solo si el build recibe GEMINI_API_KEY (en GitHub, el secreto del
+  # repositorio del mismo nombre): se escribe en /etc/skel, así cada usuario nuevo la tiene sin pegarla. La
+  # clave queda DENTRO de la ISO: esa ISO no debe compartirse. Nunca se imprime ni se guarda en el repositorio.
+  if [ -n "${GEMINI_API_KEY:-}" ]; then
+    mkdir -p "$ROOTFS/etc/skel/.config/infinity/panki"
+    chmod 700 "$ROOTFS/etc/skel/.config/infinity" "$ROOTFS/etc/skel/.config/infinity/panki"
+    ( umask 077; printf '%s\n' "$GEMINI_API_KEY" > "$ROOTFS/etc/skel/.config/infinity/panki/clave" )
+    log "pAnkI: clave de Gemini incluida en la ISO (no la compartas)"
+  fi
+
   # Shell (dock + orbe + buscador)
   # Solo se borra el código de la shell: el overlay ya trajo los módulos de juegos a usr/lib/infinity
   rm -rf "$ROOTFS/usr/lib/infinity/infinity_shell"

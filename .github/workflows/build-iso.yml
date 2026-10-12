@@ -42,7 +42,11 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
 
       - name: Construir la ISO
-        run: sudo ./build/build.sh
+        env:
+          # Opcional: secreto del repositorio con tu clave de Gemini; si existe, pAnkI viene ya configurado
+          # y la ISO NO debe compartirse (la lleva dentro).
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: sudo --preserve-env=GEMINI_API_KEY ./build/build.sh
 
       - name: Resumen
         run: |
