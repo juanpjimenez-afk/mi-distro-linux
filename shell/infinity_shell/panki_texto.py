@@ -4,6 +4,9 @@ Este módulo NO usa GTK ni nada fuera de la biblioteca estándar. La ventana de 
 cada respuesta por `a_pango`; las pruebas (shell/tests/test_panki_texto.py) comprueban el resultado con
 Pango real cuando hay GI.
 
+Un texto de más de MAX_FORMATEADO caracteres sale como texto plano escapado, sin formato (y uno de más de
+200 000 se recorta con un aviso): la conversión corre en el hilo principal de la ventana y no puede tardar.
+
 Garantía de seguridad: el texto se ESCAPA entero antes de interpretar nada (& < > " '), así que ningún
 carácter del modelo puede abrir una etiqueta. Después solo se insertan etiquetas propias y siempre en
 parejas: cada marcador (**, *, _) solo genera etiqueta cuando encuentra su cierre; si queda abierto,
@@ -38,6 +41,14 @@ _ENLACE = re.compile(
     r"\[([^\[\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)(?:[ \t]+&quot;.*?&quot;)?\)")
 # Trozo de texto corriente: nada que pueda ser un marcador.
 _CORRIENTE = re.compile(r"[^\\`*_\[!h]+")
+
+# Tope de marcadores sin cerrar a la vez: cada marcador nuevo mira la pila entera, y con «*a *a *a…» sin cierre
+# el coste crecía con el cuadrado del texto. Pasado el tope, el marcador queda como texto.
+_MAX_ABIERTOS = 64
+# Más de este texto no se formatea (la ventana convierte en el hilo principal): sale como texto plano escapado.
+# Y más de _MAX_MOSTRADO se recorta, con aviso al final.
+MAX_FORMATEADO = 20_000
+_MAX_MOSTRADO = 200_000
 
 _ESCAPABLES = "\\`*_[]#"
 _ETIQUETA_DE = {"**": "b", "*": "i", "_": "i"}
@@ -152,7 +163,7 @@ def _inline(s):
                 for mk in sorted(marcadores, key=lambda mk: -abiertos[mk]):
                     if not _cerrar(salida, pila, mk):
                         salida.append(mk)  # nada entre la apertura y el cierre: queda como texto
-            elif marcadores and puede_abrir:
+            elif marcadores and puede_abrir and len(pila) + len(marcadores) <= _MAX_ABIERTOS:
                 for mk in marcadores:
                     salida.append(_Abre(mk))
                     pila.append(len(salida) - 1)
@@ -246,6 +257,10 @@ def a_pango(texto: str) -> str:
         texto = texto.encode("utf-8", "replace").decode("utf-8")
         texto = texto.replace("\r\n", "\n").replace("\r", "\n")
         texto = _CONTROL.sub("", texto)
+        if len(texto) > MAX_FORMATEADO:
+            if len(texto) > _MAX_MOSTRADO:
+                texto = texto[:_MAX_MOSTRADO] + f"\n[…texto recortado: {len(texto) - _MAX_MOSTRADO} caracteres más]"
+            return _texto_plano(texto)
         marcado = _convertir(texto)
         return marcado if _bien_formado(marcado) else _texto_plano(texto)
     except Exception:  # noqa: BLE001 - la ventana no puede romperse por un texto raro

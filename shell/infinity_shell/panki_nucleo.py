@@ -64,6 +64,8 @@ OMITIDO = "[contenido omitido]"
 NOMBRE_DESCONOCIDA = "herramienta desconocida"
 MAX_RESUMEN = 600                 # caracteres del resumen de un resultado (se recorta por el medio)
 MAX_LLAMADAS = 16                 # functionCall que se atienden en un mismo paso (el resto recibe un error)
+MAX_PARTE_MODELO = 30_000         # caracteres de un texto o de unos argumentos del modelo que se guardan en el historial
+MAX_CONTENIDO_MODELO = 100_000    # ... y en total por mensaje del modelo (el resto se recorta, marcado)
 MAX_PROFUNDIDAD = 64              # niveles de anidamiento de la respuesta del modelo y de un resultado de herramienta
 
 _MODELO_OK = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,59}")
@@ -88,6 +90,12 @@ SISTEMA = (
     "Puedes usar Markdown sencillo (negrita, listas, código); sin tablas.\n"
     "- Nunca pidas ni aceptes la clave de API del usuario por el chat; si hace falta, dile que use el botón "
     "Clave… de la ventana."
+)
+
+# Solo se añade cuando `panki.comandos` está desactivado: sin esto el modelo no sabe que existe el ajuste.
+SISTEMA_SIN_COMANDOS = (
+    "\n- Ejecutar comandos de terminal está desactivado: si el usuario lo necesita, puede activarlo en "
+    "Ajustes → pAnkI (IA)."
 )
 
 
@@ -516,7 +524,11 @@ class ClienteGemini:
             mensaje = f"Gemini respondió con una redirección ({codigo}) que no se sigue por seguridad."
         else:
             mensaje = f"Gemini respondió con un error inesperado ({codigo})."
-        if detalle:
+        if detalle and (codigo == 429 or 500 <= codigo <= 599):
+            # Cuota y caídas ya tienen su mensaje en español: el texto del servidor sale en inglés y no añade
+            # nada que el usuario pueda usar; solo queda en el registro.
+            _log.warning("Gemini respondió HTTP %s: %s", codigo, _visible(detalle))
+        elif detalle:
             # Texto del servidor: siempre entre comillas y con su etiqueta, para que no pueda hacerse pasar
             # por un mensaje del sistema. Sin comillas angulares propias que lo cierren antes de tiempo.
             detalle = _visible(detalle).replace("«", "‹").replace("»", "›")
@@ -820,6 +832,8 @@ class Agente:
         for clave in self._claves:
             if clave in texto:
                 texto = texto.replace(clave, "[clave]")
+        if "AIza" in texto:  # también las ajenas (la de un archivo, la que el modelo se invente): misma forma
+            texto = _CLAVE_EN_TEXTO.sub("[clave]", texto)
         return texto
 
     def _sin_claves(self, x):
@@ -927,11 +941,11 @@ class Agente:
                 if not final:
                     self._cerrar_turno(n0, "[Gemini no devolvió texto.]")
                     raise ErrorPanki("Gemini no devolvió texto. Inténtalo de nuevo.")
-                self.historial.append(contenido)
+                self.historial.append(self._acotar_contenido(contenido))
                 if fin == "MAX_TOKENS":
                     final += "\n\n(La respuesta se cortó por su longitud.)"
                 return self._final(alevento, final)
-            self.historial.append(contenido)
+            self.historial.append(self._acotar_contenido(contenido))
             intermedio = "".join(textos).strip()
             if intermedio:
                 self._emitir(alevento, "texto", intermedio)
@@ -943,6 +957,43 @@ class Agente:
                  "sigue hecho; dime si quieres que continúe.")
         self.historial.append({"role": "model", "parts": [{"text": aviso}]})
         return self._final(alevento, aviso)
+
+    @staticmethod
+    def _acotar_contenido(contenido):
+        """Copia del mensaje del modelo con sus textos y argumentos acotados, para guardarla en el historial.
+
+        `_recortar` solo sustituye las functionResponse: sin esto, un texto o unos argumentos enormes del modelo
+        viajarían en cada petición siguiente. Cada parte se recorta a MAX_PARTE_MODELO y el mensaje entero a
+        MAX_CONTENIDO_MODELO, con una marca visible. No se toca nada más (firmas de pensamiento, nombres, ids):
+        la estructura sigue siendo válida para la API. La llamada que se ejecuta usa los argumentos originales.
+        """
+        partes = contenido.get("parts")
+        if not isinstance(partes, list):
+            return contenido
+        restante = MAX_CONTENIDO_MODELO
+        nuevas = []
+        for parte in partes:
+            nueva = parte
+            if isinstance(parte, dict):
+                texto = parte.get("text")
+                llamada = parte.get("functionCall")
+                if isinstance(texto, str):
+                    tope = max(0, min(MAX_PARTE_MODELO, restante))
+                    restante -= min(len(texto), tope)
+                    if len(texto) > tope:
+                        nueva = {**parte, "text": f"{texto[:tope]}[…recortado: {len(texto) - tope} caracteres más]"}
+                elif isinstance(llamada, dict) and "args" in llamada:
+                    try:
+                        tam = len(json.dumps(llamada["args"], ensure_ascii=False))
+                    except (TypeError, ValueError, RecursionError):
+                        tam = MAX_CONTENIDO_MODELO + 1
+                    if tam > min(MAX_PARTE_MODELO, restante):
+                        nueva = {**parte, "functionCall": {**llamada, "args": {
+                            "recortado": f"[argumentos de {tam} caracteres, no guardados]"}}}
+                    else:
+                        restante -= tam
+            nuevas.append(nueva)
+        return {**contenido, "parts": nuevas}
 
     @staticmethod
     def _leer_respuesta(respuesta):
@@ -982,11 +1033,10 @@ class Agente:
                                   "esta no se ejecutó. Pídelas por partes."}
             else:
                 datos = self._una_llamada(llamada, nombre, ofrecidas, alevento)
-            if self._claves:  # lo que ve el modelo no lleva nunca la clave de Gemini
-                try:
-                    datos = self._sin_claves(datos)
-                except RecursionError:
-                    datos = {"error": "La herramienta devolvió datos que no se pueden enviar."}
+            try:  # lo que ve el modelo no lleva nunca una clave de Gemini, sea la del equipo o ajena
+                datos = self._sin_claves(datos)
+            except RecursionError:
+                datos = {"error": "La herramienta devolvió datos que no se pueden enviar."}
             partes.append(_respuesta_de(llamada, nombre or "desconocida", datos))
         return partes
 
@@ -1144,4 +1194,6 @@ def crear_agente(aprobar, valores=None, hogar=None):
     cliente = ClienteGemini(clave, modelo)
     ejecutor = Ejecutor(hogar=hogar, permitir_comandos=comandos)
     sistema = SISTEMA.format(usuario=_usuario(), hogar=hogar, fecha=_fecha())
+    if not comandos:
+        sistema += SISTEMA_SIN_COMANDOS
     return Agente(cliente, ejecutor, aprobar, sistema=sistema)

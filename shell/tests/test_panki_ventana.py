@@ -1062,6 +1062,10 @@ class TestConAgenteReal(_BaseVentana):
         self.espera_a_que_pida_permiso(v).denegar.emit("clicked")
         self.hasta(lambda: "Entendido, no la creo." in self.textos(v.conversacion))
         self.assertFalse(os.path.exists(os.path.join(self.hogar, "Proyectos")))
+        # El texto de la denegación del núcleo real es el que la ventana trata como «Denegado», no como fallo.
+        linea = next(e for e in self.widgets(v.conversacion, self.Gtk.Label) if e.get_text().startswith("· Creando"))
+        self.assertTrue(linea.get_text().endswith("— Denegado"), linea.get_text())
+        self.assertFalse(linea.has_css_class("panki-actividad-fallo"))
 
     def test_parar_en_la_aprobacion_y_despues_se_puede_seguir_hablando(self):
         v = self.ventana_real()
@@ -1494,6 +1498,218 @@ class TestEndurecimiento(_BaseVentana):
         self.assertIn("Se envía a Google (Gemini): cada mensaje, lo que pAnkI ve con sus herramientas, "
                       "tu nombre de usuario, tu carpeta personal y la fecha.", self.textos(v.tarjeta_clave))
         self.assertTrue(v.pie_google.get_visible())
+
+
+@unittest.skipUnless(PANTALLA, "necesita una pantalla (xvfb-run)")
+class TestRevisionBanco(_BaseVentana):
+    """Hallazgos de la revisión con banco de pruebas (agente real, modelo simulado, ventana real bajo Xvfb)."""
+
+    def setUp(self):
+        super().setUp()
+        import gi
+        gi.require_version("Pango", "1.0")
+        from gi.repository import Pango
+        self.Pango = Pango
+
+    def lineas(self, v):
+        return self.textos(v.conversacion)
+
+    def sin_guiones(self, etiqueta):
+        """¿Lleva el atributo de Pango que impide partir palabras con un guion?"""
+        atributos = etiqueta.get_attributes()
+        if atributos is None:
+            return False
+        return any(a.klass.type == self.Pango.AttrType.INSERT_HYPHENS and a.as_int().value == 0
+                   for a in atributos.get_attributes())
+
+    def etiqueta_con(self, v, trozo):
+        return next(e for e in self.widgets(v.conversacion, self.Gtk.Label) if trozo in e.get_text())
+
+    # -- 1: la línea de actividad
+    def test_la_linea_de_actividad_se_ajusta_y_no_se_corta_por_el_medio(self):
+        # Hallazgo 1: «· Mirando ~/Descargas — 21 entrad…en ~/Descargas. · se envía a Google».
+        def guion(agente, texto, alevento):
+            alevento(("herramienta", "listar_directorio", 'ruta="~/Descargas"'))
+            alevento(("resultado", "listar_directorio", True, "21 entradas en ~/Descargas."))
+            return "fin"
+
+        v = self.ventana(guion)
+        self.enviar(v, "x")
+        self.hasta(lambda: not v._trabajando)
+        linea = next(t for t in self.lineas(v) if t.startswith("· Mirando"))
+        self.assertEqual(linea, "· Mirando — 21 entradas en ~/Descargas. (permiso previo) · se envía a Google")
+        self.assertEqual(linea.count("~/Descargas"), 1, "el destino no se repite si el resultado ya lo dice")
+        etiqueta = self.etiqueta_con(v, "· Mirando")
+        self.assertTrue(etiqueta.get_wrap())
+        self.assertEqual(etiqueta.get_ellipsize(), self.Pango.EllipsizeMode.NONE)
+        self.assertFalse(etiqueta.get_single_line_mode())
+
+    def test_una_linea_de_actividad_larga_ocupa_varias_lineas_enteras(self):
+        def guion(agente, texto, alevento):
+            alevento(("herramienta", "mover_archivo", 'origen="a"'))
+            alevento(("resultado", "mover_archivo", True, "Movido: " + " ".join(f"palabra{i}" for i in range(14))))
+            return "fin"
+
+        v = self.ventana(guion)
+        self.enviar(v, "x")
+        self.hasta(lambda: not v._trabajando)
+        etiqueta = self.etiqueta_con(v, "· Moviendo")
+        self.pumpa(0.1)
+        self.assertGreater(etiqueta.get_layout().get_line_count(), 1)
+        self.assertLessEqual(etiqueta.get_width(), v.conversacion.get_width())
+        self.assertIn("palabra13", etiqueta.get_text())
+
+    # -- 4: una denegación no es un fallo
+    def test_una_denegacion_se_ve_como_denegado_y_no_en_rojo(self):
+        def guion(agente, texto, alevento):
+            alevento(("herramienta", "abrir_url", 'url="https://x.net/a"'))
+            alevento(("resultado", "abrir_url", False, self.P.MENSAJE_DENEGADO))
+            alevento(("herramienta", "leer_archivo", 'ruta="~/b.txt"'))
+            alevento(("resultado", "leer_archivo", False, "No existe."))
+            return "fin"
+
+        v = self.ventana(guion)
+        self.enviar(v, "x")
+        self.hasta(lambda: not v._trabajando)
+        denegada = self.etiqueta_con(v, "· Abriendo")
+        self.assertEqual(denegada.get_text(), '· Abriendo url="https://x.net/a" — Denegado'.replace('url="https://x.net/a"', "https://x.net/a"))
+        self.assertFalse(denegada.has_css_class("panki-actividad-fallo"))
+        self.assertNotIn("no se pudo", denegada.get_text())
+        fallo = self.etiqueta_con(v, "· Leyendo")
+        self.assertTrue(fallo.has_css_class("panki-actividad-fallo"), "un fallo de verdad sigue en rojo")
+        self.assertIn("no se pudo: No existe.", fallo.get_text())
+
+    # -- 2: el aviso «+N líneas más» cuenta lo que de verdad queda fuera
+    def test_el_aviso_de_lineas_mas_cuenta_las_lineas_del_detalle_que_no_se_ven_enteras(self):
+        # Como el banco: 21 movimientos (uno con un nombre larguísimo que ocupa varias filas) y dos de cabecera.
+        # El aviso decía «+20» con unas 14 líneas ocultas: contaba filas tras partir y las medía con un layout propio.
+        largo = "Informe trimestral de ventas de la región norte — versión definitiva (copia final) (2).pdf"
+        nombres = [f"captura-{i}.png" for i in range(1, 20)] + [largo, "zeta.txt"]
+        detalle = ["Total: 21 archivos a mover", "Carpetas de destino (9): Imágenes, Documentos, Comprimidos, "
+                   "Hojas de cálculo, Música, Presentaciones, Código, Programas y 1 más"]
+        detalle += [f"{n} → Documentos/{n}" for n in nombres]
+        for riesgo in ("medio", "alto"):
+            with self.subTest(riesgo):
+                v = self.ventana(self.pide_permiso(Solicitud(detalle=detalle, riesgo=riesgo, titulo="Mover 21 archivos")))
+                self.enviar(v, "x")
+                t = self.espera_a_que_pida_permiso(v)
+                self.pumpa(0.2)
+                capa = t.detalle.get_layout()  # el layout con el que GTK pinta el detalle
+                ajuste = t.desplazable.get_vadjustment()
+                visible = ajuste.get_page_size()
+                # el texto empieza tras el relleno del label (mismo por arriba que por abajo): se mide, no se supone
+                relleno = (ajuste.get_upper() - capa.get_extents()[1].height / self.Pango.SCALE) / 2
+                octetos = t.detalle.get_text().encode("utf-8")
+                it, fuera, filas_fuera = capa.get_iter(), set(), 0
+                while True:
+                    ext = it.get_line_extents()[1]
+                    if relleno + (ext.y + ext.height) / self.Pango.SCALE > visible + 0.01:
+                        filas_fuera += 1
+                        fuera.add(octetos[:it.get_line_readonly().start_index].count(b"\n"))
+                    if not it.next_line():
+                        break
+                self.assertGreater(len(fuera), 0)
+                self.assertGreater(filas_fuera, len(fuera), "la línea larga ocupa varias filas: no es lo mismo contarlas")
+                self.assertLess(len(fuera), len(detalle))
+                self.assertTrue(t.mas.get_visible())
+                self.assertEqual(t.mas.get_text(), f"+{len(fuera)} líneas más: desplaza el detalle para verlas")
+                v.liberar()
+                self.agentes[-1].hilos[0].join(5)
+
+    # -- 3: sin guiones que Pango se inventa
+    def test_pango_no_parte_las_palabras_con_guiones_en_burbujas_y_detalles(self):
+        url = "https://www.tienda-ejemplo.com/buscar?q=zapatillas&categoria=deporte&ref=newsletter"
+        v = self.ventana(self.pide_permiso(Solicitud(detalle=[url], riesgo="alto", titulo="Abrir " + url)),
+                         a_pango=lambda t: t)
+        self.enviar(v, "Abre " + url)
+        t = self.espera_a_que_pida_permiso(v)
+        self.assertTrue(self.sin_guiones(self.etiqueta_con(v, "Abre ")), "burbuja del usuario")
+        self.assertTrue(self.sin_guiones(t.detalle), "detalle de la tarjeta")
+        titulo = next(e for e in self.widgets(t, self.Gtk.Label) if e.get_text().startswith("Abrir "))
+        self.assertTrue(self.sin_guiones(titulo), "título de la tarjeta")
+        v._anadir_burbuja("Mira " + url, "pa")
+        v._anadir_burbuja("Falló " + url, "error")
+        for trozo in ("Mira ", "Falló "):
+            self.assertTrue(self.sin_guiones(self.etiqueta_con(v, trozo)), trozo)
+        v.liberar()
+        self.agentes[-1].hilos[0].join(5)
+
+    # -- 6: tras un error
+    def test_tras_un_error_la_burbuja_fallida_se_quita_y_hay_pista_para_reintentar(self):
+        intentos = []
+
+        def guion(agente, texto, alevento):
+            intentos.append(texto)
+            if len(intentos) < 3:
+                raise ErrorPanki("Se superó la cuota de Gemini (error 429).", 429)
+            return "Por fin."
+
+        v = self.ventana(guion)
+        self.enviar(v, "mi pregunta")
+        self.hasta(lambda: self.burbujas(v, "error") and not v._trabajando)
+        self.assertEqual(self.burbujas(v, "usuario"), [], "la pregunta vuelve a la entrada: su burbuja sobra")
+        self.assertEqual(v.texto_de_entrada(), "mi pregunta")
+        self.assertTrue(v.aviso_entrada.get_visible())
+        self.assertEqual(v.aviso_entrada.get_text(), self.P.AVISO_REINTENTAR)
+        # Reintento con Intro (dos fallos seguidos): ni la pregunta ni el error se acumulan.
+        v._enviar_desde_entrada()
+        self.hasta(lambda: len(intentos) == 2 and not v._trabajando)
+        self.assertEqual(self.burbujas(v, "usuario"), [])
+        self.assertEqual(len(self.burbujas(v, "error")), 1)
+        v._enviar_desde_entrada()
+        self.hasta(lambda: "Por fin." in self.lineas(v))
+        self.assertEqual(len(self.burbujas(v, "usuario")), 1)
+        self.assertEqual(self.burbujas(v, "error"), [])
+        self.assertFalse(v.aviso_entrada.get_visible())
+
+    def test_si_hubo_actividad_antes_del_error_la_burbuja_del_usuario_se_queda(self):
+        def guion(agente, texto, alevento):
+            alevento(("herramienta", "info_sistema", ""))
+            alevento(("resultado", "info_sistema", True, "Sistema leído"))
+            raise ErrorPanki("Se superó la cuota de Gemini (error 429).", 429)
+
+        v = self.ventana(guion)
+        self.enviar(v, "pregunta")
+        self.hasta(lambda: self.burbujas(v, "error"))
+        self.assertEqual(len(self.burbujas(v, "usuario")), 1, "lo que ocurrió después de ella es real")
+
+    # -- 7: la tarjeta de la clave de primera vez cabe en la ventana
+    def test_en_la_primera_vez_guardar_y_cancelar_se_ven_dentro_de_la_ventana(self):
+        v = self.ventana(clave=False)
+        self.pumpa(0.4)
+        t = v.tarjeta_clave
+        alto = v.scroll.get_height()
+        self.assertGreater(alto, 200)
+        for boton in (t.guardar, t.campo):
+            limites = boton.compute_bounds(v.scroll)
+            self.assertIsNotNone(limites)
+            self.assertGreaterEqual(limites[1].get_y(), 0, "no queda por encima del área visible")
+            self.assertLessEqual(limites[1].get_y() + limites[1].get_height(), alto,
+                                 "Guardar y el campo no se salen del área visible sin desplazar")
+        # Y el aviso de privacidad sigue entero (se desplaza dentro de su zona, con la barra siempre visible).
+        self.assertFalse(t.zona_aviso.get_overlay_scrolling())
+        for parrafo in self.P.AVISO_PRIVACIDAD:
+            self.assertIn(parrafo, self.textos(t.zona_aviso))
+
+    # -- 8: la entrada desactivada se ve desactivada
+    def test_la_entrada_desactivada_se_atenua(self):
+        puerta = threading.Event()
+
+        def guion(agente, texto, alevento):
+            puerta.wait(5)
+            return "listo"
+
+        v = self.ventana(guion)
+        self.assertFalse(v.caja_entrada.has_css_class("panki-entrada-inactiva"))
+        self.enviar(v, "x")
+        self.hasta(lambda: v._trabajando)
+        self.assertFalse(v.entrada.get_sensitive())
+        self.assertTrue(v.caja_entrada.has_css_class("panki-entrada-inactiva"))
+        puerta.set()
+        self.hasta(lambda: not v._trabajando)
+        self.assertTrue(v.entrada.get_sensitive())
+        self.assertFalse(v.caja_entrada.has_css_class("panki-entrada-inactiva"))
+        self.assertIn("panki-entrada-inactiva", self.P.ESTILO)
 
 
 @unittest.skipUnless(PANTALLA, "necesita una pantalla (xvfb-run)")

@@ -114,6 +114,12 @@ BIENVENIDA = ("Pregúntame por tu equipo, o pídeme que ordene archivos o cambie
               "algo te pido permiso. Lo que veo con mis herramientas se envía a Google.")
 PIE_GOOGLE = "Se envía a Google (Gemini)"
 AVISO_CLAVE_EN_ENTRADA = "Eso parece una clave de API: pégala solo en el botón Clave…"
+AVISO_REINTENTAR = "Pulsa Intro para reintentar."
+# Lo que el núcleo pone en el resultado cuando el usuario no permite una acción (panki_nucleo._una_llamada): no es un
+# fallo, así que la línea de actividad lo muestra como «Denegado», sin rojo. Una prueba lo ata al texto del núcleo.
+MENSAJE_DENEGADO = "No permitido por el usuario."
+ALTO_AVISO_CLAVE = 210  # px del aviso de privacidad de la tarjeta de la clave; lo que sobra se desplaza
+RELLENO_DETALLE = 8  # px de relleno (arriba y abajo) del detalle de una aprobación: ver label.panki-detalle
 
 
 # ------------------------------------------------------------------------------- registro de fallos
@@ -212,6 +218,20 @@ def filtrar_texto_modelo(texto):
         lineas.append(re.sub(r"^\s{0,3}>+\s?", "", linea))
     t = _RESTOS_DE_MARCO.sub("", "\n".join(lineas))
     return re.sub(r"\n{3,}", "\n\n", t).strip()
+
+
+def _sin_guiones(etiqueta):
+    """Que Pango no parta las palabras con un guion que no estaba («depo-rte»): en una URL o una ruta confunde.
+
+    Se puede pedir con un atributo de Pango (1.44 o más); con una versión anterior, no hay nada que desactivar.
+    """
+    try:
+        atributos = etiqueta.get_attributes() or Pango.AttrList()
+        atributos.insert(Pango.attr_insert_hyphens_new(False))
+        etiqueta.set_attributes(atributos)
+    except (AttributeError, TypeError):
+        pass
+    return etiqueta
 
 
 def interpretar_argumentos(args):
@@ -358,6 +378,7 @@ scrolledwindow.panki-caja-entrada {
   border-radius: 0;
   background: none;
 }
+.panki-entrada-inactiva { opacity: 0.35; }
 scrolledwindow.panki-caja-entrada:focus-within { border-bottom-color: #b9a8ff; }
 entry.panki-clave, entry.panki-clave text {
   background: none;
@@ -467,6 +488,8 @@ class VentanaPanki(Gtk.ApplicationWindow):
         self._final_pendiente = False
         self._ultimo_texto = None  # lo último que pAnkI dijo en esta ejecución (para no repetirlo)
         self._ultimo_envio = ""  # lo último que se mandó al agente (vuelve a la entrada si falla)
+        self._turno_envio = None  # la burbuja del usuario de ese envío (se quita si falla y el texto vuelve a la entrada)
+        self._turno_error = None  # la última burbuja de error (se quita al reintentar, para que no se amontonen)
         self._hay_mensajes = False
         self._actividad = []  # [(nombre, etiqueta)] de herramientas aún sin resultado
         self._tarjeta_en_llamada = False  # ¿salió una tarjeta de permiso desde el último evento "herramienta"?
@@ -577,6 +600,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
         caja.add_css_class("panki-caja-entrada")
         caja.set_child(self.entrada)
         superpuesto = Gtk.Overlay(hexpand=True)
+        self.caja_entrada = superpuesto  # se atenúa mientras la entrada está desactivada
         superpuesto.set_child(caja)
         self.marcador = Gtk.Label(label="Escribe a pAnkI…", xalign=0, halign=Gtk.Align.START,
                                   valign=Gtk.Align.START, margin_top=6)
@@ -677,6 +701,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
             etiqueta = Gtk.Label(xalign=1, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True,
                                  max_width_chars=38, justify=Gtk.Justification.RIGHT)
             etiqueta.set_text(texto)  # texto plano: nunca se interpreta como marcado
+            _sin_guiones(etiqueta)
         elif tipo == "error":
             turno.add_css_class("panki-error")
             titulo = Gtk.Label(label="Error", xalign=0, valign=Gtk.Align.START)
@@ -685,6 +710,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
             etiqueta = Gtk.Label(xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True,
                                  max_width_chars=50)
             etiqueta.set_text(texto_visible(texto))
+            _sin_guiones(etiqueta)
         else:
             turno.add_css_class("panki-pa")
             etiqueta = Gtk.Label(xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True,
@@ -695,6 +721,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
                 etiqueta.set_markup(marcado)
             else:
                 etiqueta.set_text(limpio)
+            _sin_guiones(etiqueta)
         turno.append(etiqueta)
         self._anadir(turno)
         return etiqueta
@@ -702,6 +729,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
     def _anadir_nota(self, texto):
         etiqueta = Gtk.Label(label=texto, xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR)
         etiqueta.add_css_class("panki-nota")
+        _sin_guiones(etiqueta)
         self._anadir(etiqueta)
         return etiqueta
 
@@ -720,15 +748,19 @@ class VentanaPanki(Gtk.ApplicationWindow):
         if verbo is None:
             return "· " + DESCONOCIDA
         texto = "· " + verbo
-        if args:
-            texto += " " + self._destino(args)
+        resultado = una_linea(resultado, 110) if resultado else ""
+        destino = self._destino(args) if args else ""
+        if destino and destino not in resultado:  # si el resultado ya nombra el destino, no se repite
+            texto += " " + destino
         if resultado:
-            texto += " — " + una_linea(resultado, 110)
+            texto += " — " + resultado
         return texto + etiquetas
 
     def _nueva_etiqueta_actividad(self, texto):
-        etiqueta = Gtk.Label(label=texto, xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE, single_line_mode=True)
+        # Se ajusta a varias líneas: recortarla por el medio ocultaba justo lo que el usuario quería leer.
+        etiqueta = Gtk.Label(label=texto, xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR)
         etiqueta.add_css_class("panki-actividad")
+        _sin_guiones(etiqueta)
         etiqueta.set_tooltip_text(texto)
         self._anadir(etiqueta)
         return etiqueta
@@ -753,12 +785,19 @@ class VentanaPanki(Gtk.ApplicationWindow):
         etiquetas = ""
         if self._verbo(nombre) is not None and ok:
             etiquetas = (" (permiso previo)" if previo else "") + " · se envía a Google"
-        texto = self._linea_actividad(nombre, args, (resumen if ok else "no se pudo: " + resumen), etiquetas)
+        denegado = not ok and resumen == MENSAJE_DENEGADO  # el usuario dijo que no: es una decisión, no un fallo
+        if ok:
+            resultado = resumen
+        elif denegado:
+            resultado = "Denegado"
+        else:
+            resultado = "no se pudo: " + resumen
+        texto = self._linea_actividad(nombre, args, resultado, etiquetas)
         if self._verbo(nombre) is None:
             texto = "· " + DESCONOCIDA
         etiqueta.set_text(texto)
         etiqueta.set_tooltip_text(texto)
-        if not ok:
+        if not ok and not denegado:
             etiqueta.add_css_class("panki-actividad-fallo")
         self._actualizar_permisos()
 
@@ -770,6 +809,10 @@ class VentanaPanki(Gtk.ApplicationWindow):
         pendiente = self.tarjeta_aprobacion is not None or self.tarjeta_clave is not None
         libre = not self._trabajando and not pendiente and self._nucleo is not None
         self.entrada.set_sensitive(libre)
+        if libre:
+            self.caja_entrada.remove_css_class("panki-entrada-inactiva")
+        else:
+            self.caja_entrada.add_css_class("panki-entrada-inactiva")
         self.boton_parar.set_visible(self._trabajando)
         self.boton_parar.set_sensitive(self._trabajando and not self._cancelado)
         self.boton_nueva.set_sensitive(not self._trabajando)
@@ -883,12 +926,17 @@ class VentanaPanki(Gtk.ApplicationWindow):
             agente = self._agente_listo()
         except Exception as e:
             mensaje, es_clave = self._describir_error(e)
-            self._anadir_burbuja(mensaje, "error")
+            self._quitar_si_es_el_ultimo(self._turno_error)
+            self._turno_error = self._anadir_burbuja(mensaje, "error").get_parent()
             self._devolver_a_la_entrada(texto)
             if es_clave:
                 self._mostrar_tarjeta_clave("rechazada")
+            else:
+                self._avisar_en_la_entrada(AVISO_REINTENTAR)
             return
-        self._anadir_burbuja(texto, "usuario")
+        self._quitar_si_es_el_ultimo(self._turno_error)  # el error de un intento anterior, si no hay nada detrás
+        self._turno_error = None
+        self._turno_envio = self._anadir_burbuja(texto, "usuario").get_parent()
         self._ultimo_envio = texto
         with self._candado:
             self._cancelado = False
@@ -1001,13 +1049,23 @@ class VentanaPanki(Gtk.ApplicationWindow):
             self._anadir_nota("Detenido.")
             self._cola_a_la_entrada()
             return GLib.SOURCE_REMOVE
-        self._anadir_burbuja(mensaje, "error")
+        # El texto vuelve a la entrada: su burbuja sobra (si no, cada reintento la duplicaría). Solo si no se
+        # hizo nada detrás de ella; si ya hubo actividad, esa parte de la conversación es real y se queda.
+        self._quitar_si_es_el_ultimo(self._turno_envio)
+        self._turno_envio = None
+        self._turno_error = self._anadir_burbuja(mensaje, "error").get_parent()
         self._devolver_a_la_entrada(self._ultimo_envio)  # para reintentarlo con Intro
         if es_clave:
             self._mostrar_tarjeta_clave("rechazada")  # la cola espera a que se guarde una clave nueva
         else:
             self._cola_a_la_entrada()
+            self._avisar_en_la_entrada(AVISO_REINTENTAR)  # al final: cambiar el texto de la entrada oculta el aviso
         return GLib.SOURCE_REMOVE
+
+    def _quitar_si_es_el_ultimo(self, turno):
+        """Quita un turno de la conversación si sigue ahí y es lo último (nada se dijo después)."""
+        if turno is not None and turno.get_parent() is self.conversacion and turno.get_next_sibling() is None:
+            self.conversacion.remove(turno)
 
     def _siguiente_en_cola(self):
         if self._cola and not self._trabajando and self.tarjeta_clave is None and not self._cerrada:
@@ -1097,6 +1155,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
         titulo = Gtk.Label(label=texto_visible(getattr(sol, "titulo", "")), xalign=0, wrap=True,
                            wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True)
         titulo.add_css_class("panki-tarjeta-titulo")
+        _sin_guiones(titulo)
         tarjeta.append(titulo)
 
         tarjeta.antiguedad = Gtk.Label(xalign=0)
@@ -1113,6 +1172,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
             detalle = Gtk.Label(label="\n".join(lineas), xalign=0, yalign=0, wrap=True,
                                 wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True)
             detalle.add_css_class("panki-detalle")
+            _sin_guiones(detalle)
             # La barra de desplazamiento se ve siempre que haga falta (no es de las que aparecen al mover el ratón).
             desplazable = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, min_content_height=36,
                                              max_content_height=ALTO_MAX_DETALLE, overlay_scrolling=False)
@@ -1141,6 +1201,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
             conversacion.add_css_class("panki-concesion")
             conversacion.etiqueta = Gtk.Label(label="Permitir en esta conversación: " + texto_visible(alcance),
                                               xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR)
+            _sin_guiones(conversacion.etiqueta)
             conversacion.set_child(conversacion.etiqueta)  # el alcance entero, en las líneas que haga falta
             conversacion.set_halign(Gtk.Align.START)
             conversacion.set_sensitive(False)
@@ -1165,16 +1226,61 @@ class VentanaPanki(Gtk.ApplicationWindow):
         capa = detalle.create_pango_layout(detalle.get_text())
         capa.set_wrap(Pango.WrapMode.WORD_CHAR)
         capa.set_width((ANCHO_DETALLE - 16) * Pango.SCALE)
-        total = max(1, capa.get_line_count())
         alto_texto = capa.get_pixel_size()[1]
         alto = max(36, min(maximo, alto_texto + 18))
         tarjeta.desplazable.set_max_content_height(alto)  # primero el máximo: GTK exige mínimo <= máximo
         tarjeta.desplazable.set_min_content_height(alto)
-        por_linea = alto_texto / total
-        visibles = int((alto - 16) / por_linea) if por_linea > 0 else total
-        if alto_texto + 18 > alto and total > visibles:
-            tarjeta.mas.set_text(f"+{total - visibles} líneas más: desplaza el detalle para verlas")
-            tarjeta.mas.set_visible(True)
+        # El aviso se calcula con el layout REAL del detalle, cuando GTK ya le ha dado su ancho y su alto: el de
+        # arriba solo sirve para dimensionar. Se recalcula si el reparto cambia (la ventana se redimensiona).
+        tarjeta.mas_pendiente = False
+
+        def reparto_cambiado(*_):
+            # Los avisos llegan en pleno reparto, con el detalle aún sin su ancho nuevo: se mide al terminar.
+            if not tarjeta.mas_pendiente:
+                tarjeta.mas_pendiente = True
+                GLib.idle_add(medir)
+
+        def medir():
+            tarjeta.mas_pendiente = False
+            if not self._cerrada:
+                self._actualizar_mas(tarjeta)
+            return GLib.SOURCE_REMOVE
+
+        ajuste = tarjeta.desplazable.get_vadjustment()
+        for propiedad in ("notify::upper", "notify::page-size"):
+            ajuste.connect(propiedad, reparto_cambiado)
+        reparto_cambiado()
+
+    @staticmethod
+    def _actualizar_mas(tarjeta):
+        """«+N líneas más»: cuántas líneas DEL DETALLE (no filas tras el ajuste) no se ven enteras sin desplazar.
+
+        Se mide con el ancho y el alto que GTK ha dado de verdad al detalle. Una línea larga que se parte en
+        varias filas cuenta una vez, y si solo se ve una parte de ella cuenta como fuera.
+        """
+        detalle = tarjeta.detalle
+        visible = tarjeta.desplazable.get_vadjustment().get_page_size()
+        ancho = detalle.get_width() - 2 * RELLENO_DETALLE
+        if ancho <= 0 or visible <= 0:
+            return  # aún sin reparto de espacio
+        texto = detalle.get_text()
+        capa = detalle.create_pango_layout(texto)
+        capa.set_wrap(Pango.WrapMode.WORD_CHAR)
+        capa.set_width(ancho * Pango.SCALE)
+        if detalle.get_attributes() is not None:
+            capa.set_attributes(detalle.get_attributes())
+        octetos = texto.encode("utf-8")
+        fuera = set()
+        it = capa.get_iter()
+        while True:
+            logica = it.get_line_extents()[1]
+            if RELLENO_DETALLE + (logica.y + logica.height) / Pango.SCALE > visible + 0.01:
+                fuera.add(octetos[:it.get_line_readonly().start_index].count(b"\n"))
+            if not it.next_line():
+                break
+        if fuera:
+            tarjeta.mas.set_text(f"+{len(fuera)} líneas más: desplaza el detalle para verlas")
+        tarjeta.mas.set_visible(bool(fuera))
 
     @staticmethod
     def _boton(texto, clase):
@@ -1377,11 +1483,23 @@ class VentanaPanki(Gtk.ApplicationWindow):
         titulo = Gtk.Label(label=titulos.get(motivo, titulos["cambiar"]), xalign=0, wrap=True)
         titulo.add_css_class("panki-tarjeta-titulo")
         tarjeta.append(titulo)
-        for parrafo in (AVISO_PRIVACIDAD if motivo == "primera" else AVISO_CORTO):
+        primera = motivo == "primera"
+        # El aviso de la primera vez es largo: va en su propia zona desplazable (con la barra siempre visible) para
+        # que el campo y los botones Guardar / Cancelar no se salgan de la ventana. Un Gtk.ScrolledWindow dentro de
+        # otro recibe solo su alto mínimo, así que se fija.
+        avisos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8) if primera else tarjeta
+        for parrafo in (AVISO_PRIVACIDAD if primera else AVISO_CORTO):
             etiqueta = Gtk.Label(label=parrafo, xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
                                  selectable=True)
             etiqueta.add_css_class("panki-tarjeta-texto")
-            tarjeta.append(etiqueta)
+            avisos.append(etiqueta)
+        if primera:
+            zona = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, overlay_scrolling=False,
+                                      min_content_height=ALTO_AVISO_CLAVE, max_content_height=ALTO_AVISO_CLAVE)
+            zona.add_css_class("panki-desplazable")
+            zona.set_child(avisos)
+            tarjeta.append(zona)
+            tarjeta.zona_aviso = zona
         if os.environ.get("GEMINI_API_KEY"):
             nota = Gtk.Label(label="Ahora mismo se usa la clave de la variable GEMINI_API_KEY, que tiene "
                                    "prioridad sobre la que guardes aquí.", xalign=0, wrap=True)

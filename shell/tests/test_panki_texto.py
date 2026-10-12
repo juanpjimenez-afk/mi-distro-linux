@@ -233,6 +233,35 @@ class TestEntradasRaras(unittest.TestCase):
         salida = a_pango("**a** " * 20000 + "`" * 3001 + "[" * 3001)
         self.assertTrue(xml_valido(salida))
 
+    def test_marcadores_sin_cerrar_no_cuestan_el_cuadrado_del_texto(self):
+        # Hallazgo 10: «*a » * N tardaba 0,18 s con 10 000 caracteres y 2,8 s con 40 000 (se llama en el hilo
+        # principal de la ventana). Con el tope de abiertos es lineal: aquí, tope de tiempo holgado.
+        import time
+        for unidad in ("*a ", "_a ", "**a ", "*a **b ", "a* " * 3 + "*b "):
+            with self.subTest(unidad=unidad):
+                texto = unidad * (19_000 // len(unidad))  # justo por debajo del límite de formateo
+                t = time.perf_counter()
+                salida = a_pango(texto)
+                self.assertLess(time.perf_counter() - t, 0.25, "debería tardar milésimas, no segundos")
+                self.assertTrue(xml_valido(salida))
+
+    def test_un_texto_enorme_sale_como_texto_plano_escapado_y_rapido(self):
+        import time
+        from infinity_shell import panki_texto
+        texto = "*a <b> " * 40000  # 280 000 caracteres
+        t = time.perf_counter()
+        salida = a_pango(texto)
+        self.assertLess(time.perf_counter() - t, 0.5)
+        self.assertTrue(xml_valido(salida))
+        self.assertNotIn("<i>", salida, "sin formato por encima del límite")
+        self.assertIn("&lt;b&gt;", salida)
+        self.assertIn("texto recortado", salida, "por encima de lo que se muestra, se avisa del recorte")
+        corto = "**negrita** " * (panki_texto.MAX_FORMATEADO // 12 - 5)
+        self.assertIn("<b>negrita</b>", a_pango(corto), "por debajo del límite se formatea como siempre")
+
+    def test_unos_pocos_marcadores_abiertos_siguen_cerrando_bien(self):
+        self.assertEqual(a_pango("*a **b _c_ d** e*"), "<i>a <b>b <i>c</i> d</b> e</i>")
+
 
 class TestAleatorio(unittest.TestCase):
     """Muchas entradas hechas de marcadores: el resultado es siempre XML/Pango válido."""

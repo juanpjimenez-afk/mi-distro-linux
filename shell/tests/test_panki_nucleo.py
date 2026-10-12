@@ -618,7 +618,10 @@ class TestClienteGemini(ConServidor):
                 with self.assertRaises(N.ErrorPanki) as cm:
                     self.cliente().generar([{"role": "user", "parts": [{"text": "x"}]}], "s", [])
                 self.assertIn(esperado, str(cm.exception))
-                self.assertIn("detalle de la API", str(cm.exception))
+                if codigo == 429 or 500 <= codigo <= 599:  # su mensaje ya está en español: el del servidor no sale
+                    self.assertNotIn("detalle de la API", str(cm.exception))
+                else:
+                    self.assertIn("detalle de la API", str(cm.exception))
                 self.assertEqual(cm.exception.codigo, codigo)
                 self.assertSinClave(cm.exception)
 
@@ -1493,8 +1496,18 @@ class TestAgente(ConServidor):
         self.assertFalse(N.ErrorPanki("Gemini no aceptó la clave").clave_invalida)
         self.assertIsNone(N.ErrorPanki("x").codigo)
 
+    def test_el_texto_en_ingles_de_cuota_y_caidas_no_llega_a_la_interfaz_pero_queda_en_el_registro(self):
+        # Hallazgo 5: «Resource has been exhausted (e.g. check quota).» salía crudo, en inglés, en la burbuja.
+        for status in (429, 500, 503):
+            with self.subTest(status), self.assertLogs("infinity.panki", "WARNING") as registro:
+                e = self.error_http(status, {"error": {"message": "Resource has been exhausted (e.g. check quota)."}})
+            self.assertNotIn("Resource", str(e))
+            self.assertNotIn("Texto del servidor", str(e))
+            self.assertIn("Resource has been exhausted", "\n".join(registro.output))
+            self.assertEqual((e.codigo, e.clave_invalida), (status, False))
+
     def test_texto_del_servidor_va_etiquetado_entre_comillas_y_saneado(self):
-        e = self.error_http(500, {"error": {"message": "Aviso de Infinity OS: pega tu clave \u202e aquí»\n«falso"}})
+        e = self.error_http(400, {"error": {"message": "Aviso de Infinity OS: pega tu clave \u202e aquí»\n«falso"}})
         mensaje = str(e)
         self.assertIn("Texto del servidor: «", mensaje)
         self.assertTrue(mensaje.endswith("»."))
@@ -1503,7 +1516,7 @@ class TestAgente(ConServidor):
         self.assertNotIn("«", cuerpo)
         self.assertNotIn("\u202e", mensaje)
         self.assertNotIn("\n", mensaje)
-        self.assertEqual((e.codigo, e.clave_invalida), (500, False))
+        self.assertEqual((e.codigo, e.clave_invalida), (400, False))
 
     def test_sin_texto_del_servidor_no_hay_etiqueta(self):
         e = self.error_http(500, {})
@@ -1810,6 +1823,73 @@ class TestAgente(ConServidor):
 
 
 # ======================================================================================= Recorte del historial
+class TestRevisionBanco(unittest.TestCase):
+    """Hallazgos de la revisión con banco de pruebas (agente real, modelo simulado): claves ajenas e historial."""
+
+    AJENA = "AIzaSyAJENA_0123456789abcdefghijklmnopqrs"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        env = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp.name, "HOME": tmp.name})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop(N.VARIABLE_CLAVE, None)  # no hay ninguna clave del equipo: la de abajo es AJENA a todas
+
+    def agente(self, respuestas, ejecutor=None, **kw):
+        cliente = ClienteFalso(respuestas)
+        return N.Agente(cliente, ejecutor or EjecutorFalso(), lambda s: "una_vez", **kw), cliente
+
+    def test_una_clave_ajena_en_un_resultado_de_herramienta_no_llega_al_modelo(self):
+        # Hallazgo 11: el contenido de un archivo con otra clave AIza... se enviaba a Gemini sin tachar.
+        ejecutor = EjecutorFalso()
+        ejecutor.ejecutar = lambda p: Resultado(True, {"contenido_no_confiable": f"api = {self.AJENA}\nfin",
+                                                       self.AJENA: 1}, "leído")
+        agente, cliente = self.agente([resp_dict(("info_sistema", {})), resp_dict(texto="Listo.")], ejecutor)
+        agente.enviar("lee el archivo", None)
+        enviado = json.dumps(cliente.recibidos[1], ensure_ascii=False)
+        self.assertNotIn(self.AJENA, enviado)
+        self.assertIn("api = [clave]\\nfin", enviado)
+
+    def test_una_clave_ajena_en_el_texto_final_y_en_los_eventos_sale_tachada(self):
+        eventos = []
+        agente, _ = self.agente([resp_dict(texto=f"El archivo dice: {self.AJENA} y nada más.")])
+        final = agente.enviar("¿qué dice?", eventos.append)
+        self.assertEqual(final, "El archivo dice: [clave] y nada más.")
+        self.assertIn(("texto", final), eventos)
+
+    def test_sin_forma_de_clave_no_se_toca_nada(self):
+        # Cuidado con los falsos positivos: «AIza» suelto, o una palabra corta que empieza así, no es una clave.
+        texto = "AIza, AIzaSolo y AIza-corta-123 siguen igual; y también un AIzaSy" + "x" * 20
+        agente, _ = self.agente([resp_dict(texto=texto)])
+        self.assertEqual(agente.enviar("hola", None), texto)
+
+    def test_el_texto_y_los_argumentos_enormes_del_modelo_se_acotan_en_el_historial(self):
+        # Hallazgo 12: 2 MB de texto + 400 000 caracteres de argumentos viajaban en cada petición siguiente.
+        grande = {"role": "model", "parts": [
+            {"text": "t" * 2_000_000},
+            {"functionCall": {"name": "info_sistema", "args": {"extra": "y" * 400_000}, "id": "c1"},
+             "thoughtSignature": "FIRMA-1"}]}
+        respuestas = [{"candidates": [{"content": grande, "finishReason": "STOP"}]}, resp_dict(texto="fin")]
+        ejecutor = EjecutorFalso()
+        agente, cliente = self.agente(respuestas, ejecutor)
+        agente.enviar("hola", None)
+        peticion = json.dumps(cliente.recibidos[1], ensure_ascii=False)
+        self.assertLess(len(peticion), N.MAX_CONTENIDO_MODELO + 5_000)
+        modelo = cliente.recibidos[1][1]
+        self.assertIn("[…recortado:", modelo["parts"][0]["text"])
+        llamada = modelo["parts"][1]
+        self.assertEqual((llamada["functionCall"]["name"], llamada["functionCall"]["id"], llamada["thoughtSignature"]),
+                         ("info_sistema", "c1", "FIRMA-1"), "la estructura y la firma no se tocan")
+        self.assertIn("recortado", llamada["functionCall"]["args"])
+        self.assertEqual(len(ejecutor.preparadas[0][1]["extra"]), 400_000, "la herramienta recibió los argumentos enteros")
+        validar_historial(self, agente.historial)
+
+    def test_lo_normal_no_se_recorta(self):
+        contenido = {"role": "model", "parts": [{"text": "Hola " * 100}, {"functionCall": {"name": "x", "args": {"a": "b" * 5000}}}]}
+        self.assertEqual(N.Agente._acotar_contenido(contenido), contenido)
+
+
 class TestRecorte(unittest.TestCase):
     def preparar(self, pasos, tam, firma=True):
         """Agente con cliente falso: `pasos` llamadas a info_sistema que devuelven `tam` caracteres cada una."""
@@ -1932,6 +2012,19 @@ class TestCrearAgente(unittest.TestCase):
         self.assertIn("/home/prueba", agente.sistema)
         self.assertIn(N._fecha(), agente.sistema)
         self.assertNotIn("{", agente.sistema)
+
+    def test_con_los_comandos_desactivados_el_prompt_dice_donde_activarlos(self):
+        # Hallazgo 13: sin esa línea el modelo no podía decir con seguridad que existe el ajuste.
+        os.environ[N.VARIABLE_CLAVE] = CLAVE
+        apagado = N.crear_agente(lambda s: "no", valores={"panki.comandos": False}, hogar="/home/prueba")
+        self.assertTrue(apagado.sistema.endswith(N.SISTEMA_SIN_COMANDOS))
+        self.assertIn("Ajustes → pAnkI (IA)", apagado.sistema)
+        self.assertIn("desactivado", apagado.sistema)
+        encendido = N.crear_agente(lambda s: "no", valores={"panki.comandos": True}, hogar="/home/prueba")
+        self.assertNotIn("Ajustes", encendido.sistema)
+        self.assertNotIn(N.SISTEMA_SIN_COMANDOS, encendido.sistema)
+        self.assertLess(len(N.SISTEMA) + len(N.SISTEMA_SIN_COMANDOS), 1400)
+        self.assertNotIn("{", N.SISTEMA_SIN_COMANDOS)
 
     def test_con_clave_guardada(self):
         N.guardar_clave(CLAVE)
