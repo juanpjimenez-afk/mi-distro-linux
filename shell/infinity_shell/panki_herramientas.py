@@ -450,12 +450,16 @@ def _categoria(nombre):
 #      También entran aquí los que instalan o ejecutan código ajeno o cambian el sistema: gestores de paquetes
 #      (apt, dpkg, snap, flatpak, pip, npm, cargo, go, gem...), git y gh (los hooks y alias de un repositorio
 #      ejecutan lo que quieran), install, ln, mount/umount, chmod/chown/chgrp y crontab/at.
-#   3. Casos con argumentos peligrosos: rm/rmdir/unlink (pAnkI no borra), find con -exec/-delete..., tar con
-#      --to-command / --use-compress-program, loginctl con apagar o reiniciar, y systemctl con cualquier
-#      subcomando que no sea de solo lectura (status, is-active, is-enabled, list-units, list-unit-files, show).
+#   3. Casos con argumentos peligrosos: rm/rmdir/unlink/fallocate (pAnkI no borra) y kill/pkill/killall (no mata
+#      procesos), find con -exec/-delete..., tar/sort/zip/wget/rg con las opciones que ejecutan programas (se
+#      comparan abreviaturas y letras sueltas: --to-comm, -cIsh), sed solo con órdenes sencillas (sin e, w, r, -i, -f:
+#      ver _sed_revisar), y los programas con subcomandos (systemctl, hyprctl, gsettings, dconf, gio, loginctl)
+#      solo para consultar (_SUBCOMANDOS_LECTURA).
 #   4. Los argumentos que son rutas: no pueden apuntar a la lista negra de lectura (cat ~/.ssh/id_rsa), y los
 #      de los programas que ESCRIBEN (cp, mv, tee, touch, mkdir, sed, curl, tar...) tampoco a la lista de
-#      ESCRITURA PROHIBIDA (~/.bashrc, ~/.config/autostart...), ni su carpeta de trabajo. Una ruta absoluta o
+#      ESCRITURA PROHIBIDA (~/.bashrc, ~/.config/autostart...), ni su carpeta de trabajo. Se comprueba la ruta
+#      RESUELTA (un enlace simbólico del hogar no saca la lectura fuera) y que no sea una copia de un secreto
+#      (hard link a ~/.ssh, o contenido con firma de clave privada). Una ruta absoluta o
 #      con ~ fuera de $HOME solo vale para lecturas inocuas (/usr, /opt, /sys/class, /proc/cpuinfo,
 #      /proc/meminfo, /etc/os-release, /etc/lsb-release). No se analizan los recorridos recursivos de
 #      programas que solo muestran nombres: es una limitación conocida.
