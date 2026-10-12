@@ -118,7 +118,7 @@ AVISO_REINTENTAR = "Pulsa Intro para reintentar."
 # Lo que el núcleo pone en el resultado cuando el usuario no permite una acción (panki_nucleo._una_llamada): no es un
 # fallo, así que la línea de actividad lo muestra como «Denegado», sin rojo. Una prueba lo ata al texto del núcleo.
 MENSAJE_DENEGADO = "No permitido por el usuario."
-ALTO_AVISO_CLAVE = 210  # px del aviso de privacidad de la tarjeta de la clave; lo que sobra se desplaza
+ALTO_AVISO_CLAVE = 270  # px del aviso de privacidad de la tarjeta de la clave; lo que sobra se desplaza
 RELLENO_DETALLE = 8  # px de relleno (arriba y abajo) del detalle de una aprobación: ver label.panki-detalle
 
 
@@ -1260,7 +1260,7 @@ class VentanaPanki(Gtk.ApplicationWindow):
         """
         detalle = tarjeta.detalle
         visible = tarjeta.desplazable.get_vadjustment().get_page_size()
-        ancho = detalle.get_width() - 2 * RELLENO_DETALLE
+        ancho = detalle.get_width()  # el ancho del contenido: GTK no cuenta en él el relleno del label
         if ancho <= 0 or visible <= 0:
             return  # aún sin reparto de espacio
         texto = detalle.get_text()

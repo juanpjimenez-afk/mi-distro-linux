@@ -1588,6 +1588,9 @@ class TestRevisionBanco(_BaseVentana):
         detalle = ["Total: 21 archivos a mover", "Carpetas de destino (9): Imágenes, Documentos, Comprimidos, "
                    "Hojas de cálculo, Música, Presentaciones, Código, Programas y 1 más"]
         detalle += [f"{n} → Documentos/{n}" for n in nombres]
+        # Líneas justo en el borde del ancho (45 a 52 caracteres): si se mide con un ancho que no es el real, se parten
+        # distinto y la cuenta cambia.
+        detalle[2:2] = [f"{chr(97 + k)}" * (45 + k) for k in range(8)]
         for riesgo in ("medio", "alto"):
             with self.subTest(riesgo):
                 v = self.ventana(self.pide_permiso(Solicitud(detalle=detalle, riesgo=riesgo, titulo="Mover 21 archivos")))
