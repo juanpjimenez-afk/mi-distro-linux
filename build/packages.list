@@ -87,6 +87,11 @@ gir1.2-gtk-4.0
 gir1.2-gtk4layershell-1.0
 libgtk4-layer-shell0
 librsvg2-common
+# WebKitGTK 6.0 (namespace GI "WebKit", NO "WebKit2": ese es el de GTK3/4.1) para pAnkI (panki_app.py):
+# resolute ya lo trae porque lo exige epiphany-browser (gir1.2-webkit-6.0 depende de libwebkitgtk-6.0-4;
+# se lista aparte porque epiphany no exige el paquete de introspección, solo la librería).
+gir1.2-webkit-6.0
+libwebkitgtk-6.0-4
 webp-pixbuf-loader         # leer imágenes .webp (Epiphany guarda así): Ajustes → «Añadir imagen…» (GdkPixbuf)
 gsettings-desktop-schemas
 dconf-gsettings-backend

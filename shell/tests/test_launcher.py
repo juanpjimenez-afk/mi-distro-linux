@@ -69,7 +69,7 @@ class TestPrefijoPreguntar(unittest.TestCase):
 
     def test_textos_de_los_resultados(self):
         self.assertIn("Preguntar a pAnkI: {pregunta}", self.fuente)
-        self.assertIn("Se envía a Google (Gemini)", self.fuente)
+        self.assertIn("pAnkI · internet solo en Modo Profundo", self.fuente)
         self.assertIn('"Abrir pAnkI"', self.fuente)
         self.assertEqual(self.fuente.count('"dialog-question"'), 2)
 
@@ -231,7 +231,7 @@ class TestBusquedaDiferida(unittest.TestCase):
         res = self.buscar("? qué hora es en Tokio")
         self.assertEqual(len(res), 1, "el prefijo manda: ni apps, ni calculadora, ni búsqueda web")
         self.assertEqual(res[0].titulo, "Preguntar a pAnkI: qué hora es en Tokio")
-        self.assertEqual(res[0].subtitulo, "Se envía a Google (Gemini)")
+        self.assertEqual(res[0].subtitulo, "pAnkI · internet solo en Modo Profundo")
         self.assertEqual(res[0].icono, "dialog-question")
         self.assertFalse(res[0].confirmar)
 

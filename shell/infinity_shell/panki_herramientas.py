@@ -1,3 +1,5 @@
+# Motor anterior de pAnkI (Gemini, con sus herramientas sobre el sistema): ya no se usa (ver
+# docs/panki-web-diseno.md); se conserva por si se retoma.
 """Herramientas de pAnkI, el agente virtual de Infinity OS (sin GTK, solo biblioteca estándar).
 
 El diseño completo está en docs/panki-diseno.md. Este módulo es la parte que TOCA el sistema, así que

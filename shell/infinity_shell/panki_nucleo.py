@@ -1,3 +1,5 @@
+# Motor anterior de pAnkI (Gemini, con sus herramientas sobre el sistema): ya no se usa (ver
+# docs/panki-web-diseno.md); se conserva por si se retoma.
 """Núcleo de pAnkI, el agente virtual de Infinity OS: clave, cliente de Gemini y bucle del agente.
 
 Este módulo NO usa GTK. Solo biblioteca estándar (urllib, json...). El contrato con la ventana

@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
 Name=pAnkI
-Comment=Agente virtual de Infinity OS
+Comment=Asistente local de tareas, agenda y notas
 Exec=infinity-panki
 Icon=/usr/share/infinity/panki.png
 Terminal=false
 Categories=Utility;
-Keywords=panki;ia;asistente;agente;gemini;chat;
+Keywords=panki;ia;asistente;agente;tareas;agenda;notas;chat;
 StartupWMClass=org.infinity.Panki

@@ -1,4 +1,12 @@
-"""La ventana de chat de pAnkI (panki_app.py) y lo que la rodea: lanzador, menú, atajo y regla de Hyprland.
+"""PRUEBAS DEL MOTOR RETIRADO (Gemini) de pAnkI: panki_app.py ya no lo usa (ver docs/panki-web-diseno.md
+y panki_app.py). Este módulo entero se salta (abajo); se conserva por si ese motor se retoma. Las
+pruebas del motor actual (la página web alojada en WebKitGTK) están en test_panki_app_web.py; lo
+reutilizable de aquí (el análisis de --preguntar y las de integración sin GTK) se copió allí.
+
+Lo que sigue es el docstring y las pruebas ORIGINALES, sin tocar, tal como probaban la ventana de chat
+nativa (tarjetas de aprobación, burbujas con Markdown, hilos del agente) que panki_app.py tenía antes:
+
+La ventana de chat de pAnkI (panki_app.py) y lo que la rodea: lanzador, menú, atajo y regla de Hyprland.
 
 Las pruebas de la ventana necesitan GTK 4 y una pantalla (xvfb-run); se saltan si no están, igual que
 test_launcher.py y test_contrasena_ventana.py. Usan un agente y un núcleo FALSOS: no hay red ni clave
@@ -20,6 +28,9 @@ import threading
 import time
 import unittest
 from unittest import mock
+
+raise unittest.SkipTest("Motor Gemini retirado de panki_app.py; ver test_panki_app_web.py para el motor web "
+                        "actual. Este módulo se conserva por si el motor Gemini se retoma.")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SHELL = os.path.join(HERE, "..")

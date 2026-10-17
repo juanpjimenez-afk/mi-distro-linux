@@ -1,3 +1,5 @@
+# Motor anterior de pAnkI (Gemini, con sus herramientas sobre el sistema): ya no se usa (ver
+# docs/panki-web-diseno.md); se conserva por si se retoma.
 """Markdown de Gemini a marcado Pango seguro (para Gtk.Label con use_markup).
 
 Este módulo NO usa GTK ni nada fuera de la biblioteca estándar. La ventana de pAnkI (panki_app.py) pasa

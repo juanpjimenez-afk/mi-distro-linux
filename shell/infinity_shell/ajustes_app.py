@@ -457,10 +457,10 @@ class VentanaAjustes(Gtk.ApplicationWindow):
 
     @staticmethod
     def _nota_panki(caja):
-        """Lo que hay que saber de pAnkI antes de tocar sus ajustes: dónde va la clave y a dónde se envía todo."""
-        nota = Gtk.Label(label="La clave de Gemini no se guarda aquí: se pega en la ventana de pAnkI "
-                               "(Super + N), con el botón «Clave…». Los mensajes que escribas a pAnkI y lo que "
-                               "vea con sus herramientas se envían a Google (Gemini).",
+        """Lo que hay que saber de pAnkI antes de tocar sus ajustes: qué es ahora y qué privacidad tiene."""
+        nota = Gtk.Label(label="pAnkI es una app local de tareas, agenda y notas (Super + N); no necesita "
+                               "clave ni cuenta. En Modo Rápido no sale nada de tu equipo; en Modo Profundo "
+                               "puede consultar algún servicio público gratuito para preguntas generales.",
                          xalign=0, wrap=True)
         nota.add_css_class("dim-label")
         nota.set_margin_bottom(10)

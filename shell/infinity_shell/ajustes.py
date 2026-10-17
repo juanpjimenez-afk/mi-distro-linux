@@ -172,6 +172,9 @@ SCHEMA = [
     _a("panki.burbuja", "panki", "Mostrar la burbuja de pAnkI en el escritorio",
        "La esfera de cristal de la derecha: al pulsarla se abre o se cierra la ventana de pAnkI.",
        "bool", True, "shell"),
+    _a("panki.nombre", "panki", "Nombre de tu asistente",
+       "Cómo se llama y se presenta en su ventana. Puedes cambiarlo también desde dentro de la propia app.",
+       "texto", "pAnkI", "conversacion", maximo=24),
 ]
 
 DEFECTOS = {a.id: a.defecto for a in SCHEMA}

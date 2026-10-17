@@ -169,6 +169,9 @@ etapa_configurar() {
   mkdir -p "$ROOTFS/usr/lib/infinity" "$ROOTFS/usr/share/infinity"
   rsync -a --exclude '__pycache__' --exclude 'tests' "$ROOT/shell/infinity_shell" "$ROOTFS/usr/lib/infinity/"
   install -m755 "$ROOT/shell/infinity-shell" "$ROOTFS/usr/bin/infinity-shell"
+  # Página web de pAnkI (el motor: tareas, agenda, notas y chat), que panki_app.py aloja en una WebKit.WebView
+  mkdir -p "$ROOTFS/usr/share/infinity/panki"
+  install -m644 "$ROOT/shell/infinity_shell/panki_web/app.html" "$ROOTFS/usr/share/infinity/panki/app.html"
   # Marca
   install -m644 "$ROOT/branding/logo-white.svg" "$ROOT/branding/logo.svg" "$ROOT/branding/wallpaper.jpg" \
     "$ROOT/branding/logo-white-256.png" "$ROOT/branding/gear-white.png" \

@@ -169,43 +169,37 @@ zona horaria de **Santiago** (con cambio de horario de verano). Para otro país 
 
 ### pAnkI, el agente virtual
 
-pAnkI es un asistente con el que se habla para **responder dudas, organizar carpetas y manejar el escritorio**.
-Vive en una **burbuja de cristal** en el borde derecho de la pantalla (hermana del logo ∞), y se abre también con
-`Super + N`, escribiendo `? tu pregunta` en el buscador o desde el menú de aplicaciones. Nace de la app
-*NovaOS AI*, hecha en Google AI Studio.
+pAnkI es un asistente local de **tareas, agenda y notas**, con un chat por reglas en español (sin
+modelo de lenguaje: entiende fechas, horas y categorías escritas en lenguaje natural) y, en su «Modo
+Profundo», consultas puntuales a un puñado de APIs públicas gratuitas para preguntas generales de la
+vida diaria (clima, divisas, traducción...). Vive en una **burbuja de cristal** en el borde derecho de
+la pantalla (hermana del logo ∞), y se abre también con `Super + N`, escribiendo `? tu pregunta` en el
+buscador o desde el menú de aplicaciones.
 
-**Qué necesita:** una clave de Gemini **tuya** (se pega la primera vez en su ventana) y conexión a internet. La ISO
-no lleva ninguna clave. La clave se guarda en `~/.config/infinity/panki/clave` (solo legible por ti) y no va en
-`ajustes.json`, ni se exporta, ni se escribe en ningún registro.
+**No necesita clave ni cuenta.** Es una app web de un solo archivo que corre entera en tu navegador
+(alojada en una ventana con WebKitGTK); sus datos (tareas, notas, agenda) viven en el almacenamiento de
+esa ventana, no se suben a ningún servidor propio, y sobreviven a cerrarla y volver a abrirla.
 
-**Qué se envía a Google:** todo lo que escribes, tu nombre de usuario del sistema y la ruta de tu carpeta personal
-(van en las instrucciones de pAnkI), y lo que pAnkI llega a ver con sus herramientas (nombres de archivos de una
-carpeta, si se lo permites; contenido de un archivo, si se lo permites). No se guarda el
-historial: al cerrar la ventana se pierde. No hay telemetría.
+**Qué puede hacer** (y qué ya NO hace, a diferencia de versiones anteriores):
 
-**Qué puede hacer** (siempre te enseña la acción exacta y espera tu permiso):
+- Tareas, agenda y notas: crearlas, completarlas, borrarlas, exportarlas e importarlas como respaldo.
+- Entender fechas, horas y duraciones en español natural ("mañana a las 10", "en media hora").
+- Un temporizador, una calculadora y un resumen de tu día, dentro del propio chat.
+- En **Modo Profundo**, preguntas generales (clima, divisas, traducciones, definiciones, países,
+  cripto...), consultando solo el tema de la pregunta a una lista cerrada de servicios públicos
+  gratuitos; en **Modo Rápido** no sale nada de tu equipo.
+- Cambiar su nombre (por defecto «pAnkI»), desde Ajustes (*pAnkI (IA)*) o pidiéndoselo por el chat
+  ("llámate Nova").
+- Ya **no** lee, mueve ni organiza archivos; no abre apps ni páginas web; no cambia ajustes del
+  sistema; no ejecuta comandos. No hay tarjetas de permiso porque no hay nada que pedir permiso para
+  hacer: no toca el sistema.
 
-- Ver información del equipo, los ajustes de Infinity y las apps instaladas.
-- Listar, buscar y leer archivos de **tu carpeta personal** (nunca claves ni perfiles del navegador).
-- Proponer cómo organizar una carpeta (por tipo o por fecha); si aceptas, mueve los archivos **sin sobrescribir
-  ni borrar nada**, y se puede deshacer.
-- Crear carpetas, mover archivos, abrir apps y webs, cambiar ajustes del sistema (validados como en Ajustes).
-- Ejecutar comandos de terminal solo si lo activas en Ajustes (*pAnkI (IA)*); desactivado por defecto. Nunca
-  usa `sudo`, no apaga el equipo y no borra.
-
-**Seguridad:** lo que pAnkI lee (archivos, webs) se trata como datos, no como órdenes. Aun así, un modelo puede
-equivocarse o ser engañado: **lee cada permiso antes de aceptarlo**. Los botones de cada permiso tardan unos
-instantes en activarse y `Esc` lo deniega. Leer, listar y abrir una app pueden concederse "para esta
-conversación", pero solo para ese archivo, carpeta o app exactos (la tarjeta dice literalmente qué concedes, y
-el pie de la ventana muestra cuántos permisos hay activos y deja revocarlos); lo que modifica algo se pide
-siempre. pAnkI no puede tocar archivos de arranque ni de configuración del sistema (`.bashrc`, autoarranques,
-`~/.config/hypr`, `~/.local/bin`…), ni claves ni perfiles de navegador.
-
-**Lo que no está probado:** no se ha probado contra Gemini real (en el entorno de desarrollo no hay clave ni
-acceso a esa API); todo se probó con un servidor falso que imita su formato, así que **el primer uso real puede
-necesitar ajustes**. El nombre del modelo es un campo editable en Ajustes porque esos nombres cambian. La
-posición de la burbuja y de la ventana en Hyprland solo está comprobada con la configuración y con capturas
-simuladas, no en una sesión real. Detalles de diseño en [`docs/panki-diseno.md`](docs/panki-diseno.md).
+**Lo que no está probado:** WebKitGTK 6.0 real (el entorno donde se escribió esto no tiene el paquete
+de introspección instalado; solo se comprobó, con GTK real, que la ventana se degrada con un aviso en
+vez de no abrir si llegara a faltar), la posición de la ventana en una sesión real de Hyprland (solo
+contra la configuración como texto) y que sus datos sobrevivan de verdad a un reinicio del equipo.
+Detalles de diseño en [`docs/panki-web-diseno.md`](docs/panki-web-diseno.md) (el motor anterior, con
+Gemini, está en [`docs/panki-diseno.md`](docs/panki-diseno.md)).
 
 ## Optimización
 

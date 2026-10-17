@@ -225,7 +225,7 @@ class Launcher(Gtk.Window):
             # las apps ni la búsqueda web. La pregunta va a pAnkI como un argumento más: sin shell.
             pregunta = q[1:].strip()
             if pregunta:
-                res.append(Resultado(f"Preguntar a pAnkI: {pregunta}", "Se envía a Google (Gemini)",
+                res.append(Resultado(f"Preguntar a pAnkI: {pregunta}", "pAnkI · internet solo en Modo Profundo",
                                      "dialog-question",
                                      lambda p=pregunta: self._lanzar(["infinity-panki", "--preguntar", p])))
             else:

@@ -1,3 +1,5 @@
+> Este documento describe el motor ANTERIOR de pAnkI (un agente de Gemini con herramientas sobre el sistema), ya retirado; el motor actual (una app web local de tareas, agenda y notas) está en [`docs/panki-web-diseno.md`](panki-web-diseno.md).
+
 # pAnkI, el agente virtual de Infinity OS
 
 pAnkI es el agente virtual del sistema: responde dudas, organiza archivos y automatiza el escritorio
