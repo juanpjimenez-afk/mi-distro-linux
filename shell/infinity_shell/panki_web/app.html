@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; script-src-attr 'none'; style-src 'unsafe-inline'; img-src data: blob:; connect-src https://es.wikipedia.org https://es.wikibooks.org https://geocoding-api.open-meteo.com https://api.open-meteo.com https://open.er-api.com https://api.frankfurter.app https://restcountries.com https://api.mymemory.translated.net https://api.dictionaryapi.dev https://api.coingecko.com; form-action 'none'; base-uri 'none'">
-<title>infinitOS</title>
+<title>pAnkI</title>
 <style>
 :root{--bg:#fbfbfa;--fg:#1a1a1a;--mut:#8a8a85;--line:#e7e6e2;--card:#fff;--acc:#2f5bea;--hi:#e5484d;--ok:#2e9d62}
 @media(prefers-color-scheme:dark){:root{--bg:#0f0f10;--fg:#ececea;--mut:#8b8b88;--line:#262628;--card:#171719;--acc:#7c9bff}}
@@ -104,7 +104,7 @@ form:focus-within{border-color:var(--mut)}
 <body>
 <header>
   <div class="logo">
-    <span><b>∞</b>infinitOS</span>
+    <span id="hdrNombre">pAnkI</span>
     <span id="timerPill"><span id="timerTxt">00:00</span><button id="timerStop" title="Cancelar temporizador" aria-label="Cancelar temporizador">×</button></span>
   </div>
   <div class="hdr-right">
@@ -140,7 +140,7 @@ form:focus-within{border-color:var(--mut)}
 
 <script>
 /* ============================================================
-   infinitOS — asistente personal.
+   Asistente personal (nombre configurable en S.nombre; por defecto «pAnkI»).
    Sin librerías ni cuentas. Todo corre en tu navegador y tus datos
    viven solo en localStorage. El modo Rápido es 100% local (nunca usa
    la red); el modo Profundo puede consultar internet para preguntas
@@ -167,8 +167,8 @@ const pl=(n,a,b)=>`${n} ${n===1?a:b}`;
 const pad=n=>String(n).padStart(2,'0');
 
 /* ---------- estado y persistencia ---------- */
-const blank=()=>({profile:{},facts:[],tasks:[],notes:[],log:[],model:{},next:1,chat:[],lastBrief:0,asked:false,mode:'deep',web:true});
-function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.tasks)){const s=Object.assign(blank(),d);if(!s.mode)s.mode='deep';return s}}catch(e){}return blank()}
+const blank=()=>({profile:{},facts:[],tasks:[],notes:[],log:[],model:{},next:1,chat:[],lastBrief:0,asked:false,mode:'deep',web:true,nombre:'pAnkI'});
+function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.tasks)){const s=Object.assign(blank(),d);if(!s.mode)s.mode='deep';if(!s.nombre||typeof s.nombre!=='string'||!s.nombre.trim())s.nombre='pAnkI';return s}}catch(e){}return blank()}
 let S=load();
 /* modo y red se guardan aparte: otra pestaña con datos viejos no puede reactivar internet */
 const PREFKEY='infinitos.prefs';
@@ -415,7 +415,7 @@ function briefing(){
   const h=new Date().getHours(),hi=h<6?'Buenas noches':h<13?'Buenos días':h<20?'Buenas tardes':'Buenas noches';
   let s=`<p>${hi}${S.profile.name?', '+esc(S.profile.name):''}.</p>`;
   if(!S.tasks.length&&!S.notes.length)
-    return s+`<p>Soy <b>infinitOS</b>, tu asistente personal para tareas y reuniones. Tus datos viven solo en este navegador, sin cuentas. El modo <b>⚡ Rápido</b> funciona 100% sin internet; el modo <b>🧠 Profundo</b> además puede consultar internet para preguntas de la vida diaria (clima, divisas, datos…), enviando solo el tema de la pregunta y mostrándote antes qué envía; tus tareas y notas nunca salen.</p><p>Pruébame: <code data-fill="Mañana a las 10 reunión con Ana">Mañana a las 10 reunión con Ana</code> o escribe <b>ayuda</b>.</p>${S.profile.name?'':'<p>¿Cómo te llamas?</p>'}`;
+    return s+`<p>Soy <b>${esc(S.nombre)}</b>, tu asistente personal para tareas y reuniones. Tus datos viven solo en este navegador, sin cuentas. El modo <b>⚡ Rápido</b> funciona 100% sin internet; el modo <b>🧠 Profundo</b> además puede consultar internet para preguntas de la vida diaria (clima, divisas, datos…), enviando solo el tema de la pregunta y mostrándote antes qué envía; tus tareas y notas nunca salen.</p><p>Pruébame: <code data-fill="Mañana a las 10 reunión con Ana">Mañana a las 10 reunión con Ana</code> o escribe <b>ayuda</b>.</p>${S.profile.name?'':'<p>¿Cómo te llamas?</p>'}`;
   const pend=S.tasks.filter(t=>!t.done),g=groupTasks(pend),tk=dkey(new Date()),nm=new Date().getHours()*60+new Date().getMinutes();
   const bits=[];
   if(g.Hoy.length)bits.push(`hoy tienes <b>${pl(g.Hoy.length,'tarea','tareas')}</b>`);
@@ -800,10 +800,15 @@ R(/^(?:hola+|holi+s?|ola|wenas|buenas|hey+|ey+|epa|hello|hi|saludos|alo|buen dia
 R(/^(?:gracias|muchas gracias|mil gracias|thx|thanks|genial|perfecto|excelente|buenisimo|te agradezco)\b/,()=>`<p>${pick(['De nada.','Para eso estoy.','Con gusto.','A ti por usarme.'])}</p>`);
 R(/^(?:chau|adios|hasta luego|nos vemos|bye)\b/,()=>'<p>Hasta luego. Todo queda guardado.</p>');
 R(/^que (?:es|son|significa) (?:una? |el |la |los |las )?(?:tareas?|notas?|recordatorios?|prioridad|prioridades|agenda|temporizador|pendientes?)(?: (?:urgente|importante|prioritaria|alta|baja|pendiente|completada))?$/,()=>'<p>Aquí una <b>tarea</b> es algo por hacer (con fecha, hora y prioridad si quieres); una <b>nota</b> guarda información sin fecha; un <b>recordatorio</b> es una tarea con hora para que te avise; y la <b>prioridad</b> (alta, media o baja) decide qué va primero: una tarea <b>urgente</b> es la de prioridad alta. Escribe «ayuda» y te muestro ejemplos.</p>');
-R(/\b(?:quien eres|que eres|como te llamas|cual es tu nombre|eres una ia|que es infinit ?os|que es esto|para que sirves)\b/,()=>`<p>Soy <b>infinitOS</b>, un asistente que vive en este archivo. ${netNote()}Entiendo español con mi propio motor, organizo tus tareas y reuniones, y aprendo de cómo las usas.</p>`);
+R(/\b(?:quien eres|que eres|como te llamas|cual es tu nombre|eres una ia|que es infinit ?os|que es esto|para que sirves)\b/,()=>`<p>Soy <b>${esc(S.nombre)}</b>, un asistente que vive en este archivo. ${netNote()}Entiendo español con mi propio motor, organizo tus tareas y reuniones, y aprendo de cómo las usas.</p>`);
 
 /* perfil */
 R(/(?:me llamo|mi nombre es|llamame|puedes llamarme)\s+([a-z]+(?: [a-z]+)?)$/,(m,g)=>{snap();S.profile.name=capWords(g(1));save();renderPanel();return `<p>Encantado, ${esc(S.profile.name)}. Lo recordaré.</p>`});
+/* renombrar al ASISTENTE (no al usuario): «llámate…», «te voy a llamar…», «tu nombre es…», «cambia tu nombre a…» */
+R(/^(?:llamate|te voy a llamar|tu nombre es|cambia tu nombre a)\s+([a-z0-9][a-z0-9 ]{0,23})$/,(m,g)=>{
+  const n=setNombreAsistente(g(1));
+  return n?`<p>Hecho. Ahora soy <b>${esc(S.nombre)}</b>.</p>`:'<p>Ese nombre no me sirve: usa entre 1 y 24 caracteres, sin etiquetas. ¿Cómo quieres llamarme?</p>';
+});
 R(/^(?:yo\s+)?trabajo\s+(?:en|como|de|para)\s+(.+)/,(m,g,c)=>{snap();S.profile.work=c.o.replace(/^(?:yo\s+)?trabajo\s+/i,'');save();renderPanel();return `<p>Anotado: trabajas ${esc(S.profile.work)}.</p>`});
 R(/^(?:yo\s+)?vivo\s+en\s+(.+)/,(m,g)=>{snap();S.profile.city=capWords(g(1));save();renderPanel();return `<p>Anotado: vives en ${esc(S.profile.city)}.</p>`});
 R(/^(?:yo\s+)?estudio\s+(.+)/,(m,g)=>{snap();S.profile.study=g(1);save();renderPanel();return `<p>Anotado: estudias ${esc(S.profile.study)}.</p>`});
@@ -916,7 +921,7 @@ R(/^(?:como estas|como andas|como te va|como te sientes|que tal estas|todo bien|
 R(/^(?:que haces|que estas haciendo|en que andas|que haces ahora)$/,()=>`<p>Estoy atento a tu agenda. Ahora mismo tienes ${pl(S.tasks.filter(t=>!t.done).length,'pendiente','pendientes')}. ¿Te ayudo con algo?</p>`);
 R(/\b(?:eres|sos)\s+(?:muy\s+)?(?:inteligente|listo|capaz|una ia|real|humano)\b|\bpuedes aprender\b|\bcomo aprendes\b|\bme conoces\b/,()=>`<p>No soy un modelo gigante como los de internet: soy un motor propio que corre en tu navegador. Lo que sí hago bien es conocerte: aprendo tus categorías cuando me corriges, tus horarios de mayor rendimiento, tus datos y tus costumbres, y razono sobre tu agenda (tiempos, cargas, prioridades). ${S.mode!=='fast'&&S.web!==false?'En modo Profundo, además, consulto fuentes públicas de internet (como Wikipedia) para preguntas generales, enviando solo el tema.':'Todo sin enviar nada fuera.'}</p>`);
 R(/\bquien te (?:creo|hizo|programo|desarrollo|invento|construyo|diseno)\b|\bcuando te (?:crearon|hicieron|programaron|inventaron|construyeron)\b|\bdonde te (?:crearon|hicieron|fundaron|programaron)\b|\bque tecnologia usas\b|^(?:hablame de ti|cuentame de ti|presentate)$/,()=>`<p>Me construyeron desde cero en un único archivo HTML. ${S.mode!=='fast'&&S.web!==false?'Para preguntas generales, el modo Profundo consulta servicios públicos como Wikipedia; ':'No dependo de ningún servicio externo; '}tus datos viven solo en este navegador.</p>`);
-R(/\b(?:eres|sos|estas)\s+(?:un\s+|muy\s+|re\s+)?(?:tonto|inutil|malo|estupido|bobo|burro|basura|lento|pesimo|inservible|torpe)\b|\bno sirves\b|\bno entiendes (?:nada|una)\b/,()=>'<p>Tienes razón en exigirme. Dime qué frase no entendí y qué esperabas; puedes dejarlo con <code data-fill="Nota: mejora para infinitOS: ">Nota: mejora…</code> y lo tendremos presente.</p>');
+R(/\b(?:eres|sos|estas)\s+(?:un\s+|muy\s+|re\s+)?(?:tonto|inutil|malo|estupido|bobo|burro|basura|lento|pesimo|inservible|torpe)\b|\bno sirves\b|\bno entiendes (?:nada|una)\b/,()=>`<p>Tienes razón en exigirme. Dime qué frase no entendí y qué esperabas; puedes dejarlo con <code data-fill="Nota: mejora para ${esc(S.nombre)}: ">Nota: mejora…</code> y lo tendremos presente.</p>`);
 R(/\bte (?:quiero|amo|adoro|aprecio)\b|\beres (?:muy |re |super )?(?:genial|el mejor|increible|crack|un crack|lo maximo|util|buenisimo|gracios[oa]|divertid[oa]|simpatic[oa]|buena onda|amable|lind[oa])\b|\bbuen trabajo\b|\bbien hecho\b|\bme ayudas mucho\b/,()=>`<p>${pick(['Gracias, me alegra ser útil.','Eso me motiva. Aquí sigo para lo que necesites.','¡Gracias! Seguimos construyendo tu orden.'])}</p>`);
 const JOKES=['¿Por qué los programadores confunden Halloween con Navidad? Porque 31 OCT = 25 DEC.','Mi lista de tareas y yo tenemos una relación complicada: yo la escribo, ella crece.','¿Qué le dice un bit a otro? Nos vemos en el bus.','Procrastinar es el arte de mantenerse al día con lo que debías haber hecho ayer.','¿Cómo se despiden los químicos? Ácido un placer.','¿Por qué el libro de matemáticas estaba triste? Porque tenía muchos problemas.'];
 R(/\b(?:chiste|hazme reir|algo gracioso|algo divertido)\b/,()=>talk('chiste',pick(JOKES),{chips:[['Otro chiste','otro chiste']]}));
@@ -1492,7 +1497,7 @@ function exportData(){
 }
 
 /* ============================================================
-   infinitOS — Modelo Profundo (Deliberativo, Lento y Más Inteligente)
+   Modelo Profundo (Deliberativo, Lento y Más Inteligente)
    ============================================================ */
 
 function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
@@ -1807,7 +1812,7 @@ function updateModeUI(){
 }
 
 /* ============================================================
-   infinitOS — Modo Profundo con internet (solo en modo Profundo)
+   Modo Profundo con internet (solo en modo Profundo)
    El modo Rápido NUNCA toca la red. En Profundo, las preguntas de
    conocimiento cotidiano se consultan en servicios públicos y sin clave
    (Wikipedia, Open-Meteo, ExchangeRate-API, REST Countries, MyMemory,
@@ -2483,6 +2488,42 @@ async function webDiag(onStep){
 const webPanel=()=>`<h4>Internet</h4><div class="fact"><span>🌐 Consultas en modo Profundo</span><button class="pill" id="webTog">${S.web!==false?'Activadas':'Desactivadas'}</button></div><p class="sub">${S.web!==false?'Para clima, divisas, datos y definiciones, el modo Profundo envía solo el tema de la pregunta (un lugar, una palabra…) a servicios públicos como Wikipedia u Open-Meteo, y antes te muestra qué enviará. El clima usa tu ciudad guardada si no dices otra. Tus tareas, notas y perfil nunca salen de aquí.':'Desactivado: nada sale de tu navegador.'} El modo Rápido nunca usa internet.</p>`;
 function setWeb(on){S.web=!!on;if(!S.web)webAbortAll();savePrefs();save();renderPanel();toast(S.web?'🌐 Internet activado en modo Profundo':'🔌 Internet desactivado: todo queda en tu navegador')}
 
+/* ---------- nombre del asistente ----------
+   OJO: esto es S.nombre («cómo se llama él»), nunca S.profile.name («cómo se llama el usuario»). */
+function sanitizeNombre(raw){
+  const n=String(raw==null?'':raw).replace(/\s+/g,' ').trim();
+  if(!n||n.length>24||/[<>]/.test(n))return null; /* 1–24 caracteres visibles, sin HTML/etiquetas */
+  return n;
+}
+function updateHdrNombre(){
+  const h=$('#hdrNombre');if(h)h.textContent=S.nombre;
+  try{document.title=S.nombre}catch(e){}
+}
+/* aplica el nombre ya saneado: estado + UI, sin decidir si avisar al exterior */
+function aplicarNombreInterno(n){
+  S.nombre=n;save();updateHdrNombre();renderPanel();
+}
+/* uso desde el chat o el panel «Yo»: valida, aplica y avisa al puente externo */
+function setNombreAsistente(nombre){
+  const n=sanitizeNombre(nombre);
+  if(!n)return null;
+  snap();
+  aplicarNombreInterno(n);
+  toast(`🤖 Ahora me llamo ${S.nombre}`);
+  window.dispatchEvent(new CustomEvent('panki:nombre-cambiado',{detail:{nombre:S.nombre}}));
+  return n;
+}
+/* Puente para el host (p.ej. Python/GTK) al arrancar: aplica el nombre del sistema como
+   fuente de verdad. CONTRATO: nombre de la función fijo. No dispara 'panki:nombre-cambiado'
+   (evitaría un bucle con el puente). Segura de llamar en cualquier momento: si se llama antes
+   de terminar de iniciar, encola y aplica al final; si se llama varias veces, gana la última. */
+let pankiNombreListo=false,pankiNombrePendiente=null;
+window.aplicarNombrePanki=function(nombre){
+  if(!pankiNombreListo){pankiNombrePendiente=nombre;return}
+  const n=sanitizeNombre(nombre);
+  if(n&&n!==S.nombre)aplicarNombreInterno(n);
+};
+
 /* ---------- interfaz ---------- */
 const chat=$('#chat'),scroll=$('#scroll'),input=$('#in'),go=$('#go'),psearch=$('#psearch');
 /* HTML del historial guardado: solo etiquetas y atributos conocidos */
@@ -2755,22 +2796,25 @@ function renderPanel(){
     const pr=S.profile,l=[['Nombre',pr.name],['Vives en',pr.city],['Trabajo',pr.work],['Estudias',pr.study]].filter(x=>x[1]);
     h='<h4>Lo que sé de ti</h4>'+(l.length||S.facts.length?l.map(([k,v])=>`<div class="fact"><span><span class="meta">${k}: </span>${esc(v)}</span></div>`).join('')+S.facts.map(f=>`<div class="fact"><span>${esc(f.text)}</span><button class="x" style="opacity:1" data-cmd="olvida ${esc(f.text)}">×</button></div>`).join(''):'<div class="empty">Aún nada. Cuéntame de ti.</div>');
     const ins=insights();if(ins.length)h+='<h4>Lo que observo</h4>'+ins.map(i=>`<div class="fact">${esc(i)}</div>`).join('');
+    h+=`<h4>Asistente</h4><div class="fact"><span>Nombre del asistente <span class="meta">— así me llamo yo, no tú</span></span><button class="pill" id="nombreTog">${esc(S.nombre)}</button></div><p class="sub">Toca el nombre para cambiarlo, o dime «llámate Nova».</p>`;
     h+=webPanel();
     h+='<div class="btns"><button class="pill" id="bk">Exportar respaldo</button><button class="pill" id="im">Importar</button><button class="pill" id="rs">Borrar todo</button></div><p class="sub" style="margin-top:14px">Tus datos solo existen en este navegador. El modo Rápido nunca usa internet.</p>';
   }
   body.innerHTML=h;
   const wt=$('#webTog');if(wt)wt.onclick=()=>setWeb(S.web===false);
+  const nt=$('#nombreTog');if(nt)nt.onclick=()=>{const v=prompt('¿Cómo quieres llamarme?',S.nombre);if(v!=null&&v.trim())setNombreAsistente(v)};
   const icsB=$('#icsAll');if(icsB)icsB.onclick=()=>downloadICS(S.tasks.filter(t=>!t.done&&t.due));
-  const bk=$('#bk');if(bk){bk.onclick=exportData;$('#im').onclick=()=>$('#file').click();$('#rs').onclick=()=>{if(confirm('¿Borrar todos tus datos de infinitOS?')){snap();const keep=S.chat;S=Object.assign(blank(),{chat:keep,asked:true,mode:S.mode,web:S.web});save();updateModeUI();renderPanel();syncChatDOM();toast('Datos borrados')}}}
+  const bk=$('#bk');if(bk){bk.onclick=exportData;$('#im').onclick=()=>$('#file').click();$('#rs').onclick=()=>{if(confirm(`¿Borrar todos tus datos de ${S.nombre}?`)){snap();const keep=S.chat;S=Object.assign(blank(),{chat:keep,asked:true,mode:S.mode,web:S.web,nombre:S.nombre});save();updateModeUI();renderPanel();syncChatDOM();toast('Datos borrados')}}}
 }
 $('#file').onchange=e=>{
   const f=e.target.files[0];if(!f)return;const r=new FileReader();
-  r.onload=()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d.tasks))throw 0;snap();const keep={chat:S.chat,mode:S.mode,web:S.web};S=Object.assign(blank(),cleanImport(d),keep);save();updateModeUI();renderPanel();syncChatDOM();toast('Respaldo restaurado')}catch(x){toast('Archivo no válido')}};
+  r.onload=()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d.tasks))throw 0;snap();const keep={chat:S.chat,mode:S.mode,web:S.web,nombre:S.nombre};S=Object.assign(blank(),cleanImport(d),keep);save();updateModeUI();renderPanel();syncChatDOM();toast('Respaldo restaurado')}catch(x){toast('Archivo no válido')}};
   r.readAsText(f);e.target.value='';
 };
 
 /* ---------- arranque ---------- */
 updateModeUI();
+updateHdrNombre();
 window.addEventListener('storage',e=>{if(e.key===PREFKEY&&e.newValue){applyPrefs(e.newValue);if(S.mode==='fast'||S.web===false)webAbortAll();updateModeUI();renderPanel()}});
 $('#btnDeep').onclick=()=>setMode('deep');
 $('#btnFast').onclick=()=>setMode('fast');
@@ -2780,6 +2824,9 @@ syncChatDOM();
 if(!S.asked){S.asked=true;awaitName=true;addMsg('ai',briefing());S.lastBrief=Date.now()}
 else if(Date.now()-S.lastBrief>3*36e5){addMsg('ai',briefing());S.lastBrief=Date.now()}
 save();renderPanel();tick();setInterval(tick,15000);lastGreet=Date.now();
+/* a partir de aquí, aplicarNombrePanki() ya puede aplicarse de inmediato (ver definición arriba) */
+pankiNombreListo=true;
+if(pankiNombrePendiente!=null){const _pend=pankiNombrePendiente;pankiNombrePendiente=null;window.aplicarNombrePanki(_pend)}
 </script>
 </body>
 </html>
