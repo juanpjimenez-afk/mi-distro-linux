@@ -2813,6 +2813,9 @@ $('#file').onchange=e=>{
 };
 
 /* ---------- arranque ---------- */
+/* El host deja el nombre del sistema en document-start (window.__PANKI_NOMBRE_SISTEMA__). Es la fuente de
+   verdad: aplícalo antes del saludo para que la bienvenida ya use el nombre elegido, sin parpadeo. */
+try{var _sis=window.__PANKI_NOMBRE_SISTEMA__;if(typeof _sis==='string'){var _ns=sanitizeNombre(_sis);if(_ns&&_ns!==S.nombre){S.nombre=_ns;save()}}}catch(e){}
 updateModeUI();
 updateHdrNombre();
 window.addEventListener('storage',e=>{if(e.key===PREFKEY&&e.newValue){applyPrefs(e.newValue);if(S.mode==='fast'||S.web===false)webAbortAll();updateModeUI();renderPanel()}});

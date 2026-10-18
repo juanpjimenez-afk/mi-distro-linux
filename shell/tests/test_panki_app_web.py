@@ -198,6 +198,42 @@ class TestConstruccionDeJavaScript(unittest.TestCase):
     def test_texto_vacio_tambien_pasa_por_json_dumps(self):
         self.assertEqual(P._js_preguntar(""), 'window.pankiPreguntar("")')
 
+    def test_nombre_sistema_inicial_usa_json_dumps(self):
+        self.assertEqual(P._js_nombre_sistema_inicial("Nova"),
+                         'window.__PANKI_NOMBRE_SISTEMA__ = "Nova";')
+
+    def test_nombre_sistema_inicial_no_rompe_con_comillas(self):
+        texto = 'me "llamo" C:\\x<script>'
+        script = P._js_nombre_sistema_inicial(texto)
+        self.assertTrue(script.startswith("window.__PANKI_NOMBRE_SISTEMA__ = "))
+        self.assertTrue(script.endswith(";"))
+        interior = script[len("window.__PANKI_NOMBRE_SISTEMA__ = "):-1]
+        self.assertEqual(interior, json.dumps(texto))
+        self.assertEqual(json.loads(interior), texto)
+
+
+# -------------------------------------------------------------------------- el nombre del sistema al arrancar
+class TestNombreSistema(unittest.TestCase):
+    """_leer_nombre_sistema() es la fuente de verdad del nombre al arrancar la página."""
+
+    def test_sin_ajuste_devuelve_el_por_defecto(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}):
+            self.assertEqual(P._leer_nombre_sistema(), "pAnkI")
+
+    def test_lee_el_nombre_guardado(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}):
+            self.assertTrue(P._guardar_nombre("Nova"))
+            self.assertEqual(P._leer_nombre_sistema(), "Nova")
+
+    def test_la_pagina_aplica_el_nombre_del_sistema_antes_del_saludo(self):
+        # El contrato de los dos lados: el host deja el nombre en window.__PANKI_NOMBRE_SISTEMA__ (document-start)
+        # y app.html lo lee en el arranque, antes de pintar la bienvenida.
+        html = _leer(os.path.join(ROOT, "shell", "infinity_shell", "panki_web", "app.html"))
+        self.assertIn("window.__PANKI_NOMBRE_SISTEMA__", html)
+        i_lee = html.index("__PANKI_NOMBRE_SISTEMA__")
+        i_saludo = html.index("addMsg('ai',briefing())")
+        self.assertLess(i_lee, i_saludo, "el nombre del sistema debe aplicarse antes del saludo de bienvenida")
+
 
 # ------------------------------------------------------------------------------------------ guardar el nombre
 class _AjustesFalso:

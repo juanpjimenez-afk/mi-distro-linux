@@ -150,10 +150,31 @@ _SIN_PAGINA = (
 )
 
 
+def _leer_nombre_sistema():
+    """Lee panki.nombre del ajuste del sistema; si falta o no es un texto con contenido, el nombre por
+    defecto («pAnkI»). Es la fuente de verdad del nombre del asistente al arrancar la página."""
+    try:
+        from . import ajustes
+        nombre = ajustes.valor("panki.nombre")
+    except Exception:
+        nombre = None
+    if not isinstance(nombre, str) or not nombre.strip():
+        nombre = "pAnkI"
+    return nombre
+
+
 def _js_aplicar_nombre(nombre):
     """El JavaScript que fija el nombre del asistente desde el ajuste del sistema (ver window.aplicarNombrePanki
     en app.html). SIEMPRE por json.dumps: nunca se concatena el texto crudo en el script."""
     return "window.aplicarNombrePanki(%s)" % json.dumps(nombre)
+
+
+def _js_nombre_sistema_inicial(nombre):
+    """El JavaScript que, inyectado en document-start (antes del propio script de app.html), deja el nombre
+    del sistema en window.__PANKI_NOMBRE_SISTEMA__. Así la página ya usa el nombre elegido en el saludo de
+    bienvenida, sin el parpadeo de mostrar «pAnkI» y corregirlo al terminar la carga. SIEMPRE por
+    json.dumps: nunca se concatena el texto crudo en el script."""
+    return "window.__PANKI_NOMBRE_SISTEMA__ = %s;" % json.dumps(nombre)
 
 
 def _js_preguntar(texto):
@@ -374,6 +395,12 @@ class VentanaPanki(_BaseVentana):
         guion = WebKit.UserScript.new(PUENTE_JS, WebKit.UserContentInjectedFrames.ALL_FRAMES,
                                       WebKit.UserScriptInjectionTime.END, None, None)
         self._ucm.add_script(guion)
+        # El nombre del sistema se deja en una variable ANTES de que corra el script de la página
+        # (document-start), para que la bienvenida ya salude con el nombre elegido.
+        guion_nombre = WebKit.UserScript.new(
+            _js_nombre_sistema_inicial(_leer_nombre_sistema()), WebKit.UserContentInjectedFrames.ALL_FRAMES,
+            WebKit.UserScriptInjectionTime.START, None, None)
+        self._ucm.add_script(guion_nombre)
 
         vista = WebKit.WebView(user_content_manager=self._ucm, network_session=sesion)
         vista.connect("load-changed", self._al_cambiar_carga)
@@ -398,14 +425,9 @@ class VentanaPanki(_BaseVentana):
             self._evaluar_js(_js_preguntar(texto))
 
     def _aplicar_nombre_inicial(self):
-        try:
-            from . import ajustes
-            nombre = ajustes.valor("panki.nombre")
-        except Exception:
-            nombre = None
-        if not isinstance(nombre, str) or not nombre.strip():
-            nombre = "pAnkI"
-        self._evaluar_js(_js_aplicar_nombre(nombre))
+        # Refuerzo al terminar la carga: document-start ya dejó el nombre en la página, pero si por lo que
+        # fuera no se aplicó, el puente lo fija igual (es un no-op cuando ya coincide).
+        self._evaluar_js(_js_aplicar_nombre(_leer_nombre_sistema()))
 
     def _evaluar_js(self, script):
         if not self._webkit_disponible or self._cerrada:
