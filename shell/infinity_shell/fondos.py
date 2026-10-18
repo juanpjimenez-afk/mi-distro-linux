@@ -24,10 +24,10 @@ import json
 import math
 import os
 import re
+import secrets
 import shutil
 import stat
 import struct
-import tempfile
 import time
 import unicodedata
 from collections import namedtuple
@@ -165,13 +165,30 @@ def _es_carpeta_real(ruta):
 
 
 def _leer_json(ruta, maximo):
+    """El JSON de un fichero normal de hasta `maximo` bytes, o None si no existe, no sirve o no es un fichero normal.
+
+    Una tubería (FIFO) con ese nombre haría esperar a open() para siempre: Ajustes lista los fondos en su hilo
+    principal y se congelaría. Y un JSON con miles de corchetes anidados lanza RecursionError, no ValueError.
+    """
     try:
-        with open(ruta, "rb") as f:
-            datos = f.read(maximo + 1)
-        if len(datos) > maximo:
+        # O_NONBLOCK: abrir una tubería no se queda esperando; después se comprueba que es un fichero normal.
+        fd = os.open(ruta, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
             return None
+        with os.fdopen(fd, "rb", closefd=False) as f:
+            datos = f.read(maximo + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    if len(datos) > maximo:
+        return None
+    try:
         return json.loads(datos.decode("utf-8"))
-    except (OSError, ValueError):
+    except (ValueError, RecursionError):
         return None
 
 
@@ -532,6 +549,37 @@ def _cabecera(datos):
     return None
 
 
+_MARCADOR_JPEG = re.compile(rb"\xff[^\x00\xd0-\xd7\xff]")   # FF 00 (relleno), FF D0-D7 (reinicio) y FF FF no son marcadores
+
+
+def _jpeg_termina(datos):
+    """Recorre los segmentos de un JPEG: True si llega a su marcador final (FF D9), False si el archivo se acaba antes
+    y None si la estructura no se entiende (una longitud imposible).
+
+    Mirar solo los últimos bytes fallaba en los dos sentidos: rechazaba JPEG completos con datos detrás (las fotos
+    «en movimiento» de los móviles llevan un vídeo pegado tras el FF D9; algunos archivos, relleno de ceros) y daba
+    por buena una foto cortada si el FF D9 de la miniatura EXIF quedaba a la vista. Los segmentos se saltan
+    por su longitud y entre ellos solo se busca el siguiente marcador (el FF D9 de una miniatura no cuenta).
+    """
+    n, i = len(datos), 2
+    while True:
+        m = _MARCADOR_JPEG.search(datos, i)
+        if m is None:
+            return False
+        marca, pos = datos[m.start() + 1], m.start() + 2
+        if marca == 0xD9:
+            return True
+        if marca in (0xD8, 0x01):    # sin longitud
+            i = pos
+            continue
+        if pos + 2 > n:
+            return False
+        largo = (datos[pos] << 8) | datos[pos + 1]
+        if largo < 2 or pos + largo > n:
+            return None
+        i = pos + largo
+
+
 def _esta_completa(datos):
     """False si el archivo parece cortado (una descarga interrumpida, por ejemplo).
 
@@ -547,7 +595,9 @@ def _esta_completa(datos):
             i += 12 + largo
         return False
     if datos[:3] == b"\xff\xd8\xff":
-        return b"\xff\xd9" in datos[-2048:]
+        completo = _jpeg_termina(datos)
+        # Si la estructura no se entiende (una longitud rota), vale la regla sencilla: un FF D9 al final.
+        return completo if completo is not None else b"\xff\xd9" in datos[-2048:]
     if datos[:3] == b"GIF":
         return datos.rstrip(b"\x00")[-1:] == b";"
     if datos[:2] == b"BM" and len(datos) >= 6:
@@ -624,16 +674,25 @@ def _decodificar(datos, mayor_objetivo):
 
 
 def _cubrir(pix, ancho, alto):
-    """Escala sin deformar hasta cubrir ancho×alto y recorta del centro."""
+    """Cubre ancho×alto sin deformar: se queda con la parte central que tiene esa proporción y la escala.
+
+    Se recorta ANTES de escalar: escalar toda la imagen y recortar después reservaba memoria de más. Con una
+    imagen muy estrecha (64×8000, que es legal) cubrir 2560×1600 pedía un intermedio de 2560×320000 px (2,4 GB).
+    Así lo máximo que se reserva es el tamaño de destino.
+    """
     GdkPixbuf, _ = _gdkpixbuf()
     w, h = pix.get_width(), pix.get_height()
     if (w, h) == (ancho, alto):
         return pix
-    escala = max(ancho / w, alto / h)
-    nw, nh = max(ancho, round(w * escala)), max(alto, round(h * escala))
-    grande = pix.scale_simple(nw, nh, GdkPixbuf.InterpType.BILINEAR)
-    x, y = (nw - ancho) // 2, (nh - alto) // 2
-    return grande.new_subpixbuf(x, y, ancho, alto).copy()
+    if w * alto >= h * ancho:    # más ancha que el destino: sobran los lados
+        cw, ch = min(w, max(1, round(h * ancho / alto))), h
+    else:                        # más alta: sobran arriba y abajo
+        cw, ch = w, min(h, max(1, round(w * alto / ancho)))
+    parte = pix.new_subpixbuf((w - cw) // 2, (h - ch) // 2, cw, ch)
+    cubierta = parte.scale_simple(ancho, alto, GdkPixbuf.InterpType.BILINEAR)
+    if cubierta is None:
+        raise ErrorFondo("No hay memoria suficiente para preparar esta imagen.")
+    return cubierta
 
 
 def _recorte_escritorio(pix):
@@ -673,7 +732,7 @@ def resoluciones_a_generar(monitores=()):
     for m in monitores or ():
         try:
             w, h = int(m[0]), int(m[1])
-        except (TypeError, ValueError, IndexError):
+        except (TypeError, ValueError, IndexError, OverflowError):   # int(float('inf')) lanza OverflowError
             continue
         ok = MIN_LADO_MONITOR <= w <= MAX_LADO_MONITOR and MIN_LADO_MONITOR <= h <= MAX_LADO_MONITOR
         if ok and (w, h) not in lista and (w, h) not in extra and len(extra) < MAX_MONITORES_EXTRA:
@@ -734,8 +793,9 @@ def importar(origen, rutas=None, monitores=(), nombre=None, progreso=None):
         if progreso:
             progreso(hecho, total)
 
-    temporal = tempfile.mkdtemp(prefix=".nuevo-", dir=base)
+    temporal = None
     try:
+        temporal = _crear_temporal(base)
         escritorio = _oscurecer(_recorte_escritorio(pix), BRILLO_ESCRITORIO)
         _escribir_bytes(os.path.join(temporal, "escritorio.jpg"), _jpeg(escritorio))
         avanza()
@@ -751,16 +811,15 @@ def importar(origen, rutas=None, monitores=(), nombre=None, progreso=None):
                 "bloqueo": [f"{w}x{h}" for w, h in resoluciones]}
         _escribir_bytes(os.path.join(temporal, "meta.json"),
                         (json.dumps(meta, ensure_ascii=False, indent=1) + "\n").encode("utf-8"))
-        os.chmod(temporal, 0o755 & ~_umask())
         id_ = _colocar(temporal, base, nombre)
     except ErrorFondo:
-        shutil.rmtree(temporal, ignore_errors=True)
+        _borrar_temporal(temporal)
         raise
     except OSError as e:
-        shutil.rmtree(temporal, ignore_errors=True)
-        raise ErrorFondo(f"No se pudo guardar el fondo: {e.strerror or e}.") from e
+        _borrar_temporal(temporal)
+        raise ErrorFondo(f"No se pudo guardar el fondo: {e.strerror or e.__class__.__name__}.") from e
     except Exception:
-        shutil.rmtree(temporal, ignore_errors=True)
+        _borrar_temporal(temporal)
         raise
     f = _leer_usuario(base, id_)
     if f is None:
@@ -768,10 +827,25 @@ def importar(origen, rutas=None, monitores=(), nombre=None, progreso=None):
     return f
 
 
-def _umask():
-    actual = os.umask(0)
-    os.umask(actual)
-    return actual
+def _crear_temporal(base):
+    """Una carpeta nueva `.nuevo-…` dentro de `base`, con los permisos de siempre (0755 menos la umask).
+
+    mkdir aplica la umask él mismo: no hace falta leerla. Leerla con os.umask() la cambia un instante para TODO
+    el proceso, y importar() corre en un hilo mientras la ventana (otro hilo) puede estar creando ficheros.
+    """
+    for _ in range(100):
+        ruta = os.path.join(base, ".nuevo-" + secrets.token_hex(6))
+        try:
+            os.mkdir(ruta, 0o755)
+            return ruta
+        except FileExistsError:
+            continue
+    raise ErrorFondo("No se pudo crear una carpeta temporal para el fondo.")
+
+
+def _borrar_temporal(ruta):
+    if ruta:
+        shutil.rmtree(ruta, ignore_errors=True)
 
 
 def _escribir_bytes(ruta, datos):

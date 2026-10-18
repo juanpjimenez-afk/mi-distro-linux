@@ -408,3 +408,85 @@ button.ctl-btn.ctl-cerrar:hover {
 button.ctl-btn.ctl-cerrar:active {
   background-color: rgba(214, 48, 40, 0.86);
 }
+
+/* ============================================================ ISLA DINÁMICA (isla.py)
+ * Una píldora negra, centrada arriba, que se expande, se encoge y se divide en dos burbujas.
+ * No es cristal azulado como el dock: es NEGRA (emula la muesca física del iPhone). El toque de
+ * marca es el violeta #b9a8ff, reservado a la barra de progreso (que la dibuja isla.Barra).
+ *
+ * La animación «líquida» vive aquí: el tamaño (min-width / min-height), el radio y la opacidad se
+ * animan al cambiar de clase de estado con la misma curva «glass» que usa Hyprland para las ventanas
+ * (bezier 0.22, 1, 0.36, 1). La ventana de capa se auto-ajusta a la píldora, así que al animar estas
+ * propiedades la superficie crece o encoge DE VERDAD, coordinada con el CSS (ver isla.py). El relleno
+ * se mantiene opaco (>= 0.30) para que Hyprland desenfoque el fondo como en el resto del shell. */
+.isla-pildora {
+  background-color: rgba(8, 9, 13, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 0 18px rgba(0, 0, 0, 0.45),
+    0 6px 22px rgba(0, 0, 0, 0.45);
+  padding: 0 14px;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 17px;
+  transition:
+    min-width 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-height 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin-left 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 240ms ease;
+}
+
+/* estados de tamaño (los pone isla.py; el CSS anima el paso de uno a otro) */
+.isla-colapsada {
+  min-width: 104px;
+  min-height: 34px;
+  border-radius: 17px;
+}
+.isla-expandida {
+  min-width: 300px;
+  min-height: 56px;
+  border-radius: 24px;
+  padding: 0 18px;
+}
+.isla-burbuja {
+  min-width: 150px;
+  min-height: 56px;
+  border-radius: 24px;
+  padding: 0 16px;
+}
+/* la segunda burbuja cuando NO hay dos actividades: encogida a nada y transparente (se funde al dividir) */
+.isla-oculta {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  margin-left: 0;
+  opacity: 0;
+}
+/* el hueco de aire entre las dos burbujas al dividirse (se anima con margin-left) */
+.isla-der.isla-burbuja {
+  margin-left: 16px;
+}
+
+/* contenido */
+.isla-reloj {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: rgba(255, 255, 255, 0.92);
+}
+.isla-pct {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+}
+.isla-titulo {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.92);
+}
+.isla-icono {
+  color: rgba(255, 255, 255, 0.95);
+}

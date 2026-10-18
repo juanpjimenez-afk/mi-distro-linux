@@ -8,10 +8,12 @@
 # En una VM sin 3D la cascada va más lenta al mover el ratón (ver el README): ahí se puede elegir "color".
 # Respeta XDG_CONFIG_HOME, igual que la app de Ajustes (shell/infinity_shell/ajustes.py).
 
+# Igual que fondo-ruta (leer_ajuste): solo un fichero normal (una tubería dejaría esperando a infinity-wallpaper, que
+# llama a este script al empezar la sesión) y solo los primeros 64 caracteres (todo lo que no sea "color" es imagen).
 modo=imagen
 cfg="${XDG_CONFIG_HOME:-$HOME/.config}/infinity/fondo"
-if [ -r "$cfg" ]; then
-    elegido=$(tr -d ' \t\r\n' < "$cfg" | tr 'A-Z' 'a-z')
+if [ -f "$cfg" ] && [ -r "$cfg" ]; then
+    elegido=$(tr -d ' \t\r\n' < "$cfg" 2>/dev/null | tr 'A-Z' 'a-z' | head -c 64)
     [ "$elegido" = color ] && modo=color
 fi
 echo "$modo"

@@ -5,6 +5,8 @@ Todo usa carpetas temporales: nada toca /usr/share ni el HOME real. Las pruebas 
 necesitan GdkPixbuf (se saltan sin él; con el Python del sistema y sin PyGObject no hay importación).
 Las imágenes se generan aquí mismo: no dependen del catálogo de branding/fondos.
 """
+import ast
+import errno
 import json
 import os
 import shutil
@@ -14,9 +16,11 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import zlib
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
@@ -185,6 +189,41 @@ class TestCatalogo(Entorno):
             self.assertEqual([f.id for f in F.catalogo_sistema(self.rutas)], ["cascada", "islandia"], texto)
         escribe(os.path.join(self.fondos, "fondos.json"), b'{"fondos": [' + b" " * (2 * 1024 * 1024) + b"]}")
         self.assertEqual([f.id for f in F.catalogo_sistema(self.rutas)], ["cascada", "islandia"])
+
+    def test_json_con_anidacion_absurda_no_rompe(self):
+        # json.loads falla con RecursionError (no con ValueError) si los corchetes están anidados miles de veces.
+        self.legado()
+        os.makedirs(self.fondos)
+        escribe(os.path.join(self.fondos, "fondos.json"), b"[" * 500_000)
+        self.assertEqual([f.id for f in F.catalogo_sistema(self.rutas)], ["cascada", "islandia"])
+        self.fondo_usuario("u-bueno")
+        self.fondo_usuario("u-hondo")
+        escribe(os.path.join(self.usuario, "u-hondo", "meta.json"), b"[" * 60_000)
+        self.assertEqual([f.id for f in F.fondos_usuario(self.rutas)], ["u-bueno"])
+
+    def test_un_json_que_es_una_tuberia_no_deja_esperando(self):
+        # Una tubería (FIFO) llamada meta.json o fondos.json haría que open() esperase para siempre: la ventana
+        # de Ajustes lista los fondos en su hilo principal y se quedaría congelada.
+        self.legado()
+        self.fondo_usuario("u-bueno")
+        self.fondo_usuario("u-tuberia")
+        os.remove(os.path.join(self.usuario, "u-tuberia", "meta.json"))
+        os.mkfifo(os.path.join(self.usuario, "u-tuberia", "meta.json"))
+        os.makedirs(self.fondos)
+        os.mkfifo(os.path.join(self.fondos, "fondos.json"))
+        resultado = {}
+
+        def lista():
+            resultado["usuario"] = [f.id for f in F.fondos_usuario(self.rutas)]
+            resultado["sistema"] = [f.id for f in F.catalogo_sistema(self.rutas)]
+        hilo = threading.Thread(target=lista, daemon=True)
+        hilo.start()
+        hilo.join(5)
+        for ruta in (os.path.join(self.usuario, "u-tuberia", "meta.json"), os.path.join(self.fondos, "fondos.json")):
+            fd = os.open(ruta, os.O_RDWR)       # suelta al hilo si se quedó esperando (para no dejarlo colgado)
+            os.close(fd)
+        hilo.join(5)
+        self.assertEqual(resultado, {"usuario": ["u-bueno"], "sistema": ["cascada", "islandia"]})
 
     def test_entradas_peligrosas_se_descartan(self):
         self.catalogo(ids=("bueno",))
@@ -736,6 +775,74 @@ class TestImportar(Entorno):
             F._escribir_bytes = original
         self.assertEqual(os.listdir(self.usuario), [])
 
+    def test_no_se_puede_crear_la_carpeta_temporal_se_explica_sin_rutas(self):
+        # Carpeta de fondos sin permiso de escritura (por ejemplo, creada por root) o disco lleno: antes escapaba un
+        # OSError crudo («[Errno 13] Permission denied: '/home/…/.nuevo-xxxx'») y Ajustes lo enseñaba tal cual.
+        origen = self.imagen("a.png", 640, 360, "png")
+        mkdir = os.mkdir
+
+        def sin_permiso(ruta, *args, **kw):
+            if os.path.basename(os.fspath(ruta)).startswith(".nuevo-"):
+                raise PermissionError(errno.EACCES, "Permission denied", os.fspath(ruta))
+            return mkdir(ruta, *args, **kw)
+        with mock.patch("os.mkdir", sin_permiso):
+            with self.assertRaises(F.ErrorFondo) as c:
+                self.importa(origen)
+        self.assertIn("No se pudo guardar", str(c.exception))
+        self.assertNotIn(self.tmp, str(c.exception))
+        self.assertNotIn(".nuevo-", str(c.exception))
+        self.assertEqual(os.listdir(self.usuario), [])
+
+    def test_importar_no_toca_la_mascara_de_permisos_del_proceso(self):
+        # os.umask es de todo el proceso: cambiarla un instante (para leerla) deja que cualquier otro hilo de Ajustes
+        # cree en ese momento un fichero con permisos 0666. importar() corre en un hilo aparte.
+        origen = self.imagen("a.png", 320, 180, "png")
+        cambios = []
+        umask = os.umask
+
+        def anota(valor):
+            cambios.append(valor)
+            return umask(valor)
+        with mock.patch("os.umask", anota):
+            f = self.importa(origen)
+        self.assertEqual(cambios, [])
+        self.assertEqual(stat.S_IMODE(os.lstat(f.carpeta).st_mode) & 0o022, 0)
+
+    def test_un_jpeg_con_datos_detras_se_importa(self):
+        # Fotos «en movimiento» del móvil (JPEG + vídeo pegado detrás), o con relleno al final: el JPEG está completo
+        # y GdkPixbuf lo lee sin problema. Antes se tomaban por «descarga cortada» si el final no tenía FF D9.
+        base = self.leer(self.imagen("movil.jpg", 640, 360, "jpeg"))
+        detras = {"video": b"\x00\x00\x00\x18ftypmp42" + bytes(i % 251 for i in range(20000)), "ceros": b"\x00" * 5000}
+        for clave, extra in detras.items():
+            ruta = escribe(os.path.join(self.tmp, "origen", clave + ".jpg"), base + extra)
+            f = self.importa(ruta)
+            self.assertEqual(self.medida(f.bloqueos[(1280, 720)]), (1280, 720), clave)
+        cortado = escribe(os.path.join(self.tmp, "origen", "cortado.jpg"), base[:-300] + detras["video"])
+        with self.assertRaisesRegex(F.ErrorFondo, "dañada"):      # y uno cortado de verdad, aunque haya algo detrás
+            self.importa(cortado)
+
+    def test_una_imagen_muy_estrecha_no_reserva_gigas(self):
+        # 64x8000 es legal (≤ 12000 px, ≤ 50 Mpx). Cubrir 2560x1600 escalando TODA la imagen primero pedía
+        # 2560x320000 px (2,4 GB) por resolución. Se recorta primero y se escala la parte que se ve.
+        guion = (
+            "import resource, sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "import gi\n"
+            "gi.require_version('GdkPixbuf', '2.0')\n"
+            "from gi.repository import GdkPixbuf\n"
+            "from infinity_shell import fondos as F\n"
+            "pix = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 64, 8000)\n"
+            "pix.fill(0x336699FF)\n"
+            "vm = int([l for l in open('/proc/self/status') if l.startswith('VmSize:')][0].split()[1]) * 1024\n"
+            "resource.setrlimit(resource.RLIMIT_AS, (vm + 600 * 1024 * 1024, resource.RLIM_INFINITY))\n"
+            "for w, h in list(F.RESOLUCIONES) + [(1080, 1920)]:\n"
+            "    r = F._cubrir(pix, w, h)\n"
+            "    assert (r.get_width(), r.get_height()) == (w, h), (w, h)\n"
+            "print('ok')\n")
+        r = subprocess.run([sys.executable, "-c", guion, os.path.join(ROOT, "shell")], capture_output=True,
+                           text=True, timeout=120)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "ok"), r.stderr[-800:])
+
     def test_limpia_temporales_viejos_de_importaciones_cortadas(self):
         viejo = os.path.join(self.usuario, ".nuevo-viejo")
         nuevo = os.path.join(self.usuario, ".nuevo-nuevo")
@@ -829,6 +936,30 @@ class TestImportarSinGdkPixbuf(Entorno):
             self.assertFalse(F._esta_completa(completo[:-20]), nombre + " cortado")
             self.assertFalse(F._esta_completa(completo[:30]), nombre + " muy cortado")
         self.assertTrue(F._esta_completa(b"texto cualquiera"))     # lo que no se reconoce lo decide el cargador
+
+    def test_un_jpeg_se_da_por_completo_si_su_estructura_llega_al_final(self):
+        def seg(marca, cuerpo):
+            return b"\xff" + bytes([marca]) + struct.pack(">H", len(cuerpo) + 2) + cuerpo
+        miniatura_exif = seg(0xE1, b"Exif\x00\x00" + b"\xff\xd8" + b"x" * 100 + b"\xff\xd9")   # trae su propio FF D9
+        entropia = b"\x12\x34\xff\x00\x56\xff\xd0\x78" * 40                                  # FF 00 y un reinicio FF D0
+        cabecera = (b"\xff\xd8" + seg(0xE0, b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00") + miniatura_exif
+                    + seg(0xDB, b"\x00" + b"\x10" * 64) + seg(0xC2, struct.pack(">BHHB", 8, 64, 64, 1) + b"\x01\x11\x00"))
+        escaneo = seg(0xC4, b"\x00" + b"\x00" * 16) + seg(0xDA, b"\x01\x01\x00\x00\x3f\x00") + entropia
+        jpeg = cabecera + escaneo + escaneo + b"\xff\xd9"                                       # progresivo: dos pasadas
+        self.assertTrue(F._esta_completa(jpeg))
+        for detras in (b"\x00" * 5000, bytes(i % 251 for i in range(20000)), b"\xff\xff\xff", b"SEFH" * 3000):
+            self.assertTrue(F._esta_completa(jpeg + detras), len(detras))      # vídeo/relleno detrás del FF D9
+        self.assertTrue(F._esta_completa(jpeg[:-2] + b"\xff\xff\xd9"))        # bytes de relleno antes del marcador
+        # Cortes: dentro de la cabecera, en mitad de la primera pasada (con el FF D9 de la miniatura EXIF todavía a la
+        # vista en el final de este archivo pequeño: no cuenta) y sin el marcador final.
+        for corte in (30, len(cabecera) + len(escaneo) - 5, len(jpeg) - 2, len(jpeg) - 100):
+            self.assertFalse(F._esta_completa(jpeg[:corte]), corte)
+            self.assertFalse(F._esta_completa(jpeg[:corte] + bytes(i % 251 for i in range(20000))), corte)
+
+    def test_resoluciones_a_generar_ignora_valores_imposibles(self):
+        raros = [(float("inf"), 1080), (1080, float("-inf")), (float("nan"), 5), (10 ** 400, 1080), ("1920", "1080x")]
+        self.assertEqual(F.resoluciones_a_generar(raros), list(F.RESOLUCIONES))
+        self.assertEqual(F.resoluciones_a_generar([(1536.0, 864.9)]), list(F.RESOLUCIONES) + [(1536, 864)])
 
     def test_las_comprobaciones_previas_no_necesitan_gdkpixbuf(self):
         # Vacío, carpeta o inexistente se rechazan antes de intentar decodificar nada.
@@ -1020,6 +1151,22 @@ class TestFondoModo(Entorno):
                                     ("", "imagen"), ("\n", "imagen"), ("color\nimagen", "imagen")):
             self.ajuste("fondo", contenido)
             self.assertEqual(self.modo(), esperado, repr(contenido))
+
+    def test_un_ajuste_que_es_una_tuberia_no_deja_esperando(self):
+        # Igual que fondo-ruta: infinity-wallpaper llama a este script al empezar la sesión y se quedaría sin fondo.
+        os.makedirs(os.path.join(self.config, "infinity"))
+        os.mkfifo(os.path.join(self.config, "infinity", "fondo"))
+        try:
+            r = subprocess.run(["sh", FONDO_MODO], env=self.entorno(), capture_output=True, text=True, timeout=8)
+        except subprocess.TimeoutExpired:
+            self.fail("fondo-modo se queda esperando con una tubería en ~/.config/infinity/fondo")
+        self.assertEqual(r.stdout.strip(), "imagen")
+
+    def test_un_ajuste_enorme_no_cambia_la_decision(self):
+        self.ajuste("fondo", b" " * 300_000 + b"color")        # los espacios no cuentan, como en fondo-ruta
+        self.assertEqual(self.modo(), "color")
+        self.ajuste("fondo", b"color" + b" " * 300_000 + b"x")
+        self.assertEqual(self.modo(), "imagen")
 
 
 @unittest.skipUnless(shutil.which("sh") and shutil.which("awk") and shutil.which("od"), "hacen falta sh, awk y od")

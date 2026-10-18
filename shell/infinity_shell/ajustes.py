@@ -17,6 +17,8 @@ import math
 import os
 import pwd
 import re
+import secrets
+import stat
 import subprocess
 from collections import namedtuple
 
@@ -134,12 +136,12 @@ SCHEMA = [
     _a("bloqueo.antes_de_dormir", "bloqueo", "Bloquear antes de dormir",
        "Al suspender o cerrar la tapa, la pantalla queda bloqueada.", "bool", True, "hypridle"),
     _a("bloqueo.hora", "bloqueo", "Formato de la hora en la pantalla de bloqueo", "",
-       "choice", "%H\\n%M", "nuevo",
+       "choice", "%H\\n%M", "bloqueo",
        opciones=[("%H\\n%M", "24 h, en dos líneas"), ("%I\\n%M", "12 h, en dos líneas"),
                  ("%H:%M", "24 h, en una línea"), ("%I:%M %p", "12 h, en una línea")]),
     _a("bloqueo.ocultar_contrasena_s", "bloqueo", "Ocultar la contraseña tras (segundos sin tocar nada)",
        "En la pantalla de bloqueo, el campo de contraseña se esconde tras este tiempo.",
-       "int", 10, "nuevo", minimo=3, maximo=60),
+       "int", 10, "bloqueo", minimo=3, maximo=60),
 
     # --------------------------------------------------------- teclado y ratón
     _a("teclado.distribucion", "teclado", "Distribución del teclado",
@@ -181,7 +183,8 @@ DEFECTOS = {a.id: a.defecto for a in SCHEMA}
 _POR_ID = {a.id: a for a in SCHEMA}
 
 # Qué recargar según "aplica". "nuevo" no recarga nada: afecta a lo que se abra después.
-# "conversacion" tampoco: pAnkI lee el ajuste al empezar una conversación nueva (ver panki_app.py).
+# "bloqueo" tampoco: gtklock e infinity-lock leen sus ficheros cada vez que se bloquea la pantalla.
+# "conversacion" tampoco: pAnkI lee el ajuste al empezar (ver panki_app.py).
 ACCION_POR_APLICA = {
     "hypr": ("hypr",),
     "hypridle": ("hypridle",),
@@ -203,6 +206,8 @@ COMANDOS = {
 
 _COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 _TEXTO = re.compile(r"[A-Za-z0-9 .'_-]+")
+# Un ajustes.json de verdad mide unos 2 KB. Más de esto no es un fichero de ajustes: ni se lee entero.
+MAX_BYTES_AJUSTES = 1 << 20
 
 
 # ------------------------------------------------------------------ rutas
@@ -219,9 +224,27 @@ def _texto_de(valor):
     """Las opciones son texto: "1" aunque el JSON traiga 1 o 1.0."""
     if isinstance(valor, bool):
         return None
-    if isinstance(valor, (int, float)):
+    if isinstance(valor, int):   # sin pasar por float: un entero de 400 cifras no cabe en uno
+        return str(valor)
+    if isinstance(valor, float):
         return f"{valor:g}"
     return valor if isinstance(valor, str) else None
+
+
+def _nombre_visible(texto, maximo):
+    """El nombre del asistente, como lo acepta la página de pAnkI (sanitizeNombre en panki_web/app.html):
+    espacios juntados, entre 1 y `maximo` caracteres (JavaScript cuenta unidades UTF-16), sin < ni > y sin
+    caracteres de control. Así lo que el usuario se pone dentro de pAnkI también vale aquí."""
+    n = " ".join(texto.split())   # tabuladores y saltos de línea cuentan como espacios, igual que en la página
+    if not n.isprintable():
+        raise ValueError("no puede llevar caracteres de control")
+    if not n or len(n.encode("utf-16-le")) // 2 > maximo or "<" in n or ">" in n:
+        raise ValueError(f"entre 1 y {maximo} caracteres, sin < ni >")
+    return n
+
+
+# Ajustes de texto que aceptan más que el patrón general (ASCII): id → función(texto, maximo) → texto.
+_TEXTO_ESPECIAL = {"panki.nombre": _nombre_visible}
 
 
 def _coaccionar(a, valor):
@@ -232,17 +255,21 @@ def _coaccionar(a, valor):
             return valor
         raise ValueError("debe ser sí o no")
     if t in ("int", "float"):
-        if isinstance(valor, bool) or not isinstance(valor, (int, float)) or not math.isfinite(valor):
+        if isinstance(valor, bool) or not isinstance(valor, (int, float)):
             raise ValueError("debe ser un número")
-        if t == "int":
-            if valor != int(valor):
-                raise ValueError("debe ser un número entero")
-            valor = int(valor)
-        else:
-            valor = round(float(valor), 3)
+        if isinstance(valor, float):
+            if not math.isfinite(valor):
+                raise ValueError("debe ser un número")
+            if t == "int":
+                if valor != int(valor):
+                    raise ValueError("debe ser un número entero")
+                valor = int(valor)
+            else:
+                valor = round(valor, 3)
+        # Un entero enorme (el JSON los admite de cientos de cifras) se compara tal cual: no se convierte a float.
         if not a.minimo <= valor <= a.maximo:
             raise ValueError(f"debe estar entre {a.minimo:g} y {a.maximo:g}")
-        return valor
+        return float(valor) if t == "float" else valor
     if t == "choice":
         texto = _texto_de(valor)
         if isinstance(a.opciones, OpcionesFondo):
@@ -258,9 +285,13 @@ def _coaccionar(a, valor):
             raise ValueError("debe ser un color como #15193a")
         return valor.lower()
     if t == "texto":
+        if a.id in _TEXTO_ESPECIAL:
+            if not isinstance(valor, str):
+                raise ValueError(f"entre 1 y {a.maximo} caracteres, sin < ni >")
+            return _TEXTO_ESPECIAL[a.id](valor, a.maximo)
         texto = valor.strip() if isinstance(valor, str) else ""
         if not texto or len(texto) > a.maximo or not _TEXTO.fullmatch(texto):
-            raise ValueError(f"solo letras, números, espacios y - _ . ' (máximo {a.maximo} caracteres)")
+            raise ValueError(f"solo letras sin tilde, números, espacios y - _ . ' (máximo {a.maximo} caracteres)")
         return texto
     raise ValueError("tipo desconocido")
 
@@ -281,6 +312,9 @@ def validar(valores):
         except ValueError as e:
             errores.append((a.id, f"{a.etiqueta}: {e}"))
             normal[a.id] = a.defecto
+        except ArithmeticError:   # cinturón y tirantes: un número que no se puede operar es un valor no válido
+            errores.append((a.id, f"{a.etiqueta}: valor no válido"))
+            normal[a.id] = a.defecto
     if not errores:  # reglas que relacionan varios ajustes
         bloq, apag, susp = normal["bloqueo.minutos"], normal["bloqueo.apagar_pantalla"], normal["bloqueo.suspender"]
         if apag <= bloq:
@@ -290,6 +324,25 @@ def validar(valores):
     return normal, errores
 
 
+def _leer_json(ruta):
+    """El JSON de `ruta`. Lanza OSError o ValueError, y nada más: ni RecursionError con miles de niveles anidados
+    ni MemoryError con un fichero enorme (un ajustes.json ajeno o corrupto no puede tumbar la app ni el shell)."""
+    with open(ruta, "rb") as f:
+        crudo = f.read(MAX_BYTES_AJUSTES + 1)
+    if len(crudo) > MAX_BYTES_AJUSTES:
+        raise ValueError("es demasiado grande para ser un fichero de ajustes")
+    try:
+        texto = crudo.decode("utf-8-sig")   # utf-8-sig: el Bloc de notas de Windows guarda con BOM
+    except UnicodeDecodeError:
+        raise ValueError("no es un archivo de texto") from None
+    try:
+        return json.loads(texto)
+    except RecursionError:
+        raise ValueError("tiene demasiados niveles anidados") from None
+    except json.JSONDecodeError as e:
+        raise ValueError(f"no es un JSON válido (línea {e.lineno})") from None
+
+
 def cargar(ruta=None):
     """Lee los ajustes del usuario. Un fichero dañado no rompe nada: se usan los valores por defecto.
 
@@ -297,12 +350,15 @@ def cargar(ruta=None):
     """
     ruta = ruta or ruta_ajustes()
     try:
-        with open(ruta, encoding="utf-8") as f:
-            datos = json.load(f)
+        datos = _leer_json(ruta)
     except FileNotFoundError:
         return dict(DEFECTOS), []
-    except (OSError, ValueError) as e:
-        return dict(DEFECTOS), [f"No se pudo leer {ruta}: {e}"]
+    except OSError as e:
+        return dict(DEFECTOS), [f"No se pudo leer {ruta} ({e.strerror or 'error de lectura'}); "
+                                "se usan los valores por defecto."]
+    except ValueError as e:
+        return dict(DEFECTOS), [f"{ruta} está dañado o no es un fichero de ajustes ({e}); "
+                                "se usan los valores por defecto."]
     if not isinstance(datos, dict):
         return dict(DEFECTOS), [f"{ruta} no tiene el formato esperado; se usan los valores por defecto."]
     valores, errores = validar(datos)
@@ -315,13 +371,14 @@ def valor(id, ruta=None):
     return v.get(id, DEFECTOS.get(id))
 
 
-def importar(ruta):
+def importar(ruta, base=None):
     """Lee un fichero exportado. Devuelve (valores, errores); el llamador decide si lo aplica.
 
+    Lo que el fichero no menciona (uno exportado por una versión anterior no conoce los ajustes nuevos) vuelve
+    al valor por defecto, o conserva el de `base` si se da.
     Lanza OSError o ValueError si el fichero no se puede leer como JSON de ajustes.
     """
-    with open(ruta, encoding="utf-8") as f:
-        datos = json.load(f)
+    datos = _leer_json(ruta)
     if not isinstance(datos, dict):
         raise ValueError("el fichero no contiene ajustes de Infinity")
     # Un fondo que añadió el usuario en otro equipo no existe aquí: no tiene sentido rechazar todo el fichero
@@ -331,13 +388,39 @@ def importar(ruta):
         if id_ in datos and isinstance(datos[id_], str) and a.opciones.normalizar(datos[id_]) is None:
             datos = dict(datos)
             datos[id_] = a.defecto
+    if base:
+        datos = {**{k: v for k, v in base.items() if k in DEFECTOS and k not in datos}, **datos}
     return validar(datos)
 
 
+def cambios_externos(base, ruta=None):
+    """Ajustes que otro programa ha cambiado en ajustes.json respecto a `base` (lo último que esta ventana leyó o
+    guardó): {id: valor}. Solo cuentan los que el fichero menciona y valen; si no se puede leer, no hay cambios.
+
+    pAnkI guarda su nombre y la herramienta cambiar_ajuste escribe ajustes.json mientras Ajustes puede estar abierta.
+    """
+    try:
+        datos = _leer_json(ruta or ruta_ajustes())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(datos, dict):
+        return {}
+    valores, errores = validar(datos)
+    malos = {i for i, _ in errores}
+    return {k: valores[k] for k in DEFECTOS
+            if k in datos and k not in malos and valores[k] != base.get(k)}
+
+
+def _json_texto(valores, extra=None):
+    contenido = dict(extra or {})
+    contenido.update({k: valores[k] for k in DEFECTOS})
+    return json.dumps(contenido, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+
+
 def guardar_json(valores, ruta=None):
-    """Escribe ajustes.json de forma atómica. Solo guarda los ajustes conocidos."""
+    """Escribe un fichero de ajustes de forma atómica (exportar). Solo guarda los ajustes conocidos."""
     ruta = ruta or ruta_ajustes()
-    _escribir(ruta, json.dumps({k: valores[k] for k in DEFECTOS}, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
+    _confirmar([_preparar(ruta, _json_texto(valores))])
 
 
 def cambiados(antes, despues):
@@ -350,24 +433,76 @@ def acciones_para(ids):
     pedidas = set()
     for i in ids:
         pedidas.update(ACCION_POR_APLICA.get(_POR_ID[i].aplica, ()))
-    return [a for a in ORDEN_ACCIONES if a in pedidas]
+    return ordenar_acciones(pedidas)
 
 
 # ---------------------------------------------------------------- ficheros
 def _leer(ruta):
+    """El texto de un fichero que se edita en su sitio ("" si no existe). Los bytes que no son UTF-8 se conservan
+    (surrogateescape) para devolverlos tal cual al escribir."""
     try:
-        with open(ruta, encoding="utf-8") as f:
+        with open(ruta, encoding="utf-8", errors="surrogateescape") as f:
             return f.read()
     except FileNotFoundError:
         return ""
 
 
+def _preparar(ruta, texto):
+    """Primera mitad de una escritura atómica: deja `texto` en un temporal junto a `ruta` (mismo directorio, así el
+    reemplazo es atómico) y devuelve (temporal, destino). Si `ruta` es un enlace simbólico (dotfiles con stow), el
+    destino es el fichero al que apunta: el enlace se respeta. Conserva el modo del fichero que sustituye."""
+    destino = os.path.realpath(ruta)
+    if os.path.isdir(destino):
+        raise IsADirectoryError(21, os.strerror(21), destino)
+    carpeta = os.path.dirname(destino)
+    os.makedirs(carpeta, exist_ok=True)
+    try:
+        modo = stat.S_IMODE(os.stat(destino).st_mode)
+    except OSError:
+        modo = None
+    temporal = f"{destino}.{secrets.token_hex(4)}.tmp"
+    fd = os.open(temporal, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)   # 0o666 menos la umask, como open()
+    try:
+        f = os.fdopen(fd, "w", encoding="utf-8", errors="surrogateescape")
+    except BaseException:
+        os.close(fd)
+        _descartar([(temporal, destino)])
+        raise
+    try:
+        with f:
+            if modo is not None:
+                os.fchmod(f.fileno(), modo)
+            f.write(texto)
+            f.flush()
+            os.fsync(f.fileno())
+    except BaseException:
+        _descartar([(temporal, destino)])
+        raise
+    return temporal, destino
+
+
+def _descartar(preparados):
+    for temporal, _ in preparados:
+        try:
+            os.unlink(temporal)
+        except OSError:
+            pass
+
+
+def _confirmar(preparados):
+    """Segunda mitad: sustituye cada destino por su temporal. Si algo falla, borra los temporales que quedan."""
+    hechos = 0
+    try:
+        for temporal, destino in preparados:
+            os.replace(temporal, destino)
+            hechos += 1
+    finally:
+        _descartar(preparados[hechos:])
+
+
 def _escribir(ruta, texto):
-    """Escribe en un .tmp y lo reemplaza: un corte a mitad no deja el fichero a medias."""
-    os.makedirs(os.path.dirname(ruta), exist_ok=True)
-    with open(ruta + ".tmp", "w", encoding="utf-8") as f:
-        f.write(texto)
-    os.replace(ruta + ".tmp", ruta)
+    """Escribe en un temporal y lo reemplaza: un corte a mitad no deja el fichero a medias."""
+    _confirmar([_preparar(ruta, texto)])
 
 
 def _bool(b):
@@ -527,29 +662,64 @@ def generar(v, textos=None):
     }
 
 
+def _desconocidos(ruta):
+    """Lo que hay en un ajustes.json y no es de este esquema (ajustes de otra versión): se conserva al guardar."""
+    try:
+        datos = _leer_json(ruta)
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in datos.items() if k not in DEFECTOS} if isinstance(datos, dict) else {}
+
+
 def escribir(valores, base=None):
-    """Guarda ajustes.json y regenera los ficheros de configuración. Devuelve las rutas escritas."""
+    """Guarda ajustes.json y regenera los ficheros de configuración. Devuelve las rutas escritas.
+
+    Todo o nada en lo que importa: primero se preparan todos los temporales (aquí fallan el disco lleno, una carpeta
+    sin permiso, un archivo donde tendría que haber una carpeta) y solo si todos están listos se reemplazan. ajustes.json
+    va el último: si algo se corta en medio, sigue diciendo lo de antes y volver a pulsar Aplicar lo deja todo coherente.
+    """
     base = base or dir_config()
     textos = {rel: _leer(os.path.join(base, rel)) for rel in ("gtklock/config.ini", "foot/foot.ini")}
     ficheros = generar(valores, textos)
-    guardar_json(valores, os.path.join(base, "infinity", "ajustes.json"))
-    for rel, texto in ficheros.items():
-        _escribir(os.path.join(base, rel), texto)
+    ruta_json = os.path.join(base, "infinity", "ajustes.json")
+    preparados = []
+    try:
+        for rel, texto in ficheros.items():
+            preparados.append(_preparar(os.path.join(base, rel), texto))
+        preparados.append(_preparar(ruta_json, _json_texto(valores, _desconocidos(ruta_json))))
+    except BaseException:
+        _descartar(preparados)
+        raise
+    _confirmar(preparados)
     return [os.path.join(base, rel) for rel in ficheros]
 
 
 # ---------------------------------------------------------------- recarga
+def _motivo_error(e):
+    """Por qué no se pudo lanzar una orden, en una frase que se puede enseñar (sin la traza de Python ni el argv)."""
+    if isinstance(e, subprocess.TimeoutExpired):
+        return "no respondió a tiempo"
+    if isinstance(e, FileNotFoundError):
+        return "no está instalada"
+    if isinstance(e, PermissionError):
+        return "no se pudo ejecutar (sin permiso)"
+    if isinstance(e, OSError) and e.strerror:
+        return e.strerror
+    return "no se pudo ejecutar"
+
+
 def correr_real(argv, detach=False):
-    """Ejecuta una orden. Devuelve (ok, texto_de_error)."""
+    """Ejecuta una orden (sin shell: argv es una lista). Devuelve (ok, texto_de_error)."""
     try:
         if detach:
             subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
             return True, ""
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=15)
+        r = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace",
+                           timeout=15)
         return r.returncode == 0, (r.stderr or r.stdout).strip()
     except (OSError, subprocess.SubprocessError) as e:
-        return False, str(e)
+        return False, _motivo_error(e)
 
 
 def ejecutar_acciones(acciones, correr=None):
@@ -565,6 +735,27 @@ def ejecutar_acciones(acciones, correr=None):
             if not ok and obligatorio:
                 fallos.append((argv, salida))
     return fallos
+
+
+def ordenar_acciones(acciones):
+    """Las acciones sin repetir y en el orden en que hay que ejecutarlas."""
+    pedidas = set(acciones)
+    return [a for a in ORDEN_ACCIONES if a in pedidas]
+
+
+def acciones_fallidas(fallos):
+    """A qué acciones pertenecen los fallos de `ejecutar_acciones`: lo que hay que reintentar."""
+    argvs = {tuple(argv) for argv, _ in fallos}
+    return [a for a in ORDEN_ACCIONES if any(tuple(argv) in argvs for argv, _, _ in COMANDOS[a])]
+
+
+# Qué es cada acción, para decírselo al usuario sin enseñarle nombres de programas ni salidas del sistema.
+DESCRIPCION_ACCION = {
+    "hypr": "la configuración de Hyprland",
+    "hypridle": "el bloqueo y apagado automáticos",
+    "wallpaper": "el fondo de pantalla",
+    "shell": "el panel del escritorio",
+}
 
 
 # ----------------------------------------------------- contraseña de la cuenta

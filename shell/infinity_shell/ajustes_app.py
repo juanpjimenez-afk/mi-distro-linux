@@ -28,6 +28,11 @@ AYUDA_APLICA = {
 }
 # Los ajustes que se eligen con una galería de miniaturas en vez de un desplegable: id → qué fondo es.
 GALERIAS = {"escritorio.fondo": "escritorio", "bloqueo.fondo": "bloqueo"}
+# Ajustes que ya no hacen nada: el motor de Gemini de pAnkI está retirado (ver panki_app.py; nadie lee el modelo ni
+# «proponer comandos»). Siguen en el esquema —ajustes.json, Exportar/Importar y el motor antiguo los entienden y
+# se conservan al aplicar— pero la ventana no los enseña, para no ofrecer controles que no sirven de nada. Si el
+# motor se retoma, basta vaciar esta lista.
+OCULTOS = ("panki.modelo", "panki.comandos")
 MOSAICO_ANCHO, MOSAICO_ALTO = 176, 99   # la miniatura (16:9)
 CSS = """
 .fondo-mosaico { padding: 6px; border-radius: 12px; border: 2px solid transparent; }
@@ -57,6 +62,14 @@ def _en_vivo():
 
 def _hex(color):
     return "#%02x%02x%02x" % tuple(round(x * 255) for x in (color.red, color.green, color.blue))
+
+
+def _motivo(e):
+    """Por qué falló una operación con ficheros, en una frase (sin la traza de Python ni la ruta entera)."""
+    if isinstance(e, OSError):
+        nombre = f" ({os.path.basename(e.filename)})" if getattr(e, "filename", None) else ""
+        return f"{e.strerror or 'error de entrada/salida'}{nombre}"
+    return str(e) or "el contenido no es válido"
 
 
 def _rgba(texto):
@@ -331,6 +344,8 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         self.valores, avisos = A.cargar()
         self.guardado = dict(self.valores)
         self.controles = {}
+        self._ocultos = {i: self.valores[i] for i in OCULTOS if i in self.valores}   # sin control: se conservan
+        self._pendientes = set()   # acciones de recarga que fallaron y se reintentan al volver a pulsar Aplicar
         self._cargando = True  # hasta cargar los valores, los controles no cuentan como cambios
         self._importando = False
         display = Gdk.Display.get_default()
@@ -399,7 +414,7 @@ class VentanaAjustes(Gtk.ApplicationWindow):
             if clave == "panki":
                 self._nota_panki(caja)
             for a in A.SCHEMA:
-                if a.pagina == clave:
+                if a.pagina == clave and a.id not in OCULTOS:
                     caja.append(self._galeria(a) if a.id in GALERIAS else self._fila(a))
         scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         scroll.set_child(caja)
@@ -445,7 +460,7 @@ class VentanaAjustes(Gtk.ApplicationWindow):
             w.set_digits(3)
             w.connect("value-changed", self._cambio)
         elif a.tipo == "color":
-            w = Gtk.ColorDialogButton.new(Gtk.ColorDialog())
+            w = Gtk.ColorDialogButton.new(Gtk.ColorDialog(with_alpha=False))   # el ajuste es #rrggbb: sin transparencia
             w.connect("notify::rgba", self._cambio)
             if a.id == "escritorio.color":
                 w.connect("notify::rgba", lambda *_: self.controles["escritorio.fondo"].pintar_color())
@@ -548,6 +563,7 @@ class VentanaAjustes(Gtk.ApplicationWindow):
     def _al_cambiar_foco(self, *_):
         if self.is_active():  # al volver de la terminal de passwd, el estado puede haber cambiado
             self._refrescar_cuenta()
+            self._absorber_cambios_externos()   # y pAnkI pudo renombrarse mientras tanto
 
     def _cambiar_contrasena(self, *_):
         ok, error = A.cambiar_contrasena()
@@ -566,8 +582,10 @@ class VentanaAjustes(Gtk.ApplicationWindow):
             self.estado.remove_css_class("error")
 
     def _leer_controles(self):
-        valores = {}
+        valores = dict(self._ocultos)
         for a in A.SCHEMA:
+            if a.id in OCULTOS:
+                continue
             w = self.controles[a.id]
             if a.id in GALERIAS:
                 v = w.valor
@@ -576,10 +594,9 @@ class VentanaAjustes(Gtk.ApplicationWindow):
             elif a.tipo == "choice":
                 i = w.get_selected()
                 v = a.opciones[i][0] if i < len(a.opciones) else a.defecto
-            elif a.tipo == "int":
-                v = int(round(w.get_value()))
-            elif a.tipo == "float":
-                v = round(w.get_value(), 3)
+            elif a.tipo in ("int", "float"):
+                w.update()   # un número tecleado y aún sin confirmar (Enter o salir del campo) también cuenta
+                v = int(round(w.get_value())) if a.tipo == "int" else round(w.get_value(), 3)
             elif a.tipo == "color":
                 v = _hex(w.get_rgba())
             else:
@@ -588,11 +605,21 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         return valores
 
     def _cargar_controles(self, valores):
+        """Pone todos los controles: lo que no está en `valores` vuelve a su valor por defecto."""
+        self._poner_controles({a.id: valores.get(a.id, a.defecto) for a in A.SCHEMA})
+
+    def _poner_controles(self, valores):
+        """Pone los controles de los ajustes que vienen en `valores` (y solo esos)."""
         self._cargando = True  # cargar valores no cuenta como un cambio del usuario
         try:
             for a in A.SCHEMA:
+                if a.id not in valores:
+                    continue
+                v = valores[a.id]
+                if a.id in OCULTOS:
+                    self._ocultos[a.id] = v
+                    continue
                 w = self.controles[a.id]
-                v = valores.get(a.id, a.defecto)
                 if a.id in GALERIAS:
                     w.valor = v
                 elif a.tipo == "bool":
@@ -608,6 +635,18 @@ class VentanaAjustes(Gtk.ApplicationWindow):
                     w.set_text(str(v))
         finally:
             self._cargando = False
+
+    def _absorber_cambios_externos(self):
+        """Otro programa (pAnkI al renombrarse, por ejemplo) pudo cambiar ajustes.json con esta ventana abierta.
+        Lo que el usuario no ha tocado aquí se pone al día; lo que sí tocó manda. Así, aplicar no devuelve a su
+        valor viejo un ajuste que cambió otro."""
+        externos = A.cambios_externos(self.guardado)
+        if not externos:
+            return
+        pantalla = self._leer_controles()
+        self._poner_controles({k: v for k, v in externos.items() if pantalla.get(k) == self.guardado.get(k)})
+        self.guardado.update(externos)   # lo que hay en disco es lo que se tiene por aplicado
+        self._cambio()
 
     def _cambio(self, *_):
         if self._cargando:
@@ -740,6 +779,7 @@ class VentanaAjustes(Gtk.ApplicationWindow):
 
     # ---------------------------------------------------------------- acciones
     def _aplicar(self, *_):
+        self._absorber_cambios_externos()
         nuevos, errores = A.validar(self._leer_controles())
         if errores:
             self._estado("No se ha aplicado nada. " + " ".join(m for _, m in errores), error=True)
@@ -747,16 +787,25 @@ class VentanaAjustes(Gtk.ApplicationWindow):
         cambiados = A.cambiados(self.guardado, nuevos)
         try:
             A.escribir(nuevos)
-        except OSError as e:
-            self._estado(f"No se pudo guardar: {e}", error=True)
+        except (OSError, ValueError) as e:
+            self._estado(f"No se pudo guardar: {_motivo(e)}. No se ha cambiado nada.", error=True)
             return
         self.guardado = nuevos
-        fallos = A.ejecutar_acciones(A.acciones_para(cambiados))
+        reintento = bool(self._pendientes)
+        self._pendientes.update(A.acciones_para(cambiados))
+        fallos = A.ejecutar_acciones(A.ordenar_acciones(self._pendientes))
+        # Lo que falla se vuelve a intentar con el siguiente Aplicar, aunque ya no haya nada distinto que guardar.
+        self._pendientes = set(A.acciones_fallidas(fallos))
         if fallos:
-            detalle = " · ".join(f"{argv[0]}: {(salida.splitlines() or ['falló'])[0]}" for argv, salida in fallos)
-            self._estado(f"Guardado, pero no se pudo aplicar: {detalle}", error=True)
+            for argv, salida in fallos:   # el detalle va al registro de la sesión, no a la ventana
+                print(f"infinity-ajustes: {' '.join(argv)}: {salida}", file=sys.stderr)
+            que = ", ".join(A.DESCRIPCION_ACCION[a] for a in A.ordenar_acciones(self._pendientes))
+            self._estado(f"Guardado, pero no se pudo aplicar ahora ({que}). Pulsa Aplicar para reintentarlo; "
+                         "si sigue fallando, se aplicará al cerrar sesión y volver a entrar.", error=True)
         elif cambiados:
             self._estado(f"Aplicado: {len(cambiados)} cambio(s).")
+        elif reintento:
+            self._estado("Aplicado.")
         else:
             self._estado("No había cambios.")
 
@@ -773,12 +822,16 @@ class VentanaAjustes(Gtk.ApplicationWindow):
             fichero = dialogo.save_finish(resultado)
         except GLib.Error:
             return  # cancelado
-        try:
-            A.guardar_json(self.guardado, fichero.get_path())
-        except OSError as e:
-            self._estado(f"No se pudo exportar: {e}", error=True)
+        ruta = fichero.get_path()
+        if ruta is None:   # una carpeta remota que el sistema no ha montado: no hay ruta local donde escribir
+            self._estado("Solo se puede exportar a una carpeta de este equipo.", error=True)
             return
-        self._estado(f"Exportado (ajustes aplicados) a {fichero.get_path()}")
+        try:
+            A.guardar_json(self.guardado, ruta)
+        except (OSError, ValueError) as e:
+            self._estado(f"No se pudo exportar: {_motivo(e)}.", error=True)
+            return
+        self._estado(f"Exportado (ajustes aplicados) a {ruta}")
 
     def _importar(self, *_):
         dialogo = Gtk.FileDialog(title="Importar ajustes")
@@ -789,10 +842,15 @@ class VentanaAjustes(Gtk.ApplicationWindow):
             fichero = dialogo.open_finish(resultado)
         except GLib.Error:
             return  # cancelado
+        ruta = fichero.get_path()
+        if ruta is None:
+            self._estado("Solo se pueden importar ajustes de un archivo de este equipo.", error=True)
+            return
         try:
-            valores, errores = A.importar(fichero.get_path())
+            # Lo que el archivo no menciona (uno de una versión anterior) se queda como está en pantalla.
+            valores, errores = A.importar(ruta, base=A.validar(self._leer_controles())[0])
         except (OSError, ValueError) as e:
-            self._estado(f"No se pudo importar: {e}", error=True)
+            self._estado(f"No se pudo importar: {_motivo(e)}.", error=True)
             return
         if errores:
             self._estado("No se ha importado nada. " + " ".join(m for _, m in errores), error=True)

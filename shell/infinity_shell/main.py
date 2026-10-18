@@ -12,6 +12,12 @@ Para atajos de teclado es MUCHO más rápido hablar con la instancia ya abierta 
     gapplication action org.infinity.Shell refresh
     gapplication action org.infinity.Shell recargar   (tras cambiar algo en Ajustes)
 
+La ISLA DINÁMICA (píldora negra centrada arriba, isla.py) enseña OSD de volumen y brillo; los atajos la
+avisan con sus propias acciones (la isla lee ella misma el valor actual con wpctl/brightnessctl):
+
+    gapplication action org.infinity.Shell osd-volumen
+    gapplication action org.infinity.Shell osd-brillo
+
 La burbuja de pAnkI (derecha, sobre el estado) se oculta con el ajuste panki.burbuja; "recargar" lo relee.
 """
 import os
@@ -52,6 +58,7 @@ from .biblioteca_ventana import VentanaBiblioteca  # noqa: E402
 from .controles import Controles  # noqa: E402
 from .dock import Dock, Estado, Orbe  # noqa: E402
 from .hypr import Hyprland  # noqa: E402
+from .isla import Isla, ReproduccionMPRIS  # noqa: E402
 from .launcher import Launcher  # noqa: E402
 from .marca import Marca, fondo_modo  # noqa: E402
 from .panki_burbuja import BurbujaPanki  # noqa: E402
@@ -67,6 +74,7 @@ class Shell(Gtk.Application):
         self.hypr = None
         self.dock = self.orbe = self.estado = None
         self.burbuja = None  # la burbuja de pAnkI (se crea con la interfaz; Ajustes puede ocultarla)
+        self.isla = None  # la isla dinámica (OSD de volumen/brillo, arriba y centrada; isla.py)
         self.controles = None  # las pastillas −, □, × junto a cada ventana (controles.py)
         self.launcher = None  # se crea la primera vez que se usa (ahorra RAM)
         self.biblioteca_ventana = None  # idem
@@ -90,7 +98,8 @@ class Shell(Gtk.Application):
 
         # Acciones expuestas por D-Bus (las usan los atajos de teclado y la app de Ajustes)
         acciones = (("toggle-launcher", self._accion_buscador), ("refresh", self._accion_refrescar),
-                    ("toggle-biblioteca", self._accion_biblioteca), ("recargar", self._accion_recargar))
+                    ("toggle-biblioteca", self._accion_biblioteca), ("recargar", self._accion_recargar),
+                    ("osd-volumen", self._accion_osd_volumen), ("osd-brillo", self._accion_osd_brillo))
         for nombre, funcion in acciones:
             accion = Gio.SimpleAction.new(nombre, None)
             accion.connect("activate", funcion)
@@ -144,6 +153,14 @@ class Shell(Gtk.Application):
         if self.estado is not None:
             self.estado.refrescar()
 
+    def _accion_osd_volumen(self, *_):
+        if self.isla is not None:
+            self.isla.mostrar_volumen()
+
+    def _accion_osd_brillo(self, *_):
+        if self.isla is not None:
+            self.isla.mostrar_brillo()
+
     def do_command_line(self, linea):
         args = linea.get_arguments()[1:]
         if self.dock is None:
@@ -163,9 +180,12 @@ class Shell(Gtk.Application):
         self.orbe = Orbe(self, lambda: self._launcher().alternar())
         self.estado = Estado(self)
         self.burbuja = BurbujaPanki(self)
+        # La isla dinámica lee MPRIS por D-Bus (now-playing) con Gio, sin dependencias nuevas; si no hay
+        # reproductor o sesión de audio, la reproducción simplemente no aparece y el resto funciona igual.
+        self.isla = Isla(self, reproduccion=ReproduccionMPRIS)
         # Conexión propia con Hyprland: el dock ya usa su socket de eventos y Hyprland.escuchar admite un solo oyente.
         self.controles = Controles(self, Hyprland())
-        for ventana in (self.dock, self.orbe, self.estado):
+        for ventana in (self.dock, self.orbe, self.estado, self.isla):
             ventana.present()
         self._sincronizar_burbuja()  # la burbuja (a la derecha, sobre el estado) se muestra según Ajustes
         self._sincronizar_marca()  # con el fondo de color, la marca ∞ se ve en el centro (marca.py)
