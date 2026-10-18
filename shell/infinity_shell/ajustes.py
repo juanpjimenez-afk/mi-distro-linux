@@ -825,5 +825,12 @@ def argv_cambiar_contrasena():
 
 
 def cambiar_contrasena(correr=None):
-    """Abre la terminal con passwd. Devuelve (ok, texto_de_error)."""
-    return (correr or correr_real)(argv_cambiar_contrasena(), True)
+    """Abre la terminal con passwd. Devuelve (ok, texto_de_error).
+
+    El nombre del programa lo pone quien llama (correr_real devuelve solo el motivo), así que si falla
+    se antepone la terminal: «La terminal «foot» no está instalada.»."""
+    argv = argv_cambiar_contrasena()
+    ok, error = (correr or correr_real)(argv, True)
+    if not ok and error:
+        error = f"La terminal «{argv[0]}» {error}."
+    return ok, error
