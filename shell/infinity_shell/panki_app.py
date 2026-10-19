@@ -7,7 +7,8 @@ módulo solo le da una ventana real: aloja esa página en una WebKit.WebView, le
 persistente propio y tiende el puente mínimo que necesita con el sistema (ver docs/panki-web-diseno.md
 para el diseño completo y el contrato con la página).
 
-    python3 -m infinity_shell.panki_app [--preguntar TEXTO]   (lo lanza el comando infinity-panki)
+    python3 -m infinity_shell.panki_app [--preguntar TEXTO] [--calendario[=AAAA-MM-DD]]
+                                                              (lo lanzan infinity-panki e infinity-calendario)
 
 El motor anterior (Gemini, con sus tarjetas de aprobación y sus herramientas sobre el sistema) está
 descrito en docs/panki-diseno.md y vivía en panki_nucleo.py/panki_herramientas.py/panki_texto.py; este
@@ -29,6 +30,7 @@ instalados — shell/tests/test_panki_app_web.py lo hace así.
 """
 import json
 import os
+import re
 import sys
 import time
 import traceback
@@ -57,11 +59,16 @@ RUTA_WEB_INSTALADA = "/usr/share/infinity/panki/app.html"
 ACCIONES_JS = ("nombre",)
 MAX_VALOR_JS = 24
 
-USO = """Uso: infinity-panki [--preguntar TEXTO]
+# --calendario[=AAAA-MM-DD]: abre pAnkI (o usa la ventana ya abierta) directamente en la vista Calendario, y
+# si lleva fecha, en ese día. La fecha se valida aquí y otra vez en la página (okKey en app.html).
+FECHA_CAL = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-  (sin opciones)       abre pAnkI
-  --preguntar TEXTO    abre pAnkI, o usa la ventana que ya está abierta, y le envía el texto
-  -h, --help           muestra esta ayuda
+USO = """Uso: infinity-panki [--calendario[=AAAA-MM-DD]] [--preguntar TEXTO]
+
+  (sin opciones)           abre pAnkI
+  --preguntar TEXTO        abre pAnkI, o usa la ventana que ya está abierta, y le envía el texto
+  --calendario[=FECHA]     abre pAnkI en la vista Calendario (opcionalmente en el día AAAA-MM-DD)
+  -h, --help               muestra esta ayuda
 """
 
 
@@ -90,25 +97,45 @@ def registrar(texto):
 
 
 # ------------------------------------------------------------------------------- línea de órdenes
-def interpretar_argumentos(args):
+def interpretar_opciones(args):
     """Interpreta la línea de órdenes (sin el nombre del programa).
 
-    Devuelve (pregunta, ayuda, error). `--preguntar` se queda con TODO lo que va detrás, aunque empiece por
-    un guion: es texto del usuario, no opciones.
+    Devuelve (pregunta, ayuda, error, calendario). `calendario` es None si no se pidió, "" si se pidió sin
+    fecha (--calendario) o la fecha AAAA-MM-DD (--calendario=AAAA-MM-DD). `--preguntar` se queda con TODO lo
+    que va detrás, aunque empiece por un guion: es texto del usuario, no opciones; por eso las demás
+    opciones solo se miran ANTES de él.
     """
-    if not args:
-        return None, False, None
-    primero = args[0]
-    if primero in ("-h", "--help", "--ayuda"):
-        return None, True, None
-    if primero == "--preguntar":
-        texto = " ".join(args[1:])
-    elif primero.startswith("--preguntar="):
-        texto = primero.split("=", 1)[1]
-    else:
-        return None, False, f"Opción desconocida: {primero}"
-    texto = texto.strip()
-    return (texto[:MAX_PREGUNTA] or None), False, None
+    pregunta = None
+    calendario = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-h", "--help", "--ayuda"):
+            return None, True, None, None
+        if a == "--calendario":
+            calendario = ""
+        elif a.startswith("--calendario="):
+            fecha = a.split("=", 1)[1].strip()
+            if fecha and not FECHA_CAL.match(fecha):
+                return None, False, f"Fecha no válida en --calendario: {fecha} (usa AAAA-MM-DD)", None
+            calendario = fecha
+        elif a == "--preguntar":
+            pregunta = " ".join(args[i + 1:])
+            break
+        elif a.startswith("--preguntar="):
+            pregunta = a.split("=", 1)[1]
+            break
+        else:
+            return None, False, f"Opción desconocida: {a}", None
+        i += 1
+    if pregunta is not None:
+        pregunta = pregunta.strip()[:MAX_PREGUNTA] or None
+    return pregunta, False, None, calendario
+
+
+def interpretar_argumentos(args):
+    """Como interpretar_opciones, sin el calendario: (pregunta, ayuda, error). Se conserva por compatibilidad."""
+    return interpretar_opciones(args)[:3]
 
 
 def juntar_pregunta(argv):
@@ -175,6 +202,14 @@ def _js_nombre_sistema_inicial(nombre):
     bienvenida, sin el parpadeo de mostrar «pAnkI» y corregirlo al terminar la carga. SIEMPRE por
     json.dumps: nunca se concatena el texto crudo en el script."""
     return "window.__PANKI_NOMBRE_SISTEMA__ = %s;" % json.dumps(nombre)
+
+
+def _js_abrir_calendario(fecha=None):
+    """El JavaScript que abre la vista Calendario (ver window.pankiAbrirCalendario en app.html), en un día
+    concreto si `fecha` es AAAA-MM-DD y en el mes actual si no. SIEMPRE por json.dumps."""
+    if fecha is not None and not FECHA_CAL.match(str(fecha)):
+        fecha = None
+    return "window.pankiAbrirCalendario(%s)" % json.dumps(fecha)
 
 
 def _js_preguntar(texto):
@@ -356,6 +391,7 @@ class VentanaPanki(_BaseVentana):
         self._cerrada = False  # la aplicación entera se apaga: nada más debe tocar la página
         self._pagina_lista = False  # el primer load-changed == FINISHED ya llegó
         self._pregunta_pendiente = None  # --preguntar que llegó antes de que la página terminara de cargar
+        self._calendario_pendiente = None  # --calendario/acción que llegó antes de terminar de cargar ("" = sin fecha)
         self._webkit_disponible = False
         self._ucm = None
         self._WebKit = None
@@ -420,6 +456,9 @@ class VentanaPanki(_BaseVentana):
             return  # solo cuenta la primera carga: una recarga no debe reinyectar ni repetir --preguntar
         self._pagina_lista = True
         self._aplicar_nombre_inicial()
+        if self._calendario_pendiente is not None:
+            fecha, self._calendario_pendiente = self._calendario_pendiente, None
+            self._evaluar_js(_js_abrir_calendario(fecha or None))
         if self._pregunta_pendiente is not None:
             texto, self._pregunta_pendiente = self._pregunta_pendiente, None
             self._evaluar_js(_js_preguntar(texto))
@@ -471,6 +510,17 @@ class VentanaPanki(_BaseVentana):
         else:
             self._pregunta_pendiente = texto  # se dispara en _al_cambiar_carga, al terminar de cargar
 
+    # --------------------------------------------------------------------- calendario
+    def abrir_calendario(self, fecha=None):
+        """Pone la página en la vista Calendario (opcionalmente en el día `fecha`, AAAA-MM-DD). Es la MISMA
+        ventana y la misma página que pAnkI: los eventos son las tareas con fecha, sin segundo almacenamiento."""
+        if self._cerrada or not self._webkit_disponible:
+            return
+        if self._pagina_lista:
+            self._evaluar_js(_js_abrir_calendario(fecha or None))
+        else:
+            self._calendario_pendiente = fecha or ""  # se abre al terminar de cargar (_al_cambiar_carga)
+
     # --------------------------------------------------------------------- mostrar, alternar, cerrar
     def mostrar(self):
         self.present()
@@ -509,6 +559,9 @@ class Panki(_BaseApp):
         accion = Gio.SimpleAction.new("alternar", None)
         accion.connect("activate", lambda *_: self._alternar())
         self.add_action(accion)  # gapplication action org.infinity.Panki alternar
+        cal = Gio.SimpleAction.new("calendario", None)
+        cal.connect("activate", lambda *_: self._abrir_calendario())
+        self.add_action(cal)  # gapplication action org.infinity.Panki calendario
 
     def _asegurar_ventana(self):
         if self.ventana is None:
@@ -521,6 +574,13 @@ class Panki(_BaseApp):
     def _alternar(self):
         self._asegurar_ventana().alternar()  # una ventana recién creada está oculta: alternar la muestra
 
+    def _abrir_calendario(self, fecha=None):
+        """Muestra la ventana (la reutiliza si ya existe: una sola ventana, un solo almacenamiento) y la deja
+        en la vista Calendario."""
+        ventana = self._asegurar_ventana()
+        ventana.abrir_calendario(fecha)
+        ventana.mostrar()
+
     def do_shutdown(self):
         """Al apagar la aplicación (Quit, o cerrar sesión), nada se queda intentando tocar la página."""
         if self.ventana is not None:
@@ -531,7 +591,7 @@ class Panki(_BaseApp):
         self._asegurar_ventana().mostrar()
 
     def do_command_line(self, linea):
-        pregunta, ayuda, error = interpretar_argumentos(linea.get_arguments()[1:])
+        pregunta, ayuda, error, calendario = interpretar_opciones(linea.get_arguments()[1:])
         if error:
             linea.printerr_literal(error + "\n" + USO)  # literal: el texto puede llevar un «%»
             return 2
@@ -539,6 +599,8 @@ class Panki(_BaseApp):
             linea.print_literal(USO)
             return 0
         self.activate()
+        if calendario is not None:
+            self.ventana.abrir_calendario(calendario or None)  # antes que --preguntar: la respuesta vuelve al chat
         if pregunta:
             self.ventana.preguntar(pregunta)
         return 0

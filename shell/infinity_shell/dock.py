@@ -19,7 +19,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import isla_logica  # noqa: E402  (parseo de volumen compartido con la isla: tolera la coma decimal)
-from .ajustes import valor as ajuste  # noqa: E402
+from .ajustes import fecha_corta, valor as ajuste  # noqa: E402
 from .controles_logica import elegir_destino_clic, es_minimizada, restaurar  # noqa: E402
 
 ALTO = 60  # alto común de las tres islas (px)
@@ -473,7 +473,8 @@ class Estado(Gtk.Window):
     def _actualizar_reloj(self):
         ahora = GLib.DateTime.new_now_local()
         self.hora.set_text(ahora.format(self._fmt_hora))
-        self.fecha.set_text(ahora.format("%a %-d %b"))
+        # «lun 19 oct» en español con tabla propia (ajustes.fecha_corta): %a y %b siguen el idioma del sistema
+        self.fecha.set_text(fecha_corta(ahora.get_year(), ahora.get_month(), ahora.get_day_of_month()))
 
     # ----------------------------------------------------------------- estado
     def refrescar(self):

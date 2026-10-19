@@ -99,6 +99,51 @@ form:focus-within{border-color:var(--mut)}
 .web-src{color:var(--mut);color:color-mix(in srgb,var(--fg) 62%,var(--bg))}
 .thought-step,.deep-card,.m.u span,.thought-lbl{overflow-wrap:anywhere}.web-cancel-row{margin:6px 0 2px}
 @media(max-width:480px){.logo span:first-child{font-size:14px}.m-pill{padding:3px 7px;font-size:11px}}
+/* calendario */
+#btnCal{width:34px;height:34px;border-radius:50%;color:var(--mut);display:grid;place-items:center}
+#btnCal:hover,body.vcal #btnCal{background:var(--line);color:var(--fg)}
+#calView{display:none;flex:1;min-height:0;overflow:auto;flex-direction:column}
+body.vcal #calView{display:flex}
+body.vcal #scroll,body.vcal footer{display:none}
+.cal{width:100%;max-width:680px;margin:0 auto;padding:2px 14px 18px}
+.cal-top{display:flex;align-items:center;gap:4px;padding:2px 0 6px}
+.cal-top h2{flex:1;min-width:0;font-size:17px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-nav{width:32px;height:32px;border-radius:50%;color:var(--mut);font-size:21px;line-height:1;display:grid;place-items:center;flex:none}
+.cal-nav:hover{background:var(--line);color:var(--fg)}
+#calHoy{margin:0 2px;padding:3px 12px}
+.cal-dow,.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.cal-dow span{text-align:center;font-size:11.5px;font-weight:500;color:var(--mut);padding:3px 0}
+.cal-dow span:nth-child(n+6){opacity:.7}
+.cd{height:44px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:14px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.cd:hover{background:var(--line)}
+.cd.o{color:var(--mut);opacity:.5}
+.cd .n{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;line-height:1}
+.cd.today .n{background:var(--acc);color:var(--bg);font-weight:600}
+.cd.sel{box-shadow:inset 0 0 0 1.5px var(--acc)}
+.cd:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.dots{display:flex;gap:3px;height:6px;align-items:center}
+.dots i{width:5px;height:5px;border-radius:50%;background:var(--acc)}
+.dots i.od{background:var(--hi)}
+.dots i.dn{background:var(--ok);opacity:.55}
+.dots b{font-size:10px;font-weight:600;line-height:1;color:var(--acc)}
+.cal-day{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+.cal-dayhead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:4px}
+.cal-dayhead h3{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.cal-dayhead .pill{margin:0;flex:none;white-space:nowrap}
+.pill.pri{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+#calForm{display:flex;flex-direction:column;gap:8px;margin:8px 0 10px;padding:12px;background:var(--card);border:1px solid var(--line);border-radius:14px}
+#calForm[hidden]{display:none}
+#calForm input{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:10px;padding:7px 11px;font:inherit;font-size:14px;outline:0;min-width:0;width:100%}
+#calForm input:focus{border-color:var(--mut)}
+.cf2{display:grid;grid-template-columns:110px 1fr;gap:8px}
+.cf-btns{display:flex;gap:6px}.cf-btns .pill{margin:0}
+.cal-undo{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--mut);padding:6px 0}
+.cal-undo .pill{margin:0}
+.ev .et{flex:none;width:74px;white-space:nowrap;font-size:12.5px;color:var(--acc);font-variant-numeric:tabular-nums}
+.ev .eb{flex:1;min-width:0;display:flex;flex-direction:column}
+.ev .eb .meta{font-size:12.5px}
+.ev .x{opacity:1}
+#calList .empty{color:var(--mut);padding:18px 0;text-align:center}
 </style>
 </head>
 <body>
@@ -112,10 +157,32 @@ form:focus-within{border-color:var(--mut)}
       <button type="button" class="m-pill on" id="btnDeep" role="radio" aria-checked="true" data-mode="deep" title="Modelo Profundo: más lento y deliberativo; puede consultar internet para preguntas cotidianas">🧠 Profundo</button>
       <button type="button" class="m-pill" id="btnFast" role="radio" aria-checked="false" data-mode="fast" title="Modelo Rápido: instantáneo y 100% sin internet">⚡ Rápido</button>
     </div>
+    <button id="btnCal" type="button" aria-label="Calendario" title="Calendario" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></button>
     <button id="menu" aria-label="Panel"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button>
   </div>
 </header>
 <div id="scroll"><div class="wrap" id="chat"></div></div>
+<section id="calView" aria-label="Calendario"><div class="cal">
+  <div class="cal-top">
+    <h2 id="calTitle" aria-live="polite"></h2>
+    <button type="button" class="cal-nav" id="calPrev" aria-label="Mes anterior">‹</button>
+    <button type="button" class="pill" id="calHoy">Hoy</button>
+    <button type="button" class="cal-nav" id="calNext" aria-label="Mes siguiente">›</button>
+  </div>
+  <div class="cal-dow" aria-hidden="true"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+  <div class="cal-grid" id="calGrid" role="grid" aria-label="Días del mes"></div>
+  <div class="cal-day">
+    <div class="cal-dayhead"><div><h3 id="calDayTitle"></h3><div class="sub" id="calDaySub"></div></div><button type="button" class="pill" id="calNew">＋ Añadir reunión</button></div>
+    <form id="calForm" hidden autocomplete="off">
+      <input id="cfTitle" placeholder="Título (por defecto: Reunión)" maxlength="80" aria-label="Título">
+      <div class="cf2"><input id="cfTime" placeholder="Hora: 14:35" inputmode="numeric" maxlength="9" aria-label="Hora"><input id="cfWho" placeholder="Con quién (opcional)" maxlength="60" aria-label="Con quién"></div>
+      <input id="cfLoc" placeholder="Dónde (opcional)" maxlength="80" aria-label="Dónde">
+      <div class="cf-btns"><button type="submit" class="pill pri">Guardar</button><button type="button" class="pill" id="cfCancel">Cancelar</button></div>
+    </form>
+    <div id="calUndo"></div>
+    <div id="calList"></div>
+  </div>
+</div></section>
 <footer><div class="fw">
   <div id="chips"></div>
   <form id="form" autocomplete="off">
@@ -181,22 +248,95 @@ function snap(){UNDO.push(JSON.stringify({tasks:S.tasks,notes:S.notes,facts:S.fa
 function logAct(k,c){S.log.push({t:Date.now(),k,c})}
 
 /* ---------- fechas ---------- */
+/* Regla de oro: el calendario se calcula con FECHAS LOCALES de calendario (año, mes, día) y con tablas
+   propias en español. Nunca se crea una fecha a partir del texto ISO «AAAA-MM-DD» (se lee como UTC: en
+   Chile o Argentina da el día ANTERIOR), nunca se usa la conversión a ISO/UTC para sacar «hoy» (de noche
+   da el día equivocado en zonas con offset negativo), nunca se suman 24 h para «mañana» (el cambio de
+   hora lo rompe) y no se usa Intl para nombres de días o meses.
+   Las claves 'AAAA-MM-DD' se pasan a «número de día» (dnum) con aritmética entera pura: así sumar días,
+   comparar y sacar el día de la semana no dependen de la zona horaria ni del horario de verano. */
 const DAYS=['domingo','lunes','martes','miercoles','jueves','viernes','sabado'];
 const DAYS_ES=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const DAYS_ABBR=['dom','lun','mar','mié','jue','vie','sáb'];
 const MONTHS=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-const dkey=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const MON_ABBR=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const dkey=d=>`${String(d.getFullYear()).padStart(4,'0')}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; /* getters LOCALES */
 const sod=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x};
 const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
 const fromKey=k=>{const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d)};
 const toMin=t=>{const [h,m]=t.split(':').map(Number);return h*60+m};
 const fmtMin=m=>pad(Math.floor(m/60))+':'+pad(m%60);
-const dayDiff=k=>Math.round((fromKey(k)-sod(new Date()))/864e5);
+/* — calendario gregoriano puro (días desde 1970-01-01; algoritmo de Howard Hinnant), mes 0..11 — */
+const isLeap=y=>y%4===0&&(y%100!==0||y%400===0);
+const dimOf=(y,m)=>m===1?(isLeap(y)?29:28):(m===3||m===5||m===8||m===10)?30:31;
+const validYMD=(y,m,d)=>Number.isInteger(y)&&m>=0&&m<12&&d>=1&&d<=dimOf(y,m);
+const ymdKey=(y,m,d)=>`${String(y).padStart(4,'0')}-${pad(m+1)}-${pad(d)}`;
+function dnum(y,m,d){
+  y-=m<2?1:0;const era=Math.floor(y/400),yoe=y-era*400,doy=Math.floor((153*((m+10)%12)+2)/5)+d-1,doe=yoe*365+Math.floor(yoe/4)-Math.floor(yoe/100)+doy;
+  return era*146097+doe-719468;
+}
+function ymdOf(n){
+  n+=719468;const era=Math.floor(n/146097),doe=n-era*146097,yoe=Math.floor((doe-Math.floor(doe/1460)+Math.floor(doe/36524)-Math.floor(doe/146096))/365),doy=doe-(365*yoe+Math.floor(yoe/4)-Math.floor(yoe/100)),mp=Math.floor((5*doy+2)/153),d=doy-Math.floor((153*mp+2)/5)+1,m=mp<10?mp+3:mp-9;
+  return [yoe+era*400+(m<=2?1:0),m-1,d];
+}
+const keyN=k=>{const x=/^(\d{4})-(\d{2})-(\d{2})$/.exec(k);return x?dnum(+x[1],+x[2]-1,+x[3]):NaN};
+const nKey=n=>{const [y,m,d]=ymdOf(n);return ymdKey(y,m,d)};
+const wdayN=n=>(((n+4)%7)+7)%7; /* 0 = domingo … 6 = sábado (el 1/1/1970 fue jueves) */
+const wdayK=k=>wdayN(keyN(k));
+const todayK=()=>dkey(new Date());
+const addK=(k,n)=>nKey(keyN(k)+n);
+const dayK=n=>addK(todayK(),n); /* hoy + n días, por calendario */
+const dayDiff=k=>keyN(k)-keyN(todayK());
+/* suma meses a una clave sin desbordar: 31 ene + 1 mes = 28 feb (no 3 mar) */
+function addMonthsK(k,n){const [y,m,d]=k.split('-').map(Number),t=y*12+(m-1)+n,yy=Math.floor(t/12),mm=t-yy*12;return ymdKey(yy,mm,Math.min(d,dimOf(yy,mm)))}
+/* texto: «viernes 23 de octubre de 2026» (siempre con el día de la semana, siempre desde la tabla propia) */
+function fechaLarga(k){const [y,m,d]=k.split('-').map(Number);return `${DAYS_ES[wdayK(k)]} ${d} de ${MONTHS[m-1]} de ${y}`}
+function fechaCorta(k){const [y,m,d]=k.split('-').map(Number);return `${DAYS_ABBR[wdayK(k)]} ${d} ${MON_ABBR[m-1]}`+(y!==+todayK().slice(0,4)?' '+y:'')}
+/* «hoy, lunes 19 de octubre de 2026» · «mañana, martes 20 de …» · «viernes 23 de octubre de 2026» */
+function fechaRel(k){const d=dayDiff(k),f=fechaLarga(k);return d===0?'hoy, '+f:d===1?'mañana, '+f:d===2?'pasado mañana, '+f:f}
 
-/* Extrae fecha/hora/duración de una frase en español natural. Devuelve {date,time,dur,rest} */
-function parseWhen(orig){
-  let o=orig,n=norm(orig),date=null,time=null,pod=null,rel=null,dur=null,m;
-  const now=new Date(),today=sod(now);
-  const cut=re=>{const x=re.exec(n);if(!x)return null;const a=x.index,b=a+x[0].length;o=o.slice(0,a)+' '+o.slice(b);n=n.slice(0,a)+' '+n.slice(b);return x};
+/* Extrae fecha/hora/duración de una frase en español natural. Devuelve
+   {date:'AAAA-MM-DD'|null, time:'HH:MM'|null, dur, rest, bad, bumped, wdMismatch, inferred}
+     bad        la fecha/hora está en el texto pero no es válida («31 de abril», «29/2/2027», «25:70»)
+     bumped     {from,to,d,mo}: sin año y ya pasó este año → se asumió el siguiente
+     wdMismatch {said,is}: dijo «lunes 23 de octubre» y ese día cae otro día de la semana
+     inferred   dio hora pero no día: se asumió hoy (o mañana si esa hora ya pasó)
+   opt.bare: el texto es SOLO la parte «cuándo» de «mueve X al 24 a las 10» (un número suelto es el día).
+   (NUMW, la tabla de números en palabras, está más abajo: la comparte el módulo de preguntas con internet.) */
+const MON_RE='enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|ene|feb|abr|may|jun|jul|ago|sept|sep|oct|nov|dic';
+const WD_RE='domingo|lunes|martes|miercoles|jueves|viernes|sabado';
+const monIdx=s=>{s=s.replace(/\.$/,'');const f=MONTHS.indexOf(s==='setiembre'?'septiembre':s);return f>=0?f:MON_ABBR.indexOf(s==='sept'?'sep':s)};
+const WDP='(?:(?:el|este|proximo|del)\\s+)?(?:('+WD_RE+')\\s*,?\\s+)?(?:el\\s+)?(?:dia\\s+)?';
+const RE_DMES=new RegExp('\\b'+WDP+'(\\d{1,2})\\s+(?:de\\s+)?('+MON_RE+')\\.?(?:\\s+(?:de\\s+|del\\s+)?(\\d{4}))?\\b');
+const RE_ISO=/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/;
+const RE_DMY=new RegExp('\\b'+WDP+'(\\d{1,2})(?:[\\/-](\\d{1,2})(?:[\\/-](\\d{2,4}))?|\\.(\\d{1,2})\\.(\\d{4}))\\b');
+const RE_WD=new RegExp('\\b(?:(para el proximo|para el|el proximo|el|este|proximo|del)\\s+)?('+WD_RE+')\\b(?:\\s+(?:que viene|proximo|siguiente))?(?:\\s*,?\\s+(?:el\\s+)?(\\d{1,2})\\b(?!\\s*(?:de\\s|:|h\\b|hs\\b|horas?\\b|[\\/.\\-]\\d|am\\b|pm\\b|y\\s|min)))?');
+const NOTDAY='(?!\\s*(?:de |:|h\\b|hs\\b|\\/|-|am\\b|pm\\b|y ))';
+/* próxima vez (hoy incluido) que un mes tiene ese día: «el 31» salta a los meses que sí lo tienen */
+function nextDOM(dd,tk){
+  const y0=+tk.slice(0,4),m0=+tk.slice(5,7)-1;
+  for(let i=0;i<14;i++){const t=y0*12+m0+i,y=Math.floor(t/12),mo=t-y*12;if(validYMD(y,mo,dd)){const k=ymdKey(y,mo,dd);if(k>=tk)return k}}
+  return null;
+}
+function parseWhen(orig,opt={}){
+  orig=String(orig).replace(/\b([ap])\.\s?m\b\.?/gi,'$1m')
+    .replace(/\b(a las?|a la)\s+(una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)\b(?!\s+(?:cosas|personas|tareas|veces|horas|minutos))/gi,(x,p,w)=>p+' '+NUMW[w.toLowerCase()]);
+  let o=orig,n=norm(orig),date=null,time=null,pod=null,rel=null,dur=null,m,bad=null,bumped=null,wdMismatch=null,inferred=false;
+  const now=new Date(),tk=dkey(now),tw=wdayK(tk);
+  const del=x=>{const a=x.index,b=a+x[0].length;o=o.slice(0,a)+' '+o.slice(b);n=n.slice(0,a)+' '+n.slice(b)};
+  const cut=re=>{const x=re.exec(n);if(!x)return null;del(x);return x};
+  /* día + mes (+ año): fija date; bad si no existe; bumped si ya pasó este año y se asume el siguiente */
+  const setDMY=(d,mo,ys,txt)=>{
+    d=+d;
+    if(ys){const y=ys.length<=2?2000+ +ys:+ys;if(!validYMD(y,mo,d))bad={kind:'fecha',txt,d,mo,y};else date=ymdKey(y,mo,d);return}
+    let y=+tk.slice(0,4);
+    if(d<1||d>(mo===1?29:dimOf(2001,mo))){bad={kind:'fecha',txt,d,mo,y};return}
+    while(!validYMD(y,mo,d))y++; /* 29 de febrero: el próximo año bisiesto */
+    let k=ymdKey(y,mo,d);
+    if(k<tk){const from=y;y++;while(!validYMD(y,mo,d))y++;k=ymdKey(y,mo,d);bumped={from,to:y,d,mo}}
+    date=k;
+  };
+  const checkWd=wd=>{if(wd&&date&&wdayK(date)!==DAYS.indexOf(wd))wdMismatch={said:DAYS_ES[DAYS.indexOf(wd)],is:DAYS_ES[wdayK(date)]}};
 
   /* Duración explícita: "por 45 minutos", "durante 2 horas", "de 1 hora" */
   if(m=cut(/\b(?:durante|por)\s+(\d+(?:[.,]\d+)?|una|un|media)\s*(horas?|hs?|h|minutos?|mins?|min)\b/)){
@@ -209,60 +349,77 @@ function parseWhen(orig){
   else if(cut(/\b(?:por|en|de) la manana\b/)){time='09:00';pod='m'}
   else if(cut(/\b(?:por|en|de) la tarde\b/)){time='15:00';pod='t'}
   else if(cut(/\b(?:por|en|de|a) la noche\b/)){time='20:00';pod='n'}
-  else if(cut(/\besta tarde\b/)){time='16:00';pod='t';date=today}
+  else if(cut(/\besta tarde\b/)){time='16:00';pod='t';date=tk}
   else if(cut(/\b(?:por|en|de) la madrugada\b/)){time='05:00';pod='m'}
-  else if(cut(/\besta noche\b/)){time='20:00';pod='n';date=today}
+  else if(cut(/\besta noche\b/)){time='20:00';pod='n';date=tk}
 
-  if(cut(/\ben media hora\b/))rel=new Date(now.getTime()+30*6e4);
-  else if(m=cut(/\ben (\d+|un|una) (minutos?|mins?|horas?|hs?|dias?|semanas?|meses|mes)\b/)){
-    const k=/^un/.test(m[1])?1:+m[1],u=m[2];
+  if(cut(/\b(?:en|dentro de) media hora\b/))rel=new Date(now.getTime()+30*6e4);
+  else if(m=cut(/\b(?:en|dentro de) (\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|quince|veinte|treinta) (minutos?|mins?|horas?|hs?|dias?|semanas?|meses|mes)\b/)){
+    const k=/^\d/.test(m[1])?+m[1]:NUMW[m[1]],u=m[2];
     if(/^min/.test(u))rel=new Date(now.getTime()+k*6e4);
     else if(/^h/.test(u))rel=new Date(now.getTime()+k*36e5);
-    else if(/^dia/.test(u))date=addDays(today,k);
-    else if(/^sem/.test(u))date=addDays(today,7*k);
-    else{const d=new Date(today);d.setMonth(d.getMonth()+k);date=d}
+    else if(/^dia/.test(u))date=addK(tk,k);
+    else if(/^sem/.test(u))date=addK(tk,7*k);
+    else date=addMonthsK(tk,k);
   }
-  if(rel){date=sod(rel);time=pad(rel.getHours())+':'+pad(rel.getMinutes())}
+  if(rel){date=dkey(rel);time=pad(rel.getHours())+':'+pad(rel.getMinutes())}
   if(!date){
-    if(cut(/\bpasado manana\b/))date=addDays(today,2);
-    else if(cut(/\bmanana\b/))date=addDays(today,1);
-    else if(cut(/\bhoy\b/))date=today;
-    else if(cut(/\b(?:este\s+|el\s+)?(?:fin de semana|finde)\b/)){
-      const diff=(6-today.getDay()+7)%7;date=addDays(today,diff===0?0:diff);
+    if(cut(/\bpasado manana\b/))date=addK(tk,2);
+    else if(cut(/\bmanana\b/))date=addK(tk,1);
+    else if(cut(/\bhoy\b/))date=tk;
+    else if(cut(/\b(?:este\s+|el\s+)?(?:fin de semana|finde)\b/))date=addK(tk,(6-tw+7)%7);
+    else if(cut(/\b(?:la semana que viene|proxima semana|la proxima semana)\b/))date=addK(tk,7);
+    else if(cut(/\b(?:el\s+)?(?:mes que viene|proximo mes)\b/))date=addMonthsK(tk,1);
+    else if(cut(/\b(?:a\s+)?fin(?:es)? de mes\b/)){const y=+tk.slice(0,4),mo=+tk.slice(5,7)-1;date=ymdKey(y,mo,dimOf(y,mo))}
+    else if((m=RE_ISO.exec(n))){
+      del(m);const y=+m[1],mo=+m[2]-1,d=+m[3];
+      if(validYMD(y,mo,d))date=ymdKey(y,mo,d);else bad={kind:'fecha',txt:m[0],d,mo,y};
     }
-    else if(cut(/\b(?:la semana que viene|proxima semana|la proxima semana)\b/))date=addDays(today,7);
-    else if(m=cut(/\b(?:(?:para el proximo|para el|el proximo|el|este|proximo)\s+)?(domingo|lunes|martes|miercoles|jueves|viernes|sabado)\b/)){
-      date=addDays(today,((DAYS.indexOf(m[1])-today.getDay()+7)%7)||7)}
-    else if(m=cut(/\b(?:el\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?:\s+(?:de\s+)?(\d{4}))?\b/)){
-      let y=m[3]?+m[3]:today.getFullYear();let d=new Date(y,MONTHS.indexOf(m[2]),+m[1]);
-      if(!m[3]&&d<today)d=new Date(y+1,d.getMonth(),d.getDate());date=d}
-    else if(m=cut(/\b(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?\b/)){
-      let y=m[3]?(+m[3]<100?2000+ +m[3]:+m[3]):today.getFullYear();let d=new Date(y,+m[2]-1,+m[1]);
-      if(!m[3]&&d<today)d=new Date(y+1,d.getMonth(),d.getDate());date=d}
-    else if(m=cut(/\bel (\d{1,2})\b(?!\s*(?:de |:|h\b|\/|-))/)){
-      let d=new Date(today.getFullYear(),today.getMonth(),+m[1]);if(d<today)d=new Date(today.getFullYear(),today.getMonth()+1,+m[1]);date=d}
+    else if((m=RE_DMES.exec(n))){
+      del(m);setDMY(m[2],monIdx(m[3]),m[4],`${+m[2]} de ${m[3]}${m[4]?' de '+m[4]:''}`);checkWd(m[1]);
+    }
+    else if((m=RE_DMY.exec(n))&&+(m[3]||m[5])>=1&&+(m[3]||m[5])<=12){
+      del(m);setDMY(m[2],+(m[3]||m[5])-1,m[4]||m[6],m[0].trim());checkWd(m[1]);
+    }
+    else if((m=RE_WD.exec(n))){
+      del(m);const wi=DAYS.indexOf(m[2]);
+      if(m[3]){date=nextDOM(+m[3],tk);if(date)checkWd(m[2]);else bad={kind:'fecha',txt:`${m[2]} ${m[3]}`,d:+m[3]}}
+      else{let diff=(wi-tw+7)%7;if(!diff)diff=m[1]==='este'?0:7;date=addK(tk,diff)}
+    }
+    else if((m=new RegExp('\\b(?:el\\s+)?dia (\\d{1,2})\\b'+NOTDAY).exec(n)||new RegExp('\\bel (\\d{1,2})\\b'+NOTDAY).exec(n)||(opt.bare&&new RegExp('\\b(?:al|para el|para|hasta el|el|a)\\s+(\\d{1,2})\\b'+NOTDAY).exec(n)))&&+m[1]>=1&&+m[1]<=31){
+      del(m);date=nextDOM(+m[1],tk);if(!date)bad={kind:'fecha',txt:'el '+m[1],d:+m[1]};
+    }
   }
   if(!rel){
-    let h=null,mi=0,suf=null;
-    if(m=cut(/\b(?:a las?|a la)\s+(\d{1,2})\s+y\s+(media|cuarto)\s*(am|pm|hs|h)?\b/)){
-      h=+m[1];mi=m[2]==='media'?30:15;suf=m[3];
-    }else if(m=cut(/\b(?:a las?|a la)\s+(\d{1,2})(?:[:.h](\d{2}))?\s*(am|pm|hs|h)?\b/)||cut(/\b(\d{1,2}):(\d{2})\s*(am|pm|hs)?\b/)||cut(/\b(\d{1,2})\s*(am|pm)\b/)){
-      h=+m[1];
-      if(m.length>=4){mi=+(m[2]||0);suf=m[3]}else suf=m[2];
-      if(/^\d/.test(suf||'')){suf=null}
+    let h=null,mi=0,suf=null,x;
+    const MN={media:30,cuarto:15,veinte:20,veinticinco:25,diez:10,cinco:5};
+    if(x=cut(/\b(?:a las?|a la|las?)\s+(\d{1,2})\s+y\s+(media|cuarto|veinte|veinticinco|diez|cinco)\s*(am|pm|hs|h)?\b/)||(pod&&cut(/\b(\d{1,2})\s+y\s+(media|cuarto)\b\s*(am|pm)?/))){
+      h=+x[1];mi=MN[x[2]];suf=x[3];
+    }else if(x=cut(/\b(?:a las?|a la|las?)\s+(\d{1,2})\s+menos\s+(cuarto|veinte|veinticinco|diez|cinco)\s*(am|pm|hs|h)?\b/)){
+      h=(+x[1]+23)%24;mi=60-MN[x[2]];suf=x[3];
+    }else if(x=cut(/\b(?:a las?|a la)\s+(\d{1,2})(?:[:.h](\d{2}))?\s*(am|pm|hs|horas|h)?\b/)){
+      h=+x[1];mi=+(x[2]||0);suf=x[3];
+    }else if(x=cut(/\b(\d{1,2})[:h](\d{2})\s*(am|pm|hs|h)?\b/)){
+      h=+x[1];mi=+x[2];suf=x[3];
+    }else if(x=cut(/\b(\d{1,2})\s*(am|pm)\b/)||cut(/\b(\d{1,2})\s*(hs)\b/)){
+      h=+x[1];suf=x[2];
     }
     if(h!==null){
-      if(suf==='pm'&&h<12)h+=12;else if(suf==='am'&&h===12)h=0;
-      else if(!suf){
-        if((pod==='t'||pod==='n')&&h<12)h+=12;
-        else if(!pod&&h>=1&&h<=6)h+=12; /* "a las 4" suele ser 16:00 en horario diurno */
-        else if(!pod&&h>=7&&h<=9&&(!date||dkey(date)===dkey(today))){const nmin=now.getHours()*60+now.getMinutes();if(h*60+mi<nmin&&(h+12)*60+mi>=nmin)h+=12} /* 7–9 también si hoy ya pasó la de la mañana */
+      if(h>23||mi>59)bad=bad||{kind:'hora',txt:`${h}:${pad(mi)}`};
+      else{
+        if(suf==='pm'&&h<12)h+=12;else if(suf==='am'&&h===12)h=0;
+        else if(!suf){
+          if((pod==='t'||pod==='n')&&h<12)h+=12;
+          else if(pod==='n'&&h===12)h=0;
+          else if(!pod&&h>=1&&h<=6)h+=12; /* "a las 4" suele ser 16:00 en horario diurno */
+          else if(!pod&&h>=7&&h<=9&&(!date||date===tk)){const nmin=now.getHours()*60+now.getMinutes();if(h*60+mi<nmin&&(h+12)*60+mi>=nmin)h+=12} /* 7–9 también si hoy ya pasó la de la mañana */
+        }
+        time=pad(h)+':'+pad(mi);
       }
-      if(h<24&&mi<60)time=pad(h)+':'+pad(mi);
     }
   }
-  if(time&&!date){const d=today;if(toMin(time)<now.getHours()*60+now.getMinutes()-1)date=addDays(today,1);else date=d}
-  return{date:date?dkey(date):null,time,dur,rest:cleanTitle(o)};
+  if(time&&!date){inferred=true;date=toMin(time)<now.getHours()*60+now.getMinutes()-1?addK(tk,1):tk}
+  return{date,time,dur,rest:cleanTitle(o),bad,bumped,wdMismatch,inferred};
 }
 function cleanTitle(s){
   s=s.replace(/\s+/g,' ').trim();let p;
@@ -273,8 +430,8 @@ function dueLabel(t){
   if(!t.due)return t.time||'';
   const d=dayDiff(t.due);let s;
   if(d===0)s='hoy';else if(d===1)s='mañana';else if(d===-1)s='ayer';
-  else if(d<0)s=`hace ${-d} d`;else if(d<7)s=DAYS_ES[fromKey(t.due).getDay()];
-  else{const x=fromKey(t.due);s=x.getDate()+' '+MONTHS[x.getMonth()].slice(0,3)}
+  else if(d<0&&d>=-30)s=`hace ${-d} d`;else if(d>1&&d<7)s=DAYS_ES[wdayK(t.due)];
+  else s=fechaCorta(t.due); /* con día de la semana: «vie 23 oct» */
   return s+(t.time?' '+t.time:'');
 }
 
@@ -347,20 +504,86 @@ function cmp(a,b){
   return b.pri-a.pri||a.id-b.id;
 }
 function groupTasks(list){
-  const tk=dkey(new Date()),g={Vencidas:[],Hoy:[],Próximas:[],'Sin fecha':[]};
+  const tk=todayK(),g={Vencidas:[],Hoy:[],Próximas:[],'Sin fecha':[]};
   list.slice().sort(cmp).forEach(t=>{if(!t.due)g['Sin fecha'].push(t);else if(t.due<tk)g.Vencidas.push(t);else if(t.due===tk)g.Hoy.push(t);else g.Próximas.push(t)});
   return g;
 }
 const renderGroups=g=>Object.entries(g).filter(([,v])=>v.length).map(([k,v])=>`<h4>${k}</h4>`+v.map(row).join('')).join('');
 
-/* ---------- crear tareas / notas ---------- */
+/* ---------- crear tareas / reuniones / notas ---------- */
+/* Eventos (reuniones, citas…): título limpio, persona con mayúscula, lugar aparte y confirmación con el
+   DÍA DE LA SEMANA calculado (nunca adivinado). Son las mismas entradas de S.tasks: lo que se agenda por
+   chat sale en el calendario, y lo creado en el calendario sale en «mis tareas» y «organiza mi día». */
+const EV_NOUNS='reuni[oó]n|cita|junta|llamada|videollamada|call|entrevista|turno|consulta|sesi[oó]n|encuentro|presentaci[oó]n|demo|almuerzo|cena|caf[eé]|desayuno|clase|visita|evento';
+const RE_EVN=new RegExp('\\b(?:'+EV_NOUNS+')\\b','i');
+const RE_MEET=/\b(?:reuni[oó]n|cita|junta|llamada|videollamada|call|entrevista|turno|consulta|sesi[oó]n|encuentro|presentaci[oó]n|demo|almuerzo|cena|caf[eé]|desayuno|clase|visita)\b/i; /* las que casi siempre llevan hora */
+const RE_AGVERB=/^(?:por favor[, ]*)?(?:agenda|agendar|programa|programar|reserva|reservar|pon|poner|crea|crear|anota|anotar|apunta|apuntar|agrega|agregar|anade|anadir|registra|registrar|fija|fijar|aparta|separa)\b/;
+const RE_AGSTRONG=/^(?:por favor[, ]*)?(?:agenda|agendar|programa|programar|reserva|reservar)\b/; /* verbos que SOLO significan «ponlo en la agenda» */
+const LOWER_W=new Set('el la los las un una unos unas de del y e o u mi mis tu tus su sus al a con en por para'.split(' '));
+const ART_W=new Set('el la los las un una unos unas mi mis tu tus su sus'.split(' '));
+const TITLE_W=new Set('doctor doctora dr dra profesor profesora profe senor senora don dona jefe jefa amigo amiga hermano hermana tio tia primo prima abuelo abuela papa mama padre madre novio novia esposo esposa suegro suegra cunado cunada vecino vecina'.split(' '));
+/* «pepe garcía» → «Pepe García»; «el doctor lópez» → «el doctor López»; «el equipo de ventas» se queda igual */
+function nameCase(s){
+  let nm=true;
+  return String(s).trim().split(/\s+/).map(w=>{
+    const k=norm(w);
+    if(LOWER_W.has(k)){if(ART_W.has(k))nm=false;return w.toLowerCase()}
+    if(TITLE_W.has(k)){nm=true;return w.toLowerCase()}
+    if(nm)return w.charAt(0).toUpperCase()+(w===w.toUpperCase()?w.slice(1).toLowerCase():w.slice(1));
+    return w;
+  }).join(' ');
+}
+const ACC_FIX={reunion:'reunión',sesion:'sesión',presentacion:'presentación',cafe:'café'};
+const accentFix=s=>s.replace(/\b(reunion|sesion|presentacion|cafe)\b/gi,w=>{const r=ACC_FIX[w.toLowerCase()];return w[0]===w[0].toUpperCase()?capFirst(r):r});
+/* «Reunión con pepe en la oficina» → {title:'Reunión con Pepe', who:'Pepe', loc:'la oficina'} (solo si hay un sustantivo de evento) */
+function splitEvento(title){
+  if(!RE_EVN.test(title))return{title,who:null,loc:null,ev:false,meet:false};
+  const t=title.trim();let base=t,who=null,loc=null,m;
+  if(m=/^(.+?)\s+con\s+(.+?)\s+en\s+(.+)$/i.exec(t)){base=m[1];who=m[2];loc=m[3]}
+  else if(m=/^(.+?)\s+en\s+(.+?)\s+con\s+(.+)$/i.exec(t)){base=m[1];loc=m[2];who=m[3]}
+  else if(m=/^(.+?)\s+con\s+(.+)$/i.exec(t)){base=m[1];who=m[2]}
+  else if(m=/^(.+?)\s+en\s+(.+)$/i.exec(t)){base=m[1];loc=m[2]}
+  who=who?nameCase(cleanTitle(who)):null;loc=loc?cleanTitle(loc):null;
+  return{title:accentFix(capFirst(base))+(who?' con '+who:''),who:who||null,loc:loc||null,ev:true,meet:RE_MEET.test(base)};
+}
+/* «viernes 23 de octubre de 2026 a las 14:35» (con «hoy,» / «mañana,» delante cuando toca) */
+const evCuando=t=>fechaRel(t.due)+(t.time?` a las ${t.time}`:'');
+const botonCal=k=>k?`<button class="pill" data-cal="${k}">Ver en el calendario</button>`:'';
+/* fecha u hora que existe en el texto pero no es válida: se dice, no se adivina */
+function badWhenMsg(w){
+  const b=w.bad;
+  if(b.kind==='hora')return `<p>La hora «${esc(b.txt)}» no es válida. Dímela así: <code data-fill="a las 14:35">a las 14:35</code>.</p>`;
+  if(b.mo!=null&&b.d>=1&&b.d<=31&&b.y){const mes=`${MONTHS[b.mo]}${w.bad.y&&/\d{4}|\//.test(b.txt)?' de '+b.y:''}`;return `<p>El ${b.d} de ${esc(mes)} no existe: ${esc(mes)} tiene ${dimOf(b.y,b.mo)} días. ¿Qué fecha quieres?</p>`}
+  return `<p>La fecha «${esc(b.txt||'')}» no es válida. ¿Qué día quieres?</p>`;
+}
+/* avisos que acompañan a una fecha interpretada (año siguiente, día de la semana que no cuadra…) */
+function avisosFecha(w,k){
+  let s='';
+  if(w.wdMismatch)s+=`<p class="sub">Ojo: dijiste ${w.wdMismatch.said}, pero el ${+k.slice(8)} de ${MONTHS[+k.slice(5,7)-1]} de ${k.slice(0,4)} cae ${w.wdMismatch.is}. Si querías otro día, dime la fecha.</p>`;
+  if(w.bumped)s+=`<p class="sub">Ojo: el ${w.bumped.d} de ${MONTHS[w.bumped.mo]} de ${w.bumped.from} ya pasó, así que lo dejé para ${w.bumped.to}.</p>`;
+  if(w.inferred)s+=`<p class="sub">No dijiste el día: lo puse para ${k===todayK()?'hoy':'mañana (esa hora ya pasó hoy)'}.</p>`;
+  return s;
+}
+const SOLO_CUANDO=/^(?:si|dale|ok|okay|vale|mejor|porfa|por favor|gracias|que sea|sera|seria|es|a|para|las?|el|a las?|pues|bueno)?$/;
+/* otro evento a la misma hora (o que se pisa con ella): el aviso que acompaña a agendar, mover o fijar la hora */
+function clashMsg(t){
+  const c=t.time&&t.due&&S.tasks.find(x=>x!==t&&!x.done&&x.due===t.due&&x.time&&Math.abs(toMin(x.time)-toMin(t.time))<Math.min(est(x),est(t)));
+  if(!c)return '';
+  return c.time===t.time?`<p class="sub">Ojo: ya tienes «${esc(c.title)}» a esa misma hora (${c.time}).</p>`:`<p class="sub">Ojo: se superpone con «${esc(c.title)}» (${c.time}).</p>`;
+}
+let agAwait=null; /* esperando la hora (o el día y la hora) de una reunión: {kind:'time',id,t} | {kind:'datetime',text,t} */
 function addTask(text,extra={}){
-  const w=parseWhen(text);let title=w.rest,pri=2,cat=null;
+  const w=parseWhen(text);
+  if(w.bad)return badWhenMsg(w);
+  const explicitAg=RE_AGVERB.test(norm(text)),strongAg=RE_AGSTRONG.test(norm(text));
+  let title=w.rest,pri=2,cat=null;
   let m=title.match(/#([a-záéíóúñ]+)/i);
   if(m){const c=catByName(m[1]);if(c){cat=c;title=title.replace(m[0],' ')}}
   if(/(?:^|\s)(?:es\s+)?(?:urgente|importante|prioridad alta|cr[ií]tic[oa]|asap)\b/i.test(title)){pri=3;title=title.replace(/(?:^|\s)(?:es\s+)?(?:prioridad alta|urgente|importante|cr[ií]tic[oa]|asap)\b/gi,' ')}
   else if(/prioridad baja|cuando pueda|sin apuro/i.test(title)){pri=1;title=title.replace(/prioridad baja|cuando pueda|sin apuro/gi,' ')}
   title=title.replace(/^por favor[, ]*/i,'')
+    .replace(/\s+(?:en|a|para)\s+(?:mi\s+|la\s+|el\s+)?(?:agenda|calendario)\b/gi,' ')
+    .replace(new RegExp('^(?:agenda(?:r(?:me)?)?|programa(?:r(?:me)?)?|anota(?:r(?:me)?)?|apunta(?:r(?:me)?)?|agrega(?:r(?:me)?)?|a[ñn]ade(?:me)?|a[ñn]adir(?:me)?|crea(?:r(?:me)?)?|pon(?:er(?:me)?)?|reserva(?:r(?:me)?)?|registra(?:r(?:me)?)?|fija(?:r(?:me)?)?)\\s+(?:(?:una?|la|el|mi|otra|otro|nueva|nuevo)\\s+)*(?=(?:'+EV_NOUNS+')\\b)','i'),'')
     .replace(/^(?:agrega(?:r)?|a[ñn]ade|a[ñn]adir|crea(?:r)?|anota(?:r)?|apunta(?:r)?|pon|programa(?:r)?|agenda(?:r)?)\s+(?:una?\s+|la\s+)?(?:nueva\s+)?(?:tarea|pendiente|recordatorio)\b\s*(?:de|para|que|:|-)?\s*/i,'')
     .replace(/^(?:agrega(?:r)?|a[ñn]ade|a[ñn]adir|crea(?:r)?|anota(?:r)?|apunta(?:r)?|pon|programa(?:r)?|agenda(?:r)?)\s+(?:una?\s+|la\s+)?(?=reuni[oó]n|cita|junta|call|llamada|turno|evento)\b/i,'')
     .replace(/^(?:nueva\s+)?(?:tarea|pendiente|recordatorio)\s*(?:de|para|que|:|-)\s*/i,'')
@@ -370,22 +593,68 @@ function addTask(text,extra={}){
     .replace(/^(?:que\s+)?no\s+se\s+me\s+olvide\s+(?:de\s+)?(?:que\s+)?/i,'')
     .replace(/^(?:necesito|ocupo|me\s+toca|av[ií]same)\s+(?:de\s+)?(?:que\s+)?/i,'')
     .replace(/^(?:quiero|me\s+gustar[ií]a|tengo\s+ganas\s+de)\s+(?=(?:ir|ver|hacer|llamar|comprar|salir|viajar|visitar)\b)/i,'')
-    .replace(/^(?:agenda(?:r)?|programa(?:r)?)\s+(?:una?\s+|la\s+|el\s+)?/i,'');
-  title=capFirst(cleanTitle(title));
+    .replace(/^(?:agenda(?:r)?|programa(?:r)?)\s+(?:una?\s+|la\s+|el\s+)?/i,'')
+    .replace(new RegExp('^(?:una?|la|el|mi|otra|nueva)\\s+(?=(?:'+EV_NOUNS+')\\b)','i'),'');
+  title=cleanTitle(title);
+  if(explicitAg&&/^con\s/i.test(title))title='Reunión '+title; /* «agéndame con Pepe el viernes…» */
+  title=capFirst(title);
   if(!title)return '<p>¿Qué quieres que anote? Por ejemplo: <code data-fill="Mañana a las 10 reunión con Ana">Mañana a las 10 reunión con Ana</code></p>';
+  const evt=splitEvento(title);title=evt.title;
+  /* «agéndame una reunión con Pepe» sin día ni hora: pregunto antes de guardar nada */
+  if(evt.ev&&explicitAg&&!w.date&&!w.time){
+    agAwait={kind:'datetime',text:String(text),t:Date.now()};
+    return `<p>¿Para qué día y a qué hora quieres <b>${esc(title)}</b>? Por ejemplo: <code data-fill="el viernes a las 15:00">el viernes a las 15:00</code></p>`;
+  }
   snap();
   const explicit=!!cat;if(!cat)cat=classify(title);
   if(explicit)learn(title,cat,2);
-  const dup=S.tasks.find(t=>!t.done&&norm(t.title)===norm(title)&&t.due===w.date);
-  const t={id:S.next++,title,cat,pri:extra.pri||pri,due:w.date,time:w.time,est:w.dur||null,done:false,created:Date.now(),notified:false};
-  S.tasks.push(t);logAct('task',cat);save();renderPanel();
+  const dup=S.tasks.find(t=>!t.done&&norm(t.title)===norm(title)&&t.due===w.date&&(t.time||null)===(w.time||null));
+  const same=!dup&&w.date&&w.time&&S.tasks.find(t=>!t.done&&norm(t.title)===norm(title)&&t.due===w.date&&!t.time); /* misma reunión que estaba sin hora */
+  let t,merged=false;
+  if(same){t=same;t.time=w.time;t.notified=false;if(w.dur)t.est=w.dur;merged=true;save();renderPanel()}
+  else{
+    t={id:S.next++,title,cat,pri:extra.pri||pri,due:w.date,time:w.time,est:w.dur||null,done:false,created:Date.now(),notified:false};
+    if(evt.who)t.who=evt.who;if(evt.loc)t.loc=evt.loc;
+    S.tasks.push(t);logAct('task',cat);save();renderPanel();
+  }
   if(t.time&&'Notification' in window&&Notification.permission==='default')Notification.requestPermission();
-  let tips='';
-  const clash=t.time&&S.tasks.find(x=>x!==t&&!x.done&&x.due===t.due&&x.time&&Math.abs(toMin(x.time)-toMin(t.time))<Math.min(est(x),est(t)));
-  if(clash)tips+=`<p class="sub">Ojo: se superpone con «${esc(clash.title)}» (${clash.time}).</p>`;
+  let tips=t.due?avisosFecha(w,t.due):'';
+  if(evt.loc&&!merged)tips+=`<p class="sub">Lugar: ${esc(evt.loc)}.</p>`;
+  tips+=clashMsg(t);
   if(dup)tips+=`<p class="sub">Ya tenías una igual (#${dup.id}). Si es repetida, puedes borrarla.</p>`;
   if(!t.due)tips+=`<p class="sub">Sin fecha. Dime cuándo y la programo: <code data-fill="mueve ${t.id} a mañana">mueve ${t.id} a mañana</code></p>`;
-  return `<p>Anotada.</p>${row(t)}${tips}<button class="pill" data-cmd="deshacer">Deshacer</button>`;
+  const agendada=!!t.due&&(evt.ev||strongAg);
+  /* una reunión con día pero sin hora: la pregunto (queda guardada sin hora mientras tanto) */
+  if(agendada&&!t.time&&evt.meet){
+    agAwait={kind:'time',id:t.id,t:Date.now()};
+    tips+=`<p>¿A qué hora es? Dímela y la ajusto (por ejemplo <code data-fill="a las 15:00">a las 15:00</code>).</p>`;
+  }
+  const head=agendada?`<p>${merged?'Actualizada':'Agendada'}: <b>${esc(t.title)}</b> · ${esc(evCuando(t))}</p>`:`<p>${merged?'Actualizada.':'Anotada.'}</p>`;
+  const fecha=!agendada&&t.due?`<p class="sub">${esc(capFirst(evCuando(t)))}</p>`:'';
+  return `${head}${row(t)}${fecha}${tips}<button class="pill" data-cmd="deshacer">Deshacer</button>${botonCal(t.due)}`;
+}
+/* la respuesta a «¿a qué hora?» / «¿para qué día y hora?» (agAwait); null si el mensaje no era eso */
+function agSeguimiento(c){
+  const a=agAwait;if(!a)return null;
+  agAwait=null;
+  if(Date.now()-a.t>6e5)return null;
+  if(NEG.test(c.n)||/^(?:cancela|olvidalo|dejalo|da igual|no importa|sin hora|todo el dia|no se)$/.test(c.n))return '<p>Vale, lo dejo así.</p>';
+  let w=parseWhen(c.o);
+  if(!w.time&&!w.date)w=parseWhen('a las '+c.o);
+  if(!SOLO_CUANDO.test(norm(w.rest)))return null; /* era otra cosa («recuérdame mañana a las 9 llamar…»): no es la respuesta */
+  if(a.kind==='time'){
+    const t=S.tasks.find(x=>x.id===a.id);if(!t)return null;
+    if(w.bad)return badWhenMsg(w);
+    if(!w.time)return null;
+    snap();t.time=w.time;if(w.date&&!w.inferred)t.due=w.date;t.notified=false;save();renderPanel();syncChatDOM();
+    return `<p>Listo: <b>${esc(t.title)}</b> · ${esc(evCuando(t))}</p>${row(t)}${clashMsg(t)}<button class="pill" data-cmd="deshacer">Deshacer</button>${botonCal(t.due)}`;
+  }
+  if(a.kind==='datetime'){
+    if(w.bad)return badWhenMsg(w);
+    if(!w.date&&!w.time)return null;
+    return addTask(a.text+' '+c.o);
+  }
+  return null;
 }
 function addNote(text){
   text=text.trim();if(!text)return '<p>¿Qué quieres anotar?</p>';
@@ -416,7 +685,7 @@ function briefing(){
   let s=`<p>${hi}${S.profile.name?', '+esc(S.profile.name):''}.</p>`;
   if(!S.tasks.length&&!S.notes.length)
     return s+`<p>Soy <b>${esc(S.nombre)}</b>, tu asistente personal para tareas y reuniones. Tus datos viven solo en este navegador, sin cuentas. El modo <b>⚡ Rápido</b> funciona 100% sin internet; el modo <b>🧠 Profundo</b> además puede consultar internet para preguntas de la vida diaria (clima, divisas, datos…), enviando solo el tema de la pregunta y mostrándote antes qué envía; tus tareas y notas nunca salen.</p><p>Pruébame: <code data-fill="Mañana a las 10 reunión con Ana">Mañana a las 10 reunión con Ana</code> o escribe <b>ayuda</b>.</p>${S.profile.name?'':'<p>¿Cómo te llamas?</p>'}`;
-  const pend=S.tasks.filter(t=>!t.done),g=groupTasks(pend),tk=dkey(new Date()),nm=new Date().getHours()*60+new Date().getMinutes();
+  const pend=S.tasks.filter(t=>!t.done),g=groupTasks(pend),tk=todayK(),nm=new Date().getHours()*60+new Date().getMinutes();
   const bits=[];
   if(g.Hoy.length)bits.push(`hoy tienes <b>${pl(g.Hoy.length,'tarea','tareas')}</b>`);
   if(g.Vencidas.length)bits.push(`<b>${pl(g.Vencidas.length,'vencida','vencidas')}</b>`);
@@ -477,18 +746,18 @@ function planDay(dk){
 }
 function plan(txt=''){
   if(/\b(?:semana|proximos dias|siete dias)\b/.test(norm(txt)))return weekPlan();
-  const w=parseWhen(txt);return planDay(w.date||dkey(new Date()));
+  const w=parseWhen(txt);if(w.bad)return badWhenMsg(w);return planDay(w.date||todayK());
 }
 
 /* Reparte la semana equilibrando carga */
 function weekData(){
-  const today=sod(new Date()),tk=dkey(today);
-  const days=[...Array(7)].map((_,i)=>{const d=addDays(today,i);return{k:dkey(d),wd:d.getDay(),i,load:0,fixed:[],sug:[]}});
+  const tk=todayK();
+  const days=[...Array(7)].map((_,i)=>{const k=addK(tk,i);return{k,wd:wdayK(k),i,load:0,fixed:[],sug:[]}});
   const cap=d=>(d.wd===0||d.wd===6)?120:360;
   S.tasks.filter(t=>!t.done&&t.due).forEach(t=>{const d=days.find(x=>x.k===(t.due<tk?tk:t.due));if(d){d.load+=est(t);d.fixed.push(t)}});
   return{days,cap};
 }
-const dayLabel=d=>d.i===0?'Hoy':d.i===1?'Mañana':capFirst(DAYS_ES[d.wd])+' '+fromKey(d.k).getDate();
+const dayLabel=d=>d.i===0?'Hoy':d.i===1?'Mañana':capFirst(DAYS_ES[d.wd])+' '+(+d.k.slice(8));
 function weekPlan(){
   const {days,cap}=weekData(),pend=S.tasks.filter(t=>!t.done);
   if(!pend.length)return '<p>No tienes tareas pendientes esta semana. Anota algo y lo reparto por ti.</p>';
@@ -565,18 +834,18 @@ function overwhelmed(){
   const pend=S.tasks.filter(t=>!t.done).sort((a,b)=>urg(b)-urg(a));
   const intro=pick(['Respira. Es normal sentir que es mucho cuando todo está en la cabeza.','Te escucho. Vamos a bajar el ruido: no tienes que hacerlo todo hoy.','Suena pesado. Hagamos algo simple: elegir lo único que importa ahora.']);
   if(!pend.length)return `<p>${intro}</p><p>Tu lista está vacía. Si te preocupa algo, cuéntamelo y lo anotamos para sacarlo de tu cabeza.</p>`;
-  const top=pend.slice(0,3),rest=pend.slice(3),tk=dkey(new Date());
+  const top=pend.slice(0,3),rest=pend.slice(3),tk=todayK();
   setLast('focus',top[0]);
   let h=`<p>${intro}</p><p>De tus ${pend.length}, solo esto cuenta por ahora:</p>`+top.map(row).join('');
   const movable=rest.filter(t=>!t.time&&t.pri<3&&(!t.due||t.due<=tk));
   if(movable.length){
     h+=`<p>Lo demás puede esperar. ¿Muevo ${pl(movable.length,'tarea','tareas')} a mañana para despejarte hoy?</p><button class="pill" data-say="sí">Sí, moverlas</button><button class="pill" data-say="no">No</button>`;
-    pending={run:()=>{snap();const d=dkey(addDays(new Date(),1));movable.forEach(t=>t.due=d);save();renderPanel();return `<p>Hecho. ${pl(movable.length,'tarea pasó','tareas pasaron')} a mañana. Hoy enfócate solo en esas ${top.length}.</p>`}};
+    pending={run:()=>{snap();const d=dayK(1);movable.forEach(t=>t.due=d);save();renderPanel();return `<p>Hecho. ${pl(movable.length,'tarea pasó','tareas pasaron')} a mañana. Hoy enfócate solo en esas ${top.length}.</p>`}};
   }else h+='<p class="sub">Empieza por la primera y solo 10 minutos: lo difícil es arrancar.</p>';
   return h;
 }
 function tired(){
-  const tk=dkey(new Date()),pend=S.tasks.filter(t=>!t.done);
+  const tk=todayK(),pend=S.tasks.filter(t=>!t.done);
   const must=pend.filter(t=>t.pri===3||(t.due&&t.due<=tk)).sort((a,b)=>urg(b)-urg(a)).slice(0,3);
   const easy=pend.filter(t=>!must.includes(t)&&est(t)<=20).slice(0,2);
   let h=`<p>${pick(['Descansar también es productivo.','Te entiendo. Con poca energía conviene hacer menos, pero lo correcto.','Tu cuerpo avisa: hoy toca ir liviano.'])}</p>`;
@@ -612,7 +881,7 @@ function matrix(){
 function goalPlan(goal){
   goal=capFirst(cleanTitle(goal.replace(/^(?:a|de|con)\s+/i,'')));
   const steps=['Definir qué significa lograrlo (resultado concreto y fecha)','Dar el primer paso de 15 minutos','Reunir lo que necesito (materiales, contactos, información)','Reservar un bloque fijo en la agenda cada semana','Revisar el avance y ajustar el plan'],offs=[0,1,2,4,7],cat=classify(goal);
-  const items=steps.map((s,i)=>({step:s,title:`${goal}: ${s}`,date:dkey(addDays(new Date(),offs[i]))}));
+  const items=steps.map((s,i)=>({step:s,title:`${goal}: ${s}`,date:dayK(offs[i])}));
   pending={run:()=>{snap();items.forEach(it=>S.tasks.push({id:S.next++,title:it.title,cat,pri:2,due:it.date,time:null,done:false,created:Date.now(),notified:false}));logAct('task',cat);save();renderPanel();return `<p>Listo: agregué ${items.length} pasos para «${esc(goal)}», repartidos en la próxima semana.</p>`}};
   return `<p>Para convertir «${esc(goal)}» en algo alcanzable, lo partiría así:</p>`+items.map(it=>`<div class="row"><span class="ttl">${esc(it.step)}</span><span class="meta">${esc(dueLabel({due:it.date}))}</span></div>`).join('')+`<p>¿Las agrego a tus tareas?</p><button class="pill" data-say="sí">Sí, agregarlas</button><button class="pill" data-say="no">No</button>`;
 }
@@ -656,11 +925,11 @@ function icsEvent(t){
     end=`DTEND:${dt}T${pad(Math.floor(em/60)%24)}${pad(em%60)}00`;
   }else{
     start=`DTSTART;VALUE=DATE:${dt}`;
-    const nd=dkey(addDays(fromKey(t.due),1)).replace(/-/g,'');
+    const nd=addK(t.due,1).replace(/-/g,'');
     end=`DTEND;VALUE=DATE:${nd}`;
   }
   const clean=s=>String(s).replace(/[\r\n,;]/g,' ');
-  return ['BEGIN:VEVENT',`UID:infinitos-${t.id}-${t.created}@local`,start,end,`SUMMARY:${clean(t.title)}`,`CATEGORIES:${clean(t.cat)}`,'END:VEVENT'].join('\r\n');
+  return ['BEGIN:VEVENT',`UID:infinitos-${t.id}-${t.created}@local`,start,end,`SUMMARY:${clean(t.title)}`,...(t.loc?[`LOCATION:${clean(t.loc)}`]:[]),`CATEGORIES:${clean(t.cat)}`,'END:VEVENT'].join('\r\n');
 }
 function downloadICS(list,filename='infinitos-agenda.ics'){
   const valid=list.filter(t=>t.due);
@@ -717,8 +986,10 @@ function convert(v,a,b){
 let toastT;
 function toast(s){const t=$('#toast');t.textContent=s;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2400)}
 function notify(title,body){toast(title+(body?': '+body:''));try{if('Notification' in window&&Notification.permission==='granted')new Notification(title,{body})}catch(e){}}
+let lastDayKey=todayK();
 function tick(){
   const now=new Date();let ch=false;
+  if(todayK()!==lastDayKey){lastDayKey=todayK();ch=true} /* pasó la medianoche: «hoy» del calendario y de las listas cambia */
   S.tasks.forEach(t=>{
     if(t.done||!t.due||!t.time||t.notified)return;
     const d=fromKey(t.due);const [h,m]=t.time.split(':');d.setHours(+h,+m,0,0);
@@ -786,6 +1057,7 @@ R(/^(?:deshacer|deshaz|undo|revierte|anula lo ultimo)\b/,()=>{
 R(/^(?:ayuda|help|que puedes hacer|que sabes hacer|comandos|como funcionas|como te uso)\b/,()=>`<p>Hablo español natural. Toca un ejemplo para probarlo:</p>
 <h4>Tareas y Reuniones</h4><p><code data-fill="Mañana a las 10 reunión con Ana por 45 min">Mañana a las 10 reunión con Ana por 45 min</code> <code data-fill="Pagar la luz el viernes urgente">Pagar la luz el viernes urgente</code> <code data-fill="Recuérdame en 30 minutos sacar la ropa">Recuérdame en 30 minutos…</code></p>
 <p><code data-fill="Completa 1">Completa 1</code> <code data-fill="Mueve 1 a lunes a las 16">Mueve 1 a lunes a las 16</code> <code data-fill="Borra 1">Borra 1</code> <code data-fill="Exporta mi calendario">Exporta mi calendario (.ics)</code></p>
+<h4>Calendario</h4><p><code data-fill="Agéndame una reunión a las 14:35 el 23 de octubre con Pepe">Agéndame una reunión a las 14:35 el 23 de octubre con Pepe</code> <code data-fill="¿Qué tengo el 23 de octubre?">¿Qué tengo el 23 de octubre?</code> <code data-fill="Mueve la reunión con Pepe al 24 a las 10">Mueve la reunión con Pepe al 24 a las 10</code> <code data-fill="Borra la reunión con Pepe">Borra la reunión con Pepe</code> <code data-fill="¿Qué día es el 19/10/2026?">¿Qué día es el 19/10/2026?</code> <code data-fill="Abre el calendario">Abre el calendario</code></p>
 <h4>Organización</h4><p><code data-fill="Organiza mi día">Organiza mi día</code> <code data-fill="Organiza mi semana">Organiza mi semana</code> <code data-fill="Resumen">Resumen</code> <code data-fill="Mis reuniones">Mis reuniones</code></p>
 <h4>Notas y memoria</h4><p><code data-fill="Nota: idea para el proyecto #trabajo">Nota: …</code> <code data-fill="Busca reunión">Busca …</code> <code data-fill="Me llamo Ana">Me llamo …</code> <code data-fill="Recuerda que mi talla es M">Recuerda que …</code> <code data-fill="¿Qué sabes de mí?">¿Qué sabes de mí?</code></p>
 <h4>Conversa y pregunta</h4><p><code data-fill="¿Qué hago ahora?">¿Qué hago ahora?</code> <code data-fill="Tengo 2 horas, ¿qué avanzo?">Tengo 2 horas, ¿qué avanzo?</code> <code data-fill="¿Cuándo estoy libre mañana?">¿Cuándo estoy libre mañana?</code> <code data-fill="¿Qué es lo más urgente?">¿Qué es lo más urgente?</code> <code data-fill="Estoy abrumado">Estoy abrumado</code></p>
@@ -826,6 +1098,77 @@ R(/^olvida\s+(?:que\s+)?(.+)/,(m,g)=>{
   UNDO.pop();return '<p>No encuentro eso entre lo que recuerdo.</p>';
 });
 
+/* calendario y eventos por chat: abrir el calendario, «qué tengo el 23 de octubre», borrar y mover reuniones */
+const EVN_ALT='reunion|cita|junta|llamada|videollamada|call|entrevista|turno|evento|almuerzo|cena|cafe|desayuno|clase|visita|consulta|sesion|encuentro|presentacion|demo';
+const EVN_STEMS=new Set(EVN_ALT.split('|').map(w=>stem(w)));
+const RE_EVNORM=new RegExp('\\b('+EVN_ALT+')\\b');
+/* eventos que encajan con la referencia («la reunión con Pepe», «la cita del viernes», «la de las 3»), el más próximo primero */
+function findEvent(ref){
+  const idm=/^\s*(?:#|n(?:umero)?\s*)?(\d+)\s*$/.exec(norm(ref).replace(RE_EVNORM,' ').replace(/\b(?:la|el|mi|esa|ese|esta|este|numero|nro|n)\b/g,' '));
+  if(idm){const t=S.tasks.find(x=>x.id===+idm[1]);return t?[t]:[]}
+  const w=parseWhen(ref),nr=norm(ref);
+  const noun=(RE_EVNORM.exec(nr)||[])[1]||null;
+  const nameT=toks(w.rest).filter(t=>!EVN_STEMS.has(t));
+  let pool=S.tasks.filter(t=>!t.done);
+  if(w.date&&!w.inferred)pool=pool.filter(t=>t.due===w.date);
+  if(w.time)pool=pool.filter(t=>t.time===w.time);
+  const mt=/\bde las?\s+(\d{1,2})(?:[:.h](\d{2}))?\b/.exec(nr); /* «la reunión de las 3» */
+  if(mt){const h=+mt[1],mi=+(mt[2]||0);pool=pool.filter(t=>t.time&&(toMin(t.time)===h*60+mi||toMin(t.time)===((h%12)+12)*60+mi))}
+  if(nameT.length)pool=pool.filter(t=>{const tt=new Set(toks(t.title+' '+(t.who||'')));return nameT.every(x=>tt.has(x))});
+  if(noun){const nn=pool.filter(t=>new RegExp('\\b'+noun+'\\b').test(norm(t.title)));if(nn.length)pool=nn}
+  const tk=todayK(),late=t=>(t.due&&t.due<tk)?1:0;
+  return pool.sort((a,b)=>late(a)-late(b)||(a.due||'9999').localeCompare(b.due||'9999')||(a.time||'99').localeCompare(b.time||'99')||a.id-b.id);
+}
+function agendaDia(k,w){
+  const list=S.tasks.filter(t=>t.due===k).sort(cmp),head=capFirst(fechaRel(k)),av=w?avisosFecha(w,k):'';
+  if(!list.length)return `<p>${esc(head)}: no tienes nada agendado. Estás libre.</p>${av}${botonCal(k)}`;
+  return `<p>${esc(head)} · ${pl(list.length,'evento','eventos')}:</p>`+list.map(row).join('')+av+botonCal(k);
+}
+R(/^(?:(?:abre|abrir|muestra(?:me)?|ver|ve a|ir a|llevame a|ensena(?:me)?)\s+)?(?:el\s+|mi\s+)?calendario(?:\s+(?:de|del|para|en)\s+(.+))?$/,(m,g,c)=>{
+  const arg=g(1);let k=null;
+  if(arg){
+    const mm=new RegExp('^(?:el\\s+)?(?:mes\\s+de\\s+)?('+MON_RE+')(?:\\s+(?:de\\s+|del\\s+)?(\\d{4}))?$').exec(norm(arg));
+    if(mm){
+      const mo=monIdx(mm[1]),y0=+todayK().slice(0,4),m0=+todayK().slice(5,7)-1,y=mm[2]?+mm[2]:(mo>=m0?y0:y0+1);
+      k=(y===y0&&mo===m0)?todayK():ymdKey(y,mo,1);
+    }else{const w=parseWhen(arg);if(w.bad)return badWhenMsg(w);k=w.date}
+  }
+  abrirCalendario(k);
+  return `<p>Abrí el calendario${k?` en ${MONTHS[+k.slice(5,7)-1]} de ${k.slice(0,4)}`:''}. Toca un día para ver sus eventos o añadir una reunión.</p>`;
+});
+/* «pon/agenda/crea… una reunión…» va ANTES de la regla de «pon X a mañana» (mover), que si no la confundiría con ella */
+R(new RegExp('^(?:agenda|agendar|programa|programar|reserva|reservar|pon|poner|crea|crear|anota|anotar|apunta|apuntar|agrega|agregar|anade|anadir|registra|registrar|fija|fijar)\\s+(?:(?:en|a)\\s+(?:mi\\s+)?(?:agenda|calendario)\\s+)?(?:(?:una?|la|el|mi|otra|otro|nueva|nuevo)\\s+)*(?:'+EVN_ALT+')\\b'),addTaskFn);
+R(/^(?:que|cuales?)\s+(?:reuniones?\s+|citas?\s+|eventos?\s+|compromisos\s+|planes\s+|cosas\s+)?(?:tengo|hay|tenemos|me queda)\b|^(?:mi\s+)?(?:agenda|calendario|reuniones|citas|eventos|compromisos)\s+(?:del?|para|el)\b|^(?:muestra(?:me)?|ver|dime|lista(?:me)?)\s+(?:mi\s+)?(?:agenda|calendario|reuniones|citas|eventos|compromisos)\s+(?:del?|para|el)\b/,(m,g,c)=>{
+  const w=parseWhen(c.o);
+  if(w.bad)return badWhenMsg(w);
+  if(!w.date||/\bhoy\b|\bsemana\b/.test(c.n)&&!/fin de semana/.test(c.n))return null; /* «hoy» y «esta semana» los atiende el listado de siempre */
+  return agendaDia(w.date,w);
+},true);
+R(new RegExp('^(?:borra|elimina|quita|cancela|descarta|anula)\\s+(?:la\\s+|el\\s+|mi\\s+|esa\\s+|ese\\s+|esta\\s+|este\\s+)?((?:'+EVN_ALT+')\\b.*)$'),(m,g)=>{
+  const list=findEvent(g(1));
+  if(!list.length)return `<p>No encontré esa reunión en tu agenda. Dime con quién o qué día era, o míralo en el calendario.</p>${botonCal(todayK())}`;
+  const t=list[0];snap();S.tasks=S.tasks.filter(x=>x!==t);save();renderPanel();syncChatDOM();
+  return `<p>Borrada: <b>${esc(t.title)}</b>${t.due?' · '+esc(evCuando(t)):''}.</p>${list.length>1?`<p class="sub">Había ${list.length} que coincidían; borré la más próxima. Si era otra, deshaz y dime la fecha.</p>`:''}<button class="pill" data-cmd="deshacer">Deshacer</button>${botonCal(t.due)}`;
+});
+/* «mueve la reunión con Pepe al 24 a las 10»: parte el texto en «qué» y «cuándo» por la primera preposición que deja una referencia que existe */
+function moverEvento(txt){
+  const words=txt.trim().split(/\s+/),PREP=new Set(['para','al','a','el','en','hasta','hacia']);
+  for(let i=1;i<words.length;i++){
+    if(!PREP.has(norm(words[i])))continue;
+    const left=words.slice(0,i).join(' '),w=parseWhen(words.slice(i).join(' '),{bare:true});
+    if(w.bad)return badWhenMsg(w);
+    if(!w.date&&!w.time)continue;
+    const list=findEvent(left);
+    if(!list.length)continue;
+    const t=list[0];snap();
+    if(w.date&&!w.inferred)t.due=w.date;if(w.time)t.time=w.time;if(w.dur)t.est=w.dur;t.notified=false;
+    save();renderPanel();syncChatDOM();
+    return `<p>Reprogramada: <b>${esc(t.title)}</b> · ${esc(evCuando(t))}</p>${row(t)}${t.due?avisosFecha(w,t.due):''}${clashMsg(t)}${list.length>1?`<p class="sub">Había ${list.length} que coincidían; moví la más próxima.</p>`:''}<button class="pill" data-cmd="deshacer">Deshacer</button>${botonCal(t.due)}`;
+  }
+  return null;
+}
+R(new RegExp('^(?:mueve|mover|cambia|cambiar|pasa|pasar|reprograma|reprogramar|posterga|pospon|pospone|aplaza|traslada|adelanta|atrasa)\\s+(?:la\\s+|el\\s+|mi\\s+|esa\\s+|ese\\s+)?((?:'+EVN_ALT+')\\b.*)$'),(m,g)=>moverEvento(g(1)));
+
 /* tareas: completar, reabrir, borrar, editar, mover */
 R(/^(?:limpia|borra|elimina|quita)\s+(?:las\s+)?(?:tareas\s+)?(?:completadas|hechas|terminadas|listas)/,()=>{
   const n=S.tasks.filter(t=>t.done).length;if(!n)return '<p>No hay tareas completadas para limpiar.</p>';
@@ -835,7 +1178,7 @@ R(/^(?:ya\s+)?(?:complete|completa|completar|termine|termina|terminar|finalice|f
   const t=findRef(g(1),S.tasks.filter(x=>!x.done));
   if(!t)return '<p>No encontré esa tarea. Dime su número (#) o parte del nombre.</p>';
   snap();t.done=true;t.doneAt=Date.now();logAct('done',t.cat);save();renderPanel();syncChatDOM();
-  const left=S.tasks.filter(x=>!x.done&&x.due&&x.due<=dkey(new Date())).length;
+  const left=S.tasks.filter(x=>!x.done&&x.due&&x.due<=todayK()).length;
   return `<p>Completada: <b>${esc(t.title)}</b>.</p><p class="sub">${left?`Te ${left===1?'queda':'quedan'} ${pl(left,'tarea','tareas')} para hoy.`:'No te queda nada para hoy.'}</p>`;
 });
 R(/^(?:reabre|reabrir|reactiva|desmarca)\s+(.+)/,(m,g)=>{
@@ -877,7 +1220,7 @@ R(/^marca\s+(.+?)\s+como\s+(?:urgente|importante|prioritaria|prioritario)/,(m,g)
 });
 
 /* añadir tareas, reuniones y notas */
-R(/^(?:agrega|agregar|anade|anadir|crea|crear|anota|anotar|apunta|apuntar|pon|programa|programar|agenda|agendar|nueva|nuevo)\s+(?:una?\s+|la\s+)?(?:nueva\s+)?(?:tarea|pendiente|recordatorio|reunion|cita|junta|call|llamada|evento)\b/,addTaskFn);
+R(/^(?:agrega|agregar|anade|anadir|crea|crear|anota|anotar|apunta|apuntar|pon|programa|programar|agenda|agendar|nueva|nuevo)\s+(?:una?\s+|la\s+)?(?:nueva\s+)?(?:tarea|pendiente|recordatorio|reunion|cita|junta|call|llamada|videollamada|entrevista|evento|turno|almuerzo|cena|cafe|desayuno|clase|visita|consulta|sesion|encuentro|presentacion|demo)\b/,addTaskFn);
 R(/^(?:tarea|pendiente|recordatorio|reunion|cita|junta|evento)\s*[:\-]/,addTaskFn);
 R(/^(?:nota|idea)\s*[:\-]\s*(.+)/s,(m,g)=>addNote(g(1)));
 R(/^(?:anota|apunta|guarda|guardar|agrega|crea)\s+(?:una?\s+)?(?:nota|idea)\s*(?:de|que|sobre|:)?\s*(.+)/,(m,g)=>addNote(g(1)));
@@ -915,7 +1258,7 @@ R(/\b(?:estoy aburrid|me aburro|aburrid[oa])\b/,()=>{
 
 /* charla con la IA */
 R(/^(?:como estas|como andas|como te va|como te sientes|que tal estas|todo bien|como va todo|como va)$/,()=>{
-  const n=S.tasks.filter(t=>!t.done&&t.due&&t.due<=dkey(new Date())).length;
+  const n=S.tasks.filter(t=>!t.done&&t.due&&t.due<=todayK()).length;
   return `<p>${pick(['Bien, con todo en orden por aquí.','Muy bien, listo para ayudarte.'])} ${n?`Hoy tienes ${pl(n,'tarea','tareas')}.`:''} ¿Y tú, cómo vas?</p>`;
 });
 R(/^(?:que haces|que estas haciendo|en que andas|que haces ahora)$/,()=>`<p>Estoy atento a tu agenda. Ahora mismo tienes ${pl(S.tasks.filter(t=>!t.done).length,'pendiente','pendientes')}. ¿Te ayudo con algo?</p>`);
@@ -928,7 +1271,7 @@ R(/\b(?:chiste|hazme reir|algo gracioso|algo divertido)\b/,()=>talk('chiste',pic
 const QUOTES=['Lo que haces cada día pesa más que lo que haces de vez en cuando.','No necesitas ganas para empezar: las ganas suelen llegar después del primer paso.','Un plan imperfecto hoy vale más que uno perfecto mañana.','Avanzar poco cada día sigue siendo avanzar.','Hazlo pequeño, hazlo ya, mejóralo después.'];
 R(/\b(?:motivame|animame|frase motivadora|frase del dia|dame animo|inspirame|necesito motivacion)\b/,()=>{const t=S.tasks.filter(x=>!x.done).sort((a,b)=>urg(b)-urg(a))[0];setLast('focus',t);return `<p>${pick(QUOTES)}</p>`+(t?`<p class="sub">Tu primer paso podría ser: ${esc(t.title)}.</p><button class="pill" data-say="qué hago ahora">Empezar</button>`:'')});
 R(/^(?:me voy a dormir|voy a dormir|a dormir|me voy|ya me voy|hasta manana)$/,()=>{
-  const d=dkey(addDays(new Date(),1)),l=S.tasks.filter(t=>!t.done&&t.due===d).sort(cmp);
+  const d=dayK(1),l=S.tasks.filter(t=>!t.done&&t.due===d).sort(cmp);
   return `<p>Descansa.${l.length?` Mañana tienes ${pl(l.length,'tarea','tareas')}${l[0].time?`, la primera a las ${l[0].time}`:''}.`:' Mañana no tienes nada asignado.'}</p>`;
 });
 
@@ -948,7 +1291,7 @@ R(/\bdia mas (?:cargado|ocupado|pesado|libre|tranquilo|liviano)\b|\bcual es mi d
   return `<p>Tu día más ${light?'liviano':'cargado'} de la semana es <b>${dayLabel(d).toLowerCase()}</b> (${hm(d.load)} estimadas${d.fixed.length?`, ${pl(d.fixed.length,'tarea','tareas')}`:''}).</p>`;
 });
 R(/\b(?:organiza(?:me)?|planifica(?:me)?|ordena(?:me)?|distribuye|reparte|arma(?:me)?)\b.*\b(?:semana|proximos dias|siete dias)\b|\bplan (?:de la |de esta )?semana\b|\bcomo (?:organizo|me organizo|distribuyo)\b.*\bsemana\b/,()=>weekPlan(),true);
-R(/\b(?:cuando|a que hora|tengo|estoy|hay|queda)\b.*\b(?:libre|libres|disponible|disponibles|hueco|huecos)\b|\btengo tiempo\b/,(m,g,c)=>freeTime(parseWhen(c.o).date||dkey(new Date())),true);
+R(/\b(?:cuando|a que hora|tengo|estoy|hay|queda)\b.*\b(?:libre|libres|disponible|disponibles|hueco|huecos)\b|\btengo tiempo\b/,(m,g,c)=>{const w=parseWhen(c.o);return w.bad?badWhenMsg(w):freeTime(w.date||todayK())},true);
 R(/\b(?:que|en que)\s+(?:hago|puedo hacer|puedo avanzar|avanzo|me conviene(?: hacer)?|conviene hacer)\b|\btengo\s+(?:\d+|una|un|media)\s*(?:horas?|hs?|min\w*)\b.*\b(?:hago|avanzar|hacer|aprovechar)\b/,(m,g,c)=>{
   const mm=c.n.match(/(\d+(?:[.,]\d+)?|una|un|media)\s*(horas?|hs?|min\w*)/);if(!mm)return null;
   const v=mm[1]==='media'?.5:/^un/.test(mm[1])?1:parseFloat(mm[1].replace(',','.'));
@@ -967,7 +1310,7 @@ R(/\b(?:resumen|estadisticas|como voy|progreso|productividad|balance)\b/,()=>sum
 
 /* filtro compartido para listar y contar tareas/reuniones */
 function taskFilter(n){
-  const tk=dkey(new Date());let list=S.tasks.filter(t=>!t.done),title='Tus tareas',done=false;
+  const tk=todayK();let list=S.tasks.filter(t=>!t.done),title='Tus tareas',done=false;
   const cat=CATS.find(k=>n.includes(norm(k)))||Object.keys(CSYN).filter(k=>k!=='general'&&new RegExp('\\b'+k+'\\b').test(n)).map(k=>CSYN[k])[0]||null;
   if(/reuniones|citas|eventos/.test(n)){
     list=list.filter(t=>t.time||/reuni|cita|junta|call|llamada|turno/.test(norm(t.title)));
@@ -979,10 +1322,10 @@ function taskFilter(n){
     else if(/\bhoy\b/.test(n)){list=list.filter(t=>t.doneAt&&dkey(new Date(t.doneAt))===tk);title+=' hoy'}
   }
   else if(/vencid|atrasad/.test(n)){list=list.filter(t=>t.due&&t.due<tk);title='Vencidas'}
-  else if(/pasado manana/.test(n)){const d=dkey(addDays(new Date(),2));list=list.filter(t=>t.due===d);title='Pasado mañana'}
-  else if(/manana/.test(n)){const d=dkey(addDays(new Date(),1));list=list.filter(t=>t.due===d);title='Mañana'}
+  else if(/pasado manana/.test(n)){const d=dayK(2);list=list.filter(t=>t.due===d);title='Pasado mañana'}
+  else if(/manana/.test(n)){const d=dayK(1);list=list.filter(t=>t.due===d);title='Mañana'}
   else if(/\bhoy\b/.test(n)){list=list.filter(t=>t.due&&t.due<=tk);title='Hoy'}
-  else if(/semana/.test(n)){const d=dkey(addDays(new Date(),7));list=list.filter(t=>t.due&&t.due<=d);title='Esta semana'}
+  else if(/semana/.test(n)){const d=dayK(7);list=list.filter(t=>t.due&&t.due<=d);title='Esta semana'}
   if(cat){list=list.filter(t=>t.cat===cat);title+=` · ${cat}`}
   return{list,title,done};
 }
@@ -997,14 +1340,20 @@ R(/\b(?:tareas|pendientes|agenda|reuniones|citas)\b|^que (?:tengo|hay|me falta)\
 R(/^(?:busca|buscar|encuentra|encontrar|donde (?:esta|anote|guarde)|que (?:dije|anote|escribi|guarde) (?:sobre|de|acerca de))\s+(.+)/,(m,g)=>{
   const r=searchAll(g(1));return r?`<p>Encontré esto:</p>${r}`:`<p>No encontré nada sobre «${esc(g(1))}».</p>`;
 });
-R(/\bque hora (?:es|son)\b|\bhora actual\b|^hora$|\bla hora$|\bme (?:dices|das) la hora\b/,()=>`<p>${new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</p>`);
-R(/\bque dia (?:de la semana )?(?:es|sera|fue|cae|caera)\b|\ben que dia (?:de la semana )?(?:estamos|andamos)\b|\bfecha (?:de )?hoy\b|\bque fecha\b|^fecha$|\ben que (?:ano|mes|siglo) estamos\b|^que (?:ano|mes) es$/,(m,g,c)=>{
+R(/\bque hora (?:es|son)\b|\bhora actual\b|^hora$|\bla hora$|\bme (?:dices|das) la hora\b/,()=>{const d=new Date();return `<p>${pad(d.getHours())}:${pad(d.getMinutes())}</p>`});
+R(/\b(?:en )?que dia (?:de la semana )?(?:es|sera|fue|era|cae|caera|va a ser)\b|\ben que dia (?:de la semana )?(?:estamos|andamos)\b|\bfecha (?:de )?hoy\b|\bque fecha\b|^fecha$|\ben que (?:ano|mes|siglo) estamos\b|^que (?:ano|mes) es$/,(m,g,c)=>{
   const n=c.n;
   if(/\ben que siglo estamos\b/.test(n)){const y=new Date().getFullYear(),k=Math.ceil(y/100),rom=['','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX','XXI','XXII','XXIII'][k]||k;return `<p>Estamos en el <b>siglo ${rom}</b>.</p>`}
   if(/\ben que ano estamos\b|^que ano es$/.test(n))return `<p>Estamos en <b>${new Date().getFullYear()}</b>.</p>`;
   if(/\ben que mes estamos\b|^que mes es$/.test(n))return `<p>Estamos en <b>${MONTHS[new Date().getMonth()]}</b> de ${new Date().getFullYear()}.</p>`;
-  const w=parseWhen(c.o),d=/\bayer\b/.test(n)?addDays(new Date(),-1):w.date?fromKey(w.date):new Date();
-  return `<p>${capFirst(d.toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'}))}</p>`;
+  const w=parseWhen(c.o);
+  if(w.bad)return badWhenMsg(w);
+  const ayer=/\bayer\b/.test(n),k=ayer?dayK(-1):w.date||todayK(),df=dayDiff(k),y=+k.slice(0,4),mo=+k.slice(5,7),dd=+k.slice(8);
+  const dn=DAYS_ES[wdayK(k)],f=`${dd} de ${MONTHS[mo-1]} de ${y}`;
+  let h=df===0?`Hoy es <b>${dn}</b> ${f}.`:df===1?`Mañana es <b>${dn}</b> ${f}.`:df===2?`Pasado mañana es <b>${dn}</b> ${f}.`:df===-1?`Ayer fue <b>${dn}</b> ${f}.`:`El ${f} ${df<0?'fue':'es'} <b>${dn}</b>.`;
+  if(w.bumped)h+=` (Ese día ya pasó en ${w.bumped.from}: hablo de ${w.bumped.to}.)`;
+  if(w.wdMismatch)h+=` Ojo: dijiste ${w.wdMismatch.said}, pero cae ${w.wdMismatch.is}.`;
+  return `<p>${h}</p>`;
 });
 const HOLIDAYS=[[/navidad/,'25 de diciembre'],[/nochebuena/,'24 de diciembre'],[/nochevieja|fin de ano/,'31 de diciembre'],[/ano nuevo/,'1 de enero'],[/reyes/,'6 de enero'],[/halloween/,'31 de octubre'],[/san valentin/,'14 de febrero']];
 R(/\bcuanto (?:falta|queda) para (?:las?\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|h|hs)?)\b/,(m,g)=>{
@@ -1014,8 +1363,8 @@ R(/\bcuanto (?:falta|queda) para (?:las?\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|h|hs
 });
 R(/\bcuantos dias (?:faltan|quedan|hay)\s+(?:para|hasta)\s+(?:el\s+|la\s+)?(.+)/,(m,g)=>{
   let q=g(1);for(const [re,d] of HOLIDAYS)if(re.test(norm(q))){q=d;break}
-  const w=parseWhen(q);if(!w.date)return null;const d=dayDiff(w.date);
-  return `<p>${d===0?'Es hoy.':d>0?`Faltan <b>${pl(d,'día','días')}</b>.`:`Pasó hace ${pl(-d,'día','días')}.`}</p>`;
+  const w=parseWhen(q);if(w.bad)return badWhenMsg(w);if(!w.date)return null;const d=dayDiff(w.date);
+  return `<p>${d===0?'Es hoy.':d>0?`Faltan <b>${pl(d,'día','días')}</b>`:`Pasó hace ${pl(-d,'día','días')}`}${d===0?'':` (${fechaLarga(w.date)})`}.</p>`;
 });
 /* unidades de tiempo («¿cuántos minutos tiene una hora?»), semanas del año, fiestas y meses que faltan */
 const UNITSEC={segundo:1,minuto:60,hora:3600,dia:86400,semana:604800,mes:2629800,ano:31557600,decada:315576000,siglo:3155760000};
@@ -1050,7 +1399,7 @@ R(/\bcuando (?:es|cae|sera|empieza)\s+(?:la\s+|el\s+)?(navidad|nochebuena|nochev
   const f=FIESTAS.find(x=>x[0].test(m[1]));if(!f)return null;
   const now=sod(new Date());let d=f[2](now.getFullYear());if(d<now)d=f[2](now.getFullYear()+1);
   const n=Math.round((d-now)/864e5);
-  return `<p>${capFirst(f[1])} es el <b>${d.toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</b> (${n===0?'es hoy':n===1?'es mañana':'faltan '+pl(n,'día','días')}).</p>`;
+  return `<p>${capFirst(f[1])} es el <b>${fechaLarga(dkey(d))}</b> (${n===0?'es hoy':n===1?'es mañana':'faltan '+pl(n,'día','días')}).</p>`;
 });
 R(/\bcuant(?:as|os)\s+(semanas|meses)\s+(?:faltan|quedan|hay)\s+(?:para|hasta)\s+(?:el\s+|la\s+)?(.+)/,(m,g)=>{
   let q=g(2);const nq=norm(q);for(const [re,d] of HOLIDAYS)if(re.test(nq)){q=d;break}
@@ -1183,7 +1532,7 @@ function moodReply(n){
   return null;
 }
 function howAreYou(greet){
-  const nm=S.profile.name?', '+esc(S.profile.name):'',k=S.tasks.filter(t=>!t.done&&t.due&&t.due<=dkey(new Date())).length;
+  const nm=S.profile.name?', '+esc(S.profile.name):'',k=S.tasks.filter(t=>!t.done&&t.due&&t.due<=todayK()).length;
   return talk('howru',(greet?'Hola'+nm+'. ':'')+pick(['Todo en orden por aquí','Muy bien, atento a tu agenda','Bien, sin sueño ni hambre: ventajas de ser un programa'])+'. '+(k?`Hoy tienes ${pl(k,'tarea','tareas')}. `:'')+'¿Y tú, cómo vas?',{expect:'mood'});
 }
 /* preguntas sobre el propio asistente: respuestas honestas, con una pregunta de vuelta */
@@ -1312,7 +1661,7 @@ const COMMANDY=/^(?:borra|elimina|completa|mueve|anota|apunta|agrega|crea|nota|t
 const NARR=/^(?:mi|mis|me|yo|a mi|ayer|anoche|hoy me|fue|fui|estuve|estoy|ando|siento|creo|pienso|tuve|hoy fue|hoy estuve)\b/;
 const SELF=/^(?:me|mi|mis|soy|estoy|ando|tengo|tuve|fue|fui|hoy|ayer|anoche|yo|a mi|prefiero|siempre|casi|nunca|depende|la verdad|pues|es que|pasa que|siento|creo|pienso|no|ya)\b/;
 /* órdenes de escribir (tarea, nota, recordatorio, dato): siempre las atienden las reglas, nunca la charla */
-const WRITECMD=/^(?:agrega\w*|anade\w*|crea\w*|anota\w*|apunta\w*|nota\b|tarea\b|recuerda\w*|recuerdame|recordarme|acuerdate|acordate|no se me olvide|avisame|guarda\w*|programa\w*)/;
+const WRITECMD=/^(?:agrega\w*|anade\w*|crea\w*|anota\w*|apunta\w*|nota\b|tarea\b|recuerda\w*|recuerdame|recordarme|acuerdate|acordate|no se me olvide|avisame|guarda\w*|programa\w*|agend\w*|reserva\w*|registra\w*|pon(?:me)?\s+(?:una?|la|el)\s)/;
 const ISQ=/^(?:que|quien|quienes|cual|cuales|cuando|donde|adonde|como|cuanto|cuanta|cuantos|cuantas|por que|porque|para que|de que|de donde|en que|a que|desde cuando|sera|puedes|podrias|sabes|existe|hay)\b/;
 function preChat(c){
   const n=c.n,words=n.split(' ').length,F=fresh(),ex=F.expect,tp=F.topic;conv.expect=null;
@@ -1441,7 +1790,7 @@ const FILLER=/^(?:ok|okay|okey|vale|dale|bueno|bien|ya|oye|ey|hey|mira|a ver|ent
 /* Pre-procesador unificado para que el rastreo de pensamiento y ambos modelos evalúen el texto limpio */
 function prepInput(raw){
   let o=String(raw).slice(0,MAXIN).trim();
-  const q=/\?\s*$/.test(o)||/^¿/.test(o);
+  let q=/\?\s*$/.test(o)||/^¿/.test(o);
   o=o.replace(/^[¿¡\s]+|[?!.\s]+$/g,'');
   if(!o)return{empty:true,o:'',n:'',q};
   o=o.replace(/\b(xq|pq|tmb|tb|xfa|pf|dnd|cmo)\b/gi,m=>({xq:'porque',pq:'porque',tmb:'también',tb:'también',xfa:'por favor',pf:'por favor',dnd:'dónde',cmo:'cómo'}[m.toLowerCase()]))
@@ -1452,7 +1801,10 @@ function prepInput(raw){
   o=noEm;
   let p;do{p=o;o=o.replace(FILLER,'')}while(o!==p);
   o=o.replace(/[, ]+(?:por favor|porfa|gracias)$/i,'');
-  o=o.replace(/^(ag[eé]ndame|progr[aá]mame|an[oó]tame|ap[uú]ntame|agr[eé]game|a[ñn][aá]deme|cr[eé]ame)(?=[\s:])/i,(m,v)=>({agendame:'agenda',programame:'programa',anotame:'anota',apuntame:'apunta',agregame:'agrega',anademe:'agrega',creame:'crea'}[norm(v)]||v));
+  o=o.replace(/^(ag[eé]ndame|progr[aá]mame|an[oó]tame|ap[uú]ntame|agr[eé]game|a[ñn][aá]deme|cr[eé]ame|p[oó]nme|res[eé]rvame|reg[ií]strame|f[ií]jame)(?=[\s:])/i,(m,v)=>({agendame:'agenda',programame:'programa',anotame:'anota',apuntame:'apunta',agregame:'agrega',anademe:'agrega',creame:'crea',ponme:'pon',reservame:'reserva',registrame:'registra',fijame:'fija'}[norm(v)]||v));
+  /* peticiones con cortesía («¿puedes agendarme una reunión…?», «quiero agendar…») son órdenes, no preguntas */
+  {const pol=/^(?:(?:por favor[, ]+)?(?:me\s+)?(?:puedes|podrias|podr[ií]as|podes|quieres|serias tan amable de)\s+(?:por favor\s+)?|(?:quiero|necesito|quisiera|me gustar[ií]a)\s+(?:que\s+(?:me\s+)?)?)(?:me\s+)?(agend\w+|program\w+|anot\w+|ap[uú]nt\w+|reserv\w+)\b\s*(?:me\b\s*)?/i.exec(o);
+   if(pol){const v=norm(pol[1]),base=/^agend/.test(v)?'agenda':/^program/.test(v)?'programa':/^anot/.test(v)?'anota':/^apunt/.test(v)?'apunta':'reserva';o=base+' '+o.slice(pol[0].length);q=false}}
   /* risas al inicio («jaja eres gracioso») y «cuando sean las 6» = «a las 6» */
   o=o.replace(/^(?:(?:[jh][aeiou]){2,}j?|xd+|lol)[, ]+(?=\S)/i,'').replace(/\bcuando\s+(?:sean|den|dan)\s+las\b/gi,'a las');
   return{o,n:norm(o),q};
@@ -1477,6 +1829,7 @@ function respond(raw){
     if(AFF.test(c.n))return pd.run();
     if(NEG.test(c.n))return '<p>Listo, lo dejo así.</p>';
   }
+  {const fu=agSeguimiento(c);if(fu!=null)return fu} /* respuesta a «¿a qué hora?» / «¿qué día?» de una reunión */
   const firstMsg=awaitName;awaitName=false;
   {const nn=needsNet(c);if(nn){convReset();return needNetReply(nn,c)}}
   const ch=preChat(c);if(ch!=null)return ch;
@@ -1493,7 +1846,7 @@ function respond(raw){
 
 function exportData(){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,1)],{type:'application/json'}));
-  a.download=`infinitos-respaldo-${dkey(new Date())}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  a.download=`infinitos-respaldo-${todayK()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
 
 /* ============================================================
@@ -1517,7 +1870,7 @@ function generateThoughtTrace(c){
   if(c.empty||c.onlyEmoji)return ['Interpretando gesto no verbal del usuario.','Alineando respuesta breve y empática.'];
   const n=c.n,o=c.o;
   const pend=S.tasks.filter(t=>!t.done);
-  const tk=dkey(new Date());
+  const tk=todayK();
   const todayCount=pend.filter(t=>t.due&&t.due<=tk).length;
   const isQ=c.q||/^(?:que|como|cuando|donde|quien|cual|cuanto|por que|porque|cuales|sera|puedes|deberia)\b/.test(n);
 
@@ -1608,6 +1961,7 @@ function respondDeep(raw,opts={}){
     if(AFF.test(c.n))return pd.run();
     if(NEG.test(c.n))return '<div class="deep-card"><div class="deep-badge">🧠 Decisión Asimilada</div><p>De acuerdo, descartamos la propuesta y mantenemos tu agenda intacta.</p></div>';
   }
+  {const fu=agSeguimiento(c);if(fu!=null)return fu}
   const firstMsg=awaitName;awaitName=false;
   {const nn=needsNet(c);if(nn){convReset();return deepWrap(needNetReply(nn,c))}}
   const chD=preChat(c);if(chD!=null)return deepWrap(chD);
@@ -1617,7 +1971,7 @@ function respondDeep(raw,opts={}){
   // 1. Manejo de risas o humor con profundidad
   if(LAUGH.test(c.n)){
     const pend=S.tasks.filter(t=>!t.done);
-    const tk=dkey(new Date());
+    const tk=todayK();
     const urgL=pend.filter(t=>t.pri===3||(t.due&&t.due<=tk));
     let msg=`<div class="deep-card"><div class="deep-badge">🧠 Reflexión Deliberada</div><p>Jaja, el sentido del humor es una de las mejores defensas biológicas contra el estrés y la fatiga mental.</p>`;
     if(urgL.length){
@@ -1648,7 +2002,7 @@ function respondDeep(raw,opts={}){
   // 3. Manejo de fatiga, agobio o saturación cognitiva
   if(!explicitCmd&&/estres|abrumad|agobiad|cansad|no doy abasto|no llego|no tengo ganas|saturad|ansiedad/.test(c.n)){
     const pend=S.tasks.filter(t=>!t.done);
-    const tk=dkey(new Date());
+    const tk=todayK();
     const overdue=pend.filter(t=>t.due&&t.due<tk);
     const easiest=pend.slice().sort((a,b)=>est(a)-est(b))[0];
     let rec=`<div class="deep-card"><div class="deep-badge">🧠 Protocolo de Descompresión Cognitiva</div>
@@ -1693,8 +2047,9 @@ function respondDeep(raw,opts={}){
 
   // 6. Planificación estratégica de día con soporte para cualquier fecha ("hoy", "mañana", "viernes")
   if(/\b(?:organiza(?:me)?|planifica(?:me)?|ordena(?:me)?|prioriza(?:me)?|arma(?:me)?|haz(?:me)?)\b.*\b(?:dia|hoy|manana|tarde|jornada|plan)\b|\bmi plan\b|\bplan (?:del|de) (?:dia|hoy|manana)\b|\bque hago (?:hoy|manana|este dia)\b/.test(c.n)){
-    const targetDk=parseWhen(c.o).date||dkey(new Date());
-    const tk=dkey(new Date()),isToday=targetDk===tk;
+    const wDk=parseWhen(c.o);if(wDk.bad)return badWhenMsg(wDk);
+    const targetDk=wDk.date||todayK();
+    const tk=todayK(),isToday=targetDk===tk;
     const lbl=isToday?'hoy':dueLabel({due:targetDk});
     const basePlan=planDay(targetDk);
     const pend=S.tasks.filter(t=>!t.done);
@@ -1723,10 +2078,10 @@ function respondDeep(raw,opts={}){
     const p2=`${goalTitle}: Configuración de recursos e infraestructura mínima`;
     const p3=`${goalTitle}: Primer sprint ejecutable (prueba piloto)`;
     const p4=`${goalTitle}: Revisión de métricas y consolidación de hábito`;
-    const d1=dkey(addDays(new Date(),1));
-    const d2=dkey(addDays(new Date(),3));
-    const d3=dkey(addDays(new Date(),7));
-    const d4=dkey(addDays(new Date(),14));
+    const d1=dayK(1);
+    const d2=dayK(3);
+    const d3=dayK(7);
+    const d4=dayK(14);
 
     pending={run:()=>{
       snap();
@@ -1918,7 +2273,7 @@ async function geocode(place){
   if(!g&&place.includes(','))g=await q(place.split(',')[0].trim());                                  /* «Medellín, Colombia» → «Medellín» */
   return g;
 }
-const dayLbl=s=>{const d=new Date(s+'T12:00:00');return isNaN(d)?'':capFirst(d.toLocaleDateString('es',{weekday:'long',day:'numeric',month:'short'}))};
+const dayLbl=s=>{const k=String(s).slice(0,10);return isNaN(keyN(k))?'':`${capFirst(DAYS_ES[wdayK(k)])} ${+k.slice(8)} ${MON_ABBR[+k.slice(5,7)-1]}`}; /* tabla propia: «Lunes 19 oct» */
 const rainTip=p=>num(p)==null?'':p>=60?' Lleva paraguas ☂️.':p>=30?' Podría llover.':'';
 async function wxAnswer(it,onStep){
   onStep(`Localizando «${it.place}»…`);
@@ -1962,9 +2317,12 @@ async function tzAnswer(it,onStep){
   const now=new Date();
   let hh,dd,diff='';
   try{
-    hh=new Intl.DateTimeFormat('es',{timeZone:g.timezone,hour:'2-digit',minute:'2-digit',hour12:false}).format(now);
-    dd=new Intl.DateTimeFormat('es',{timeZone:g.timezone,weekday:'long',day:'numeric',month:'long'}).format(now);
-    const dm=Math.round((new Date(now.toLocaleString('en-US',{timeZone:g.timezone}))-new Date(now.toLocaleString('en-US')))/6e4);
+    /* Intl solo da los NÚMEROS de la hora en esa zona; los nombres de día y mes salen de la tabla propia */
+    const pz=new Intl.DateTimeFormat('en-GB',{timeZone:g.timezone,year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',hourCycle:'h23'}).formatToParts(now).reduce((a,p)=>(a[p.type]=+p.value,a),{});
+    const kz=ymdKey(pz.year,pz.month-1,pz.day);
+    hh=pad(pz.hour%24)+':'+pad(pz.minute);
+    dd=`${DAYS_ES[wdayK(kz)]} ${pz.day} de ${MONTHS[pz.month-1]}`;
+    const dm=Math.round(((dnum(pz.year,pz.month-1,pz.day)-dnum(now.getFullYear(),now.getMonth(),now.getDate()))*1440+(pz.hour%24)*60+pz.minute)-(now.getHours()*60+now.getMinutes()));
     if(Number.isFinite(dm)){const a=Math.abs(dm),h=Math.floor(a/60),m=a%60;diff=dm===0?' (la misma hora que tú)':` (${h?h+' h':''}${h&&m?' ':''}${m?m+' min':''} ${dm>0?'más':'menos'} que tú)`}
   }catch(e){return webNF(`No pude calcular la hora para «${it.place}».`)}
   setWebCtx({kind:'time',place:it.place});
@@ -2216,7 +2574,7 @@ function intentWeather(c){
   const nd=n.replace(/\b(?:por|en|de|a|hoy en) la manana\b|\besta manana\b/g,' ');
   const wk={domingo:0,lunes:1,martes:2,miercoles:3,jueves:4,viernes:5,sabado:6};let m;
   let day=/\bpasado manana\b/.test(nd)?2:/\bmanana\b/.test(nd)?1:/\b(?:semana|proximos dias|fin de semana|finde)\b/.test(nd)?'week':0;
-  if(day===0&&(m=/\b(?:el|este|del|proximo) (lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.exec(nd))){const off=(wk[m[1]]-new Date().getDay()+7)%7;day=off===0?7:off;if(day>6)day='week'}
+  if(day===0&&(m=/\b(?:el|este|del|proximo) (lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.exec(nd))){const off=(wk[m[1]]-wdayK(todayK())+7)%7;day=off===0?7:off;if(day>6)day='week'}
   if(day===0&&(m=/\b(?:dentro de|en) (\d+) dias\b/.exec(nd))&&+m[1]<=6)day=+m[1];
   const place=place0||S.profile.city||null;
   return{kind:'weather',day,place,ask:!place,fromProfile:!place0&&!!place,sun};
@@ -2528,7 +2886,7 @@ window.aplicarNombrePanki=function(nombre){
 const chat=$('#chat'),scroll=$('#scroll'),input=$('#in'),go=$('#go'),psearch=$('#psearch');
 /* HTML del historial guardado: solo etiquetas y atributos conocidos */
 const OKTAGS=new Set('p b i u em strong span div br button details summary a h4 code small ul ol li'.split(' '));
-const OKATTR=new Set(['class','data-say','data-cmd','data-fill','data-tab','data-ics','data-tid','data-nid','title','aria-label','open','hidden','type','style','href','target','rel']);
+const OKATTR=new Set(['class','data-say','data-cmd','data-fill','data-tab','data-ics','data-tid','data-nid','data-cal','title','aria-label','open','hidden','type','style','href','target','rel']);
 function cleanHTML(h){
   const doc=new DOMParser().parseFromString('<body>'+String(h)+'</body>','text/html');
   const walk=el=>{
@@ -2555,7 +2913,7 @@ function cleanImport(d){
   const fix=(x,i)=>({...x,id:Number.isFinite(+x.id)?+x.id:i+1,title:str(x.title),cat:str(x.cat,'General')});
   return{profile:prof,
     facts:arr(d.facts).filter(f=>typeof f.text==='string').map(f=>({text:str(f.text),t:Number.isFinite(+f.t)?+f.t:0})),
-    tasks:arr(d.tasks).map((t,i)=>({...fix(t,i),pri:[1,2,3].includes(+t.pri)?+t.pri:2,due:dateOk(t.due),time:timeOk(t.time),done:!!t.done,notified:!!t.notified,created:Number.isFinite(+t.created)?+t.created:0,doneAt:Number.isFinite(+t.doneAt)?+t.doneAt:undefined,est:Number.isFinite(+t.est)?+t.est:undefined})),
+    tasks:arr(d.tasks).map((t,i)=>({...fix(t,i),pri:[1,2,3].includes(+t.pri)?+t.pri:2,due:dateOk(t.due),time:timeOk(t.time),done:!!t.done,notified:!!t.notified,created:Number.isFinite(+t.created)?+t.created:0,doneAt:Number.isFinite(+t.doneAt)?+t.doneAt:undefined,est:Number.isFinite(+t.est)?+t.est:undefined,who:typeof t.who==='string'&&t.who.trim()?str(t.who):undefined,loc:typeof t.loc==='string'&&t.loc.trim()?str(t.loc):undefined})),
     notes:arr(d.notes).map((n,i)=>({...fix(n,i),note:true,created:Number.isFinite(+n.created)?+n.created:0})),
     log:arr(d.log).filter(l=>Number.isFinite(+l.t)).map(l=>({t:+l.t,k:str(l.k),c:str(l.c)})),
     model:obj(d.model),next:Number.isFinite(+d.next)&&+d.next>0?+d.next:1,lastBrief:Number.isFinite(+d.lastBrief)?+d.lastBrief:0,asked:true};
@@ -2572,6 +2930,7 @@ const MAXIN=1500;let LONGTXT='';
 async function say(text){
   text=text.trim();if(!text)return;
   if(isThinking){toast('Un momento: sigo con tu pregunta anterior (puedes cancelarla)');return}
+  if(calOn)cerrarCalendario(); /* la respuesta aparece en el chat */
   if(text.length>MAXIN){
     LONGTXT=text;
     addMsg('user',esc(text.slice(0,300))+'…');
@@ -2657,7 +3016,7 @@ async function sayDeep(text){
       const fresh=ask0&&Date.now()-ask0.t<18e4;
       if(fresh&&AFF.test(c.n))it=ask0.it;                       /* permiso concedido */
       else if(fresh&&NEG.test(c.n))it={kind:'declined'};          /* permiso denegado */
-      else if(!confirming)it=DIAG.test(c.n)?{kind:'diag'}:(webFollowUp(c)||webIntent(c));
+      else if(!confirming&&!(agAwait&&Date.now()-agAwait.t<6e5))it=DIAG.test(c.n)?{kind:'diag'}:(webFollowUp(c)||webIntent(c));
     }
   }catch(e){console.error(e)}
   if(it){pending=null;awaitName=false;convReset();last={}}
@@ -2727,17 +3086,19 @@ async function sayDeep(text){
   }
 }
 function act(cmd){
+  if(cmd==='deshacer')calUndo=null;
   if(cmd==='guardar-largo'){if(LONGTXT){addNote(LONGTXT.slice(0,20000));LONGTXT='';toast('Guardada en notas');renderPanel()}return}
   let out;try{out=respond(cmd)}catch(e){console.error(e);return}
   const t=document.createElement('div');t.innerHTML=out;
   toast((t.textContent||'Hecho').trim().slice(0,70));renderPanel();syncChatDOM();
 }
 document.addEventListener('click',e=>{
-  const b=e.target.closest('[data-say],[data-cmd],[data-fill],[data-tab],[data-ics]');if(!b)return;
+  const b=e.target.closest('[data-say],[data-cmd],[data-fill],[data-tab],[data-ics],[data-cal]');if(!b)return;
   if(b.dataset.ics){
     const t=S.tasks.find(x=>x.id===+b.dataset.ics);
     if(t)downloadICS([t],`evento-${t.id}.ics`);
   }
+  else if(b.dataset.cal!==undefined){abrirCalendario(okKey(b.dataset.cal)?b.dataset.cal:null)}
   else if(b.dataset.say){say(b.dataset.say)}
   else if(b.dataset.cmd){act(b.dataset.cmd)}
   else if(b.dataset.fill){input.value=b.dataset.fill;input.focus();go.disabled=false}
@@ -2749,10 +3110,10 @@ input.addEventListener('keydown',e=>{
   if(e.key==='ArrowUp'&&hist.length){e.preventDefault();hi=Math.max(0,hi-1);input.value=hist[hi]||'';go.disabled=!input.value}
   else if(e.key==='ArrowDown'&&hist.length){e.preventDefault();hi=Math.min(hist.length,hi+1);input.value=hist[hi]||'';go.disabled=!input.value}
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('#panel').classList.remove('open');if(isThinking)webAbortAll()}if(e.key==='/'&&document.activeElement!==input&&document.activeElement!==psearch){e.preventDefault();input.focus()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('#panel').classList.contains('open'))$('#panel').classList.remove('open');else if(calOn&&calForm)calForma(false);else if(calOn)cerrarCalendario();if(isThinking)webAbortAll()}if(e.key==='/'&&document.activeElement!==input&&document.activeElement!==psearch){e.preventDefault();input.focus()}});
 $('#menu').onclick=()=>{$('#panel').classList.toggle('open');renderPanel()};
 $('#close').onclick=()=>$('#panel').classList.remove('open');
-$('#chips').innerHTML=['Organiza mi día','Mis tareas','Organiza mi semana','Resumen','Ayuda'].map(s=>`<button class="pill" data-say="${s}">${s}</button>`).join('');
+$('#chips').innerHTML=['Organiza mi día','Mis tareas','Organiza mi semana','Resumen','Ayuda'].map(s=>`<button class="pill" data-say="${s}">${s}</button>`).join('')+'<button class="pill" data-cal="">Calendario</button>';
 
 let tab='tasks',filterQ='';
 psearch.addEventListener('input',()=>{filterQ=norm(psearch.value.trim());renderPanel()});
@@ -2762,6 +3123,106 @@ psearch.addEventListener('keydown',e=>{
     if(tab==='notes')act('Nota: '+v);else act('Tarea: '+v);
   }
 });
+
+/* ---------- vista Calendario ----------
+   Mismos datos que las tareas (S.tasks con due/time/who/loc): no hay un segundo almacenamiento. La semana
+   empieza en LUNES. Todo el cálculo de días sale de dnum/wdayN (calendario puro, sin zonas horarias). */
+let calOn=false,calForm=false,calUndo=null,cal={y:0,m:0,sel:null};
+const okKey=k=>{const x=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(k));return !!x&&validYMD(+x[1],+x[2]-1,+x[3])&&+x[1]>=1900&&+x[1]<=2200};
+function calSet(k){if(!okKey(k))k=todayK();cal.sel=k;cal.y=+k.slice(0,4);cal.m=+k.slice(5,7)-1}
+/* mueve el mes visible (±n) y deja seleccionado el mismo día del mes (recortado: 31 → 30/28) */
+function calMes(n){
+  const t=cal.y*12+cal.m+n,y=Math.floor(t/12),mo=t-y*12;
+  if(y<1900||y>2200)return;
+  calUndo=null;calSet(ymdKey(y,mo,Math.min(+(cal.sel||todayK()).slice(8),dimOf(y,mo))));renderCal();
+}
+function abrirCalendario(k){
+  calSet(k||todayK());calOn=true;calUndo=null;
+  document.body.classList.add('vcal');$('#panel').classList.remove('open');
+  const b=$('#btnCal');if(b){b.setAttribute('aria-pressed','true');b.title='Volver al chat'}
+  renderCal();
+  const sel=document.querySelector('#calGrid .cd.sel');if(sel&&sel.scrollIntoView)try{sel.scrollIntoView({block:'nearest'})}catch(e){}
+}
+function cerrarCalendario(){
+  calOn=false;calForm=false;document.body.classList.remove('vcal');
+  const f=$('#calForm');if(f)f.hidden=true;
+  const b=$('#btnCal');if(b){b.setAttribute('aria-pressed','false');b.title='Calendario'}
+}
+/* «con Pepe · en la oficina»; si el título ya dice con quién («Reunión con Pepe») no se repite */
+const evMeta=t=>{const w=t.who&&!norm(t.title).includes(norm(t.who))?'con '+esc(t.who):'',l=t.loc?'en '+esc(t.loc):'';return w||l?`<span class="meta">${w}${w&&l?' · ':''}${l}</span>`:''};
+const evRow=t=>`<div class="row ev${t.done?' done':''}" data-tid="${t.id}"><button class="chk" data-cmd="${t.done?'reabre':'completa'} ${t.id}" aria-label="${t.done?'Reabrir':'Marcar como hecho'}"></button><span class="et">${t.time?t.time:'Todo el día'}</span><span class="eb"><span class="ttl">${esc(t.title)}</span>${evMeta(t)}</span><button class="x" data-caldel="${t.id}" aria-label="Borrar">×</button></div>`;
+function renderCal(){
+  if(!calOn)return;
+  const tk=todayK(),sel=cal.sel||tk;
+  const by={};S.tasks.forEach(t=>{if(!t.due)return;const b=by[t.due]||(by[t.due]={p:0,o:0,d:0});if(t.done)b.d++;else if(t.due<tk)b.o++;else b.p++});
+  const first=dnum(cal.y,cal.m,1),off=(wdayN(first)+6)%7,total=Math.ceil((off+dimOf(cal.y,cal.m))/7)*7;
+  let cells='';
+  for(let i=0;i<total;i++){
+    const k=nKey(first-off+i),other=+k.slice(5,7)-1!==cal.m,b=by[k],cnt=b?b.p+b.o+b.d:0;
+    const dots=cnt>3?`<b>${cnt}</b>`:b?'<i class="od"></i>'.repeat(b.o)+'<i></i>'.repeat(b.p)+'<i class="dn"></i>'.repeat(b.d):'';
+    cells+=`<button type="button" class="cd${other?' o':''}${k===tk?' today':''}${k===sel?' sel':''}" data-cd="${k}" tabindex="${k===sel?0:-1}" aria-label="${esc(fechaLarga(k))}${cnt?', '+pl(cnt,'evento','eventos'):''}"${k===tk?' aria-current="date"':''}${k===sel?' aria-selected="true"':''}><span class="n">${+k.slice(8)}</span><span class="dots">${dots}</span></button>`;
+  }
+  $('#calTitle').textContent=capFirst(MONTHS[cal.m])+' de '+cal.y;
+  $('#calGrid').innerHTML=cells;
+  const d=dayDiff(sel);
+  $('#calDayTitle').textContent=capFirst(fechaLarga(sel));
+  $('#calDaySub').textContent=d===0?'Hoy':d===1?'Mañana':d===-1?'Ayer':d>1?`En ${d} días`:`Hace ${-d} días`;
+  const list=S.tasks.filter(t=>t.due===sel).sort((a,b)=>(a.time?1:0)-(b.time?1:0)||(a.time||'').localeCompare(b.time||'')||a.id-b.id);
+  $('#calUndo').innerHTML=calUndo?`<div class="cal-undo"><span>Borrado «${esc(calUndo)}»</span><button type="button" class="pill" data-cmd="deshacer">Deshacer</button></div>`:'';
+  $('#calList').innerHTML=list.length?list.map(evRow).join(''):'<div class="empty">Nada agendado este día.<br><span class="sub">Escríbele a '+esc(S.nombre)+': «agéndame una reunión a las 14:35 el 23 de octubre con Pepe»</span></div>';
+}
+function calForma(abrir){
+  calForm=abrir;const f=$('#calForm');f.hidden=!abrir;
+  if(abrir){f.reset();$('#cfTitle').focus()}
+}
+/* hora de un campo de texto: «14:35», «14.35», «14h35», «2 pm», «9» → 'HH:MM' | '' (vacío) | null (no válida) */
+function horaCampo(v){
+  v=norm(String(v)).trim();if(!v)return '';
+  const x=/^(\d{1,2})(?:[:.h](\d{2}))?\s*(am|pm)?$/.exec(v);if(!x)return null;
+  let h=+x[1];const mi=+(x[2]||0);
+  if(x[3]==='pm'&&h<12)h+=12;else if(x[3]==='am'&&h===12)h=0;
+  return h>23||mi>59?null:pad(h)+':'+pad(mi);
+}
+/* única forma de crear un evento a mano (el chat usa addTask, que llega al mismo S.tasks) */
+function crearEvento({title,due,time,who,loc}){
+  title=capFirst(String(title||'').replace(/\s+/g,' ').trim()||'Reunión');
+  who=who?nameCase(who.replace(/\s+/g,' ').trim()):'';loc=loc?loc.replace(/\s+/g,' ').trim():'';
+  if(who&&!/\bcon\b/i.test(title))title+=' con '+who;
+  snap();
+  const cat=classify(title),t={id:S.next++,title,cat,pri:2,due,time:time||null,done:false,created:Date.now(),notified:false};
+  if(who)t.who=who;if(loc)t.loc=loc;
+  S.tasks.push(t);logAct('task',cat);save();renderPanel();
+  return t;
+}
+function calDelete(id){
+  const t=S.tasks.find(x=>x.id===id);if(!t)return;
+  snap();S.tasks=S.tasks.filter(x=>x!==t);calUndo=t.title;save();renderPanel();syncChatDOM();
+}
+$('#calView').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.cd){calUndo=null;calSet(b.dataset.cd);renderCal();const s=document.querySelector('#calGrid .cd.sel');if(s)s.focus()}
+  else if(b.dataset.caldel)calDelete(+b.dataset.caldel);
+  else if(b.id==='calPrev')calMes(-1);
+  else if(b.id==='calNext')calMes(1);
+  else if(b.id==='calHoy'){calUndo=null;calSet(todayK());renderCal()}
+  else if(b.id==='calNew')calForma(!calForm);
+  else if(b.id==='cfCancel')calForma(false);
+});
+$('#calForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  const time=horaCampo($('#cfTime').value);
+  if(time===null){toast('Hora no válida: usa un formato como 14:35');$('#cfTime').focus();return}
+  const t=crearEvento({title:$('#cfTitle').value,due:cal.sel||todayK(),time,who:$('#cfWho').value,loc:$('#cfLoc').value});
+  calForma(false);toast('Agendada: '+t.title);
+  if(t.time&&'Notification' in window&&Notification.permission==='default')try{Notification.requestPermission()}catch(x){}
+});
+/* teclado en la cuadrícula: flechas = día/semana, RePág/AvPág = mes */
+$('#calGrid').addEventListener('keydown',e=>{
+  const dk={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[e.key];
+  if(dk!==undefined){e.preventDefault();calUndo=null;calSet(addK(cal.sel||todayK(),dk));renderCal();const s=document.querySelector('#calGrid .cd.sel');if(s)s.focus()}
+  else if(e.key==='PageUp'||e.key==='PageDown'){e.preventDefault();calMes(e.key==='PageUp'?-1:1);const s=document.querySelector('#calGrid .cd.sel');if(s)s.focus()}
+});
+$('#btnCal').onclick=()=>calOn?cerrarCalendario():abrirCalendario();
 
 function renderPanel(){
   const p=$('#panel');if(!p)return;
@@ -2776,10 +3237,11 @@ function renderPanel(){
     h=pend.length?renderGroups(groupTasks(pend)):'<div class="empty">Sin tareas pendientes</div>';
     if(done.length)h+=`<h4>Completadas · ${done.length}</h4>`+done.slice(-8).reverse().map(row).join('')+`<div class="btns"><button class="pill" data-cmd="limpia completadas">Limpiar completadas</button></div>`;
   }else if(tab==='agenda'){
-    const tk=dkey(new Date());
+    const tk=todayK();
     const dated=S.tasks.filter(t=>!t.done&&t.due&&matchF(t)).sort(cmp);
+    const abrirCal='<div class="btns" style="margin-top:6px"><button class="pill" data-cal="">📅 Abrir calendario</button></div>';
     if(!dated.length){
-      h='<div class="empty">No tienes reuniones ni tareas con fecha programada.</div>';
+      h=abrirCal+'<div class="empty">No tienes reuniones ni tareas con fecha programada.</div>';
     }else{
       const byDay={};
       dated.forEach(t=>{(byDay[t.due]=byDay[t.due]||[]).push(t)});
@@ -2787,7 +3249,7 @@ function renderPanel(){
         const lbl=dk===tk?'Hoy':dk<tk?`Vencido (${dueLabel({due:dk})})`:capFirst(dueLabel({due:dk}));
         h+=`<h4>${esc(lbl)}</h4>`+byDay[dk].map(row).join('');
       });
-      h+=`<div class="btns"><button class="pill" id="icsAll">📅 Exportar agenda (.ics)</button></div>`;
+      h=abrirCal+h+`<div class="btns"><button class="pill" id="icsAll">📅 Exportar agenda (.ics)</button></div>`;
     }
   }else if(tab==='notes'){
     const list=S.notes.filter(matchF);
@@ -2804,6 +3266,7 @@ function renderPanel(){
   const wt=$('#webTog');if(wt)wt.onclick=()=>setWeb(S.web===false);
   const nt=$('#nombreTog');if(nt)nt.onclick=()=>{const v=prompt('¿Cómo quieres llamarme?',S.nombre);if(v!=null&&v.trim())setNombreAsistente(v)};
   const icsB=$('#icsAll');if(icsB)icsB.onclick=()=>downloadICS(S.tasks.filter(t=>!t.done&&t.due));
+  renderCal();
   const bk=$('#bk');if(bk){bk.onclick=exportData;$('#im').onclick=()=>$('#file').click();$('#rs').onclick=()=>{if(confirm(`¿Borrar todos tus datos de ${S.nombre}?`)){snap();const keep=S.chat;S=Object.assign(blank(),{chat:keep,asked:true,mode:S.mode,web:S.web,nombre:S.nombre});save();updateModeUI();renderPanel();syncChatDOM();toast('Datos borrados')}}}
 }
 $('#file').onchange=e=>{
@@ -2830,6 +3293,11 @@ save();renderPanel();tick();setInterval(tick,15000);lastGreet=Date.now();
 /* a partir de aquí, aplicarNombrePanki() ya puede aplicarse de inmediato (ver definición arriba) */
 pankiNombreListo=true;
 if(pankiNombrePendiente!=null){const _pend=pankiNombrePendiente;pankiNombrePendiente=null;window.aplicarNombrePanki(_pend)}
+/* Puente para el host (panki_app.py: `infinity-calendario`, `--calendario`, la acción `calendario`): abre la vista
+   Calendario, opcionalmente en un día concreto ('AAAA-MM-DD'). CONTRATO: nombre de la función fijo. Segura de
+   llamar en cualquier momento; un valor que no sea una fecha válida abre el mes actual. */
+window.pankiAbrirCalendario=function(fecha){try{abrirCalendario(typeof fecha==='string'&&okKey(fecha)?fecha:null)}catch(e){console.error(e)}};
+if(location.hash==='#calendario')window.pankiAbrirCalendario();
 </script>
 </body>
 </html>

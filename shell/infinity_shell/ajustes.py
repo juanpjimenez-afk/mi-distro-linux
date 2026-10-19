@@ -12,14 +12,18 @@ Los valores del usuario viven en ~/.config/infinity/ajustes.json. Hyprland y hyp
 ficheros que se GENERAN a partir de esos valores; gtklock y foot solo cambian las claves que
 gestiona la app y conservan el resto del fichero.
 """
+import datetime
 import json
 import math
 import os
 import pwd
 import re
 import secrets
+import shlex
 import stat
 import subprocess
+import time
+import unicodedata
 from collections import namedtuple
 
 from . import fondos as F
@@ -73,10 +77,12 @@ def _a(id, pagina, etiqueta, descripcion, tipo, defecto, aplica, minimo=None, ma
     return Ajuste(id, pagina, etiqueta, descripcion, tipo, defecto, aplica, minimo, maximo, opciones)
 
 
-# Páginas de la ventana, en orden. Atajos y Sistema no tienen ajustes: se muestran a mano.
+# Páginas de la ventana, en orden. Fecha y hora, Atajos y Sistema no tienen ajustes en el esquema: se muestran a mano
+# (la hora y la zona son del sistema, no de ajustes.json: se cambian al momento con timedatectl).
 PAGINAS = [
     ("escritorio", "Escritorio"),
     ("dock", "Dock y estado"),
+    ("fecha", "Fecha y hora"),
     ("bloqueo", "Bloqueo y energía"),
     ("teclado", "Teclado y ratón"),
     ("terminal", "Terminal"),
@@ -708,15 +714,17 @@ def _motivo_error(e):
     return "no se pudo ejecutar"
 
 
-def correr_real(argv, detach=False):
-    """Ejecuta una orden (sin shell: argv es una lista). Devuelve (ok, texto_de_error)."""
+def correr_real(argv, detach=False, timeout=15):
+    """Ejecuta una orden (sin shell: argv es una lista). Devuelve (ok, texto_de_error).
+
+    `timeout` son los segundos que se espera a que termine (una orden que pide permiso al usuario necesita más)."""
     try:
         if detach:
             subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
             return True, ""
         r = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace",
-                           timeout=15)
+                           timeout=timeout)
         return r.returncode == 0, (r.stderr or r.stdout).strip()
     except (OSError, subprocess.SubprocessError) as e:
         return False, _motivo_error(e)
@@ -834,3 +842,391 @@ def cambiar_contrasena(correr=None):
     if not ok and error:
         error = f"La terminal «{argv[0]}» {error}."
     return ok, error
+
+
+# ------------------------------------------------------------------ fecha y hora
+# Página «Fecha y hora». Cambiar la hora, la fecha o la zona exige permisos de administrador. Se lanza `timedatectl`
+# (siempre como lista de argumentos: sin shell y sin texto crudo interpolado) con este orden:
+#   1. `sudo -n timedatectl …`: en la ISO en vivo casper deja al usuario en sudoers sin contraseña
+#      (/etc/sudoers.d/casper). `-n` = nunca pregunta: si hiciera falta contraseña, falla al instante.
+#   2. `timedatectl …` a secas: habla con systemd-timedated y polkit pide permiso al agente de la sesión
+#      (policykit-1-gnome, que arranca hyprland.conf). No hace falta pkexec, que la ISO no instala.
+# Esta app NUNCA recibe, guarda ni registra una contraseña: la teclea el usuario en la ventana del agente.
+
+# Nombres propios en español: ni strftime ni el idioma del sistema (el reloj sale igual con cualquier LANG).
+DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")   # índice = date.weekday()
+DIAS_CORTOS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
+         "noviembre", "diciembre")
+MESES_CORTOS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+ANIO_MIN, ANIO_MAX = 1970, 2099   # lo que admite el reloj de la placa (RTC)
+ESPERA_PERMISO_S = 120            # el usuario puede tardar en escribir su contraseña en la ventana de polkit
+
+
+def es_bisiesto(anio):
+    return anio % 4 == 0 and (anio % 100 != 0 or anio % 400 == 0)
+
+
+def dias_del_mes(anio, mes):
+    if mes == 2:
+        return 29 if es_bisiesto(anio) else 28
+    return 30 if mes in (4, 6, 9, 11) else 31
+
+
+def _entero(valor, nombre):
+    """Un entero de verdad: ni bool, ni decimal, ni texto («3» no es una hora)."""
+    if isinstance(valor, bool) or not isinstance(valor, int):
+        raise ValueError(f"{nombre} tiene que ser un número entero.")
+    return valor
+
+
+def validar_fecha_hora(anio, mes, dia, hora, minuto, segundo):
+    """La fecha y hora como datetime, o ValueError con un mensaje para el usuario (existe el día, 29 de febrero solo
+    en bisiestos, hora 0–23, minutos y segundos 0–59)."""
+    anio, mes, dia = _entero(anio, "El año"), _entero(mes, "El mes"), _entero(dia, "El día")
+    hora, minuto, segundo = _entero(hora, "La hora"), _entero(minuto, "Los minutos"), _entero(segundo, "Los segundos")
+    if not ANIO_MIN <= anio <= ANIO_MAX:
+        raise ValueError(f"El año tiene que estar entre {ANIO_MIN} y {ANIO_MAX}.")
+    if not 1 <= mes <= 12:
+        raise ValueError("El mes tiene que estar entre 1 y 12.")
+    maximo = dias_del_mes(anio, mes)
+    if not 1 <= dia <= maximo:
+        if (mes, dia) == (2, 29):
+            raise ValueError(f"El 29 de febrero de {anio} no existe: {anio} no es bisiesto "
+                             f"(febrero tiene 28 días).")
+        raise ValueError(f"En {MESES[mes - 1]} de {anio} solo hay {maximo} días: el día {dia} no existe.")
+    if not 0 <= hora <= 23:
+        raise ValueError("La hora tiene que estar entre 0 y 23.")
+    if not 0 <= minuto <= 59:
+        raise ValueError("Los minutos tienen que estar entre 0 y 59.")
+    if not 0 <= segundo <= 59:
+        raise ValueError("Los segundos tienen que estar entre 0 y 59.")
+    return datetime.datetime(anio, mes, dia, hora, minuto, segundo)
+
+
+def dia_de_la_semana(anio, mes, dia):
+    """0 = lunes … 6 = domingo. ValueError si la fecha no existe (no mira el rango del reloj: sirve para mostrar)."""
+    try:
+        return datetime.date(anio, mes, dia).weekday()
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("Esa fecha no existe.") from None
+
+
+def nombre_dia(anio, mes, dia):
+    return DIAS[dia_de_la_semana(anio, mes, dia)]
+
+
+def fecha_larga(anio, mes, dia):
+    """«lunes 19 de octubre de 2026»."""
+    return f"{nombre_dia(anio, mes, dia)} {dia} de {MESES[mes - 1]} de {anio}"
+
+
+def fecha_corta(anio, mes, dia):
+    """«lun 19 oct»: la fecha de la píldora de estado del dock."""
+    return f"{DIAS_CORTOS[dia_de_la_semana(anio, mes, dia)]} {dia} {MESES_CORTOS[mes - 1]}"
+
+
+def formato_set_time(anio, mes, dia, hora, minuto, segundo):
+    """El texto que espera `timedatectl set-time`: «YYYY-MM-DD HH:MM:SS» (valida antes de formatear)."""
+    f = validar_fecha_hora(anio, mes, dia, hora, minuto, segundo)
+    return f"{f.year:04d}-{f.month:02d}-{f.day:02d} {f.hour:02d}:{f.minute:02d}:{f.second:02d}"
+
+
+def ahora():
+    """La fecha y hora locales del sistema (datetime). tzset() hace que se note una zona cambiada con la app abierta."""
+    time.tzset()
+    return datetime.datetime.now()
+
+
+# ---- zonas horarias
+_ZONA = re.compile(r"[A-Za-z0-9][A-Za-z0-9_+-]*(?:/[A-Za-z0-9][A-Za-z0-9_+-]*)*")   # «America/Argentina/Buenos_Aires»
+
+
+def validar_zona(zona, zonas=None):
+    """La zona si tiene forma de zona (y está en `zonas`, si se da), o ValueError. Nunca empieza por «-»: no puede
+    pasar por una opción de timedatectl."""
+    if not isinstance(zona, str) or len(zona) > 64 or not _ZONA.fullmatch(zona):
+        raise ValueError("esa zona horaria no es válida")
+    if zonas is not None and zona not in zonas:
+        raise ValueError(f"la zona «{zona}» no existe")
+    return zona
+
+
+def _plano(texto):
+    """Minúsculas, sin tildes y con espacios en vez de «_»: para buscar «malaga» y encontrar Europe/Malaga."""
+    sin_tildes = "".join(c for c in unicodedata.normalize("NFKD", texto) if not unicodedata.combining(c))
+    return sin_tildes.lower().replace("_", " ")
+
+
+def filtrar_zonas(zonas, texto):
+    """Las zonas que contienen todas las palabras de `texto` («buenos aires», «america santiago»). Vacío = todas."""
+    palabras = _plano(texto).replace("/", " ").split()
+    if not palabras:
+        return list(zonas)
+    return [z for z in zonas if all(p in _plano(z) for p in palabras)]
+
+
+def _correr_lectura(argv):
+    r = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                       errors="replace", timeout=5)
+    return r.returncode, r.stdout
+
+
+def listar_zonas(correr=None, leer=None):
+    """Las zonas horarias, ordenadas. `timedatectl list-timezones`; si no responde, zone.tab de tzdata (más UTC).
+
+    `correr(argv) -> (código, salida)` y `leer(ruta) -> texto` se pueden sustituir en las pruebas."""
+    try:
+        codigo, salida = (correr or _correr_lectura)(["timedatectl", "list-timezones"])
+    except (OSError, subprocess.SubprocessError):
+        codigo, salida = 1, ""
+    zonas = {l.strip() for l in salida.splitlines() if _ZONA.fullmatch(l.strip())} if codigo == 0 else set()
+    if not zonas:
+        try:
+            tabla = (leer or _leer)("/usr/share/zoneinfo/zone.tab")
+        except OSError:
+            tabla = ""
+        for linea in tabla.splitlines():
+            campos = linea.split("\t")
+            if not linea.startswith("#") and len(campos) >= 3 and _ZONA.fullmatch(campos[2].strip()):
+                zonas.add(campos[2].strip())
+        if zonas:
+            zonas.add("UTC")
+    return sorted(zonas)
+
+
+# ---- estado del reloj
+EstadoHora = namedtuple("EstadoHora", "zona ntp puede_ntp sincronizada")   # ntp, puede_ntp, sincronizada: bool o None
+
+
+def parsear_timedatectl_show(texto):
+    """`timedatectl show` (líneas «Clave=valor») como diccionario."""
+    datos = {}
+    for linea in (texto or "").splitlines():
+        clave, igual, valor = linea.partition("=")
+        if igual and clave.strip():
+            datos[clave.strip()] = valor.strip()
+    return datos
+
+
+def _si_no(valor):
+    return {"yes": True, "no": False}.get(valor)
+
+
+def zona_del_sistema(leer=None):
+    """La zona según /etc/timezone o el enlace /etc/localtime; None si no se sabe. Respaldo de timedatectl show."""
+    try:
+        zona = (leer or _leer)("/etc/timezone").strip()
+    except OSError:
+        zona = ""
+    if _ZONA.fullmatch(zona):
+        return zona
+    try:
+        destino = os.path.realpath("/etc/localtime")
+    except OSError:
+        return None
+    zona = destino.partition("/zoneinfo/")[2]
+    return zona if _ZONA.fullmatch(zona) else None
+
+
+def leer_estado_hora(correr=None):
+    """Zona horaria y estado de la hora automática, según `timedatectl show` (sin permisos). Nunca lanza: lo que no se
+    pueda leer queda en None. `correr(argv) -> (código, salida)` se puede sustituir en las pruebas."""
+    try:
+        codigo, salida = (correr or _correr_lectura)(["timedatectl", "show"])
+    except (OSError, subprocess.SubprocessError):
+        codigo, salida = 1, ""
+    datos = parsear_timedatectl_show(salida) if codigo == 0 else {}
+    return EstadoHora(datos.get("Timezone") or zona_del_sistema(), _si_no(datos.get("NTP")),
+                      _si_no(datos.get("CanNTP")), _si_no(datos.get("NTPSynchronized")))
+
+
+def resumen_hora_automatica(estado):
+    """Lo que dice el interruptor de hora automática: (ayuda, se_puede_cambiar)."""
+    if estado.puede_ntp is False:
+        return ("Este sistema no tiene el servicio de hora por internet (systemd-timesyncd). Para instalarlo, "
+                "en una terminal: sudo apt install systemd-timesyncd", False)
+    if estado.ntp:
+        if estado.sincronizada:
+            return "Activada y sincronizada: la hora se ajusta sola con internet.", True
+        return "Activada, pero todavía no se ha sincronizado (hace falta conexión a internet).", True
+    if estado.ntp is False:
+        return "Desactivada: la fecha y la hora se cambian a mano, más abajo.", True
+    return "No se pudo leer si la hora automática está activada.", True
+
+
+# ---- cambios con permisos
+def argv_fijar_fecha_hora(anio, mes, dia, hora, minuto, segundo):
+    return ["timedatectl", "set-time", formato_set_time(anio, mes, dia, hora, minuto, segundo)]
+
+
+def argv_fijar_zona(zona, zonas=None):
+    return ["timedatectl", "set-timezone", validar_zona(zona, zonas)]
+
+
+def argv_hora_automatica(activo):
+    if not isinstance(activo, bool):
+        raise ValueError("tiene que ser sí o no")
+    return ["timedatectl", "set-ntp", "true" if activo else "false"]
+
+
+def _correr_con_permisos(argv, detach=False):
+    return correr_real(argv, detach, timeout=ESPERA_PERMISO_S)
+
+
+# Lo que dice sudo cuando no deja (no es un fallo de timedatectl): entonces se prueba por polkit.
+_SUDO_NO_DEJA = ("a password is required", "a terminal is required", "no tty present", "not in the sudoers",
+                 "may not run sudo", "is not allowed to", "must have a tty")
+
+
+def _sudo_no_dejo(salida):
+    """True si la orden no llegó a ejecutarse porque sudo no está o no autoriza (no si timedatectl se negó)."""
+    s = (salida or "").lower()
+    return s in ("no está instalada", "no se pudo ejecutar (sin permiso)") or any(f in s for f in _SUDO_NO_DEJA)
+
+
+def ejecutar_con_permisos(argv, correr=None):
+    """Lanza `argv` (una lista) con permisos de administrador. Devuelve (ok, salida_de_error).
+
+    `correr(argv, detach) -> (ok, salida)` se puede sustituir: las pruebas no ejecutan nada de verdad."""
+    correr = correr or _correr_con_permisos
+    ok, salida = correr(["sudo", "-n", *argv], False)
+    if ok:
+        return True, ""
+    if not _sudo_no_dejo(salida):   # sudo sí dejó y timedatectl se negó: otro intento solo repetiría el mismo error
+        return False, salida
+    ok, salida_polkit = correr(list(argv), False)
+    return (True, "") if ok else (False, salida_polkit or salida)
+
+
+# (trozo del error en minúsculas, explicación, ayuda). ayuda: None = el comando a mano; "" = nada; otro texto = ese.
+_EXPLICACIONES_HORA = (
+    ("automatic time synchronization is enabled", "la hora automática está activada",
+     "Desactívala primero con el interruptor «Ajustar hora automáticamente»."),
+    ("ntp not supported", "este sistema no tiene el servicio de hora por internet (systemd-timesyncd)",
+     "Para instalarlo, en una terminal: sudo apt install systemd-timesyncd"),
+    ("invalid time zone", "esa zona horaria no existe", ""),
+    ("unknown time zone", "esa zona horaria no existe", ""),
+    ("interactive authentication required",
+     "no se pudo pedir el permiso de administrador (no hay ventana de autorización en la sesión)", None),
+    ("a password is required", "hace falta la contraseña de administrador y aquí no se puede escribir", None),
+    ("access denied", "no se concedió el permiso de administrador", None),
+    ("not authorized", "no se concedió el permiso de administrador", None),
+    ("authentication", "no se concedió el permiso de administrador (contraseña incorrecta o cancelado)", None),
+    ("failed to connect to system bus", "no hay conexión con el servicio de hora del sistema", None),
+    ("no respondió a tiempo", "se agotó el tiempo de espera del permiso", None),
+    ("no está instalada", "falta el programa «timedatectl» o «sudo»", None),
+)
+
+
+def _explicar_error_hora(salida):
+    """(explicación, ayuda) de un error de timedatectl o de sudo, en español. ayuda None = el comando a mano."""
+    bajo = (salida or "").lower()
+    for trozo, explicacion, ayuda in _EXPLICACIONES_HORA:
+        if trozo in bajo:
+            return explicacion, ayuda
+    primera = next((l.strip() for l in (salida or "").splitlines() if l.strip()), "")
+    return (f"el sistema respondió «{primera[:120]}»" if primera else "el sistema no dio ninguna explicación"), None
+
+
+def _cambiar_con_permisos(argv, que, correr):
+    """Ejecuta un cambio y, si falla, devuelve un mensaje que dice qué pasó y cómo hacerlo a mano."""
+    ok, salida = ejecutar_con_permisos(argv, correr)
+    if ok:
+        return True, ""
+    explicacion, ayuda = _explicar_error_hora(salida)
+    if ayuda is None:
+        ayuda = f"Hazlo a mano en una terminal: {shlex.join(['sudo', *argv])}"
+    return False, f"No se pudo cambiar {que}: {explicacion}. {ayuda}".strip()
+
+
+def fijar_fecha_hora(anio, mes, dia, hora, minuto, segundo, correr=None):
+    """Valida y fija la fecha y hora del sistema. Devuelve (ok, mensaje_de_error)."""
+    try:
+        argv = argv_fijar_fecha_hora(anio, mes, dia, hora, minuto, segundo)
+    except ValueError as e:
+        return False, str(e)
+    return _cambiar_con_permisos(argv, "la fecha y la hora", correr)
+
+
+def fijar_zona_horaria(zona, zonas=None, correr=None):
+    """Fija la zona horaria del sistema. `zonas` (lista de listar_zonas) hace que solo valgan zonas que existen."""
+    try:
+        argv = argv_fijar_zona(zona, zonas)
+    except ValueError as e:
+        return False, f"No se pudo cambiar la zona horaria: {e}."
+    return _cambiar_con_permisos(argv, "la zona horaria", correr)
+
+
+def fijar_hora_automatica(activo, correr=None):
+    """Activa o desactiva la hora por internet (systemd-timesyncd)."""
+    try:
+        argv = argv_hora_automatica(activo)
+    except ValueError as e:
+        return False, f"No se pudo cambiar la hora automática: {e}."
+    return _cambiar_con_permisos(argv, "la hora automática", correr)
+
+
+# ------------------------------------------------------- guardado de cambios
+# Fila informativa de Sistema (solo lectura). La ISO arranca con casper «persistent»: casper usa una partición de disco
+# etiquetada «writable» (o «casper-rw») como capa de escritura. En el sistema en vivo /cow NO es un punto de montaje
+# (mountinfo siempre dice «overlay /cow … upperdir=/cow/upper», con o sin guardado), así que no sirve para saberlo.
+# Hay guardado si el arranque lo pide (palabra «persistent» en /proc/cmdline y no «nopersistent») Y existe un disco
+# con esa etiqueta (/dev/disk/by-label/writable o casper-rw, que crea udev; casper crea la partición sola en el USB).
+Persistencia = namedtuple("Persistencia", "modo titular motivo pista")   # modo: "persistente", "instalado" o "vivo"
+ETIQUETAS_GUARDADO = ("writable", "casper-rw")
+DIR_ETIQUETAS = "/dev/disk/by-label"
+TITULAR_GUARDA = "Se guardan tus cambios al apagar"
+TITULAR_EN_VIVO = "Modo en vivo: lo que cambies se pierde al apagar"
+PISTA_GUARDADO = ("En un USB: grábalo en modo DD/Etcher y deja espacio libre (se crea sola la partición de guardado "
+                  "al arrancar). En una máquina virtual: añade un segundo disco virtual vacío y ejecuta en una "
+                  "terminal: sudo mkfs.ext4 -L writable /dev/sdb (comprueba antes que sdb es el disco vacío).")
+PISTA_OPCION_CON_GUARDADO = ("Para que se guarde, reinicia y elige la primera opción del menú de arranque "
+                             "(«Infinity OS»).")
+
+
+def _leer_proc(ruta):
+    with open(ruta, encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
+def _listar_etiquetas():
+    return os.listdir(DIR_ETIQUETAS)
+
+
+def estado_persistencia(leer=None, etiquetas=None):
+    """¿Sobrevive al apagado lo que se cambia? Mira /proc/cmdline (¿pide guardado el arranque?) y las etiquetas de disco
+    (¿hay una partición «writable» o «casper-rw» donde guardar?).
+
+    Devuelve Persistencia(modo, titular, motivo, pista). `leer(ruta) -> texto` (solo se le pide /proc/cmdline) y
+    `etiquetas() -> nombres` (lo que hay en /dev/disk/by-label) se pueden sustituir en las pruebas; lo que no se pueda
+    leer cuenta como vacío."""
+    leer = leer or _leer_proc
+    etiquetas = etiquetas or _listar_etiquetas
+    try:
+        palabras = leer("/proc/cmdline").split()
+    except (OSError, ValueError):
+        palabras = []
+    try:
+        discos = set(etiquetas())
+    except OSError:
+        discos = set()
+    if palabras and "boot=casper" not in palabras:   # no arrancó desde la ISO en vivo: es un sistema instalado
+        return Persistencia("instalado", TITULAR_GUARDA,
+                            "Este equipo está instalado en el disco, no arrancó desde la ISO en vivo.", "")
+    if "nopersistent" in palabras:
+        return Persistencia("vivo", TITULAR_EN_VIVO,
+                            "Sesión limpia: arrancaste con la opción sin guardado (nopersistent), no se guarda nada.",
+                            PISTA_OPCION_CON_GUARDADO)
+    if "persistent" not in palabras:
+        motivo = ("Este arranque no pide guardado (falta «persistent» en las opciones de arranque)." if palabras else
+                  "No se pudo comprobar cómo arrancó el sistema (/proc/cmdline).")
+        return Persistencia("vivo", TITULAR_EN_VIVO, motivo,
+                            PISTA_OPCION_CON_GUARDADO if palabras else PISTA_GUARDADO)
+    for etiqueta in ETIQUETAS_GUARDADO:
+        if etiqueta in discos:
+            return Persistencia("persistente", TITULAR_GUARDA,
+                                f"El arranque pide guardado y hay una partición «{etiqueta}» donde guardarlo.", "")
+    return Persistencia("vivo", TITULAR_EN_VIVO,
+                        "El arranque pide guardado, pero no hay dónde guardar: no se encontró ninguna partición "
+                        "«writable» (ni «casper-rw»).", PISTA_GUARDADO)
