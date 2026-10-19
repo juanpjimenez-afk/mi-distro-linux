@@ -689,7 +689,10 @@ def _cubrir(pix, ancho, alto):
     else:                        # más alta: sobran arriba y abajo
         cw, ch = w, min(h, max(1, round(w * alto / ancho)))
     parte = pix.new_subpixbuf((w - cw) // 2, (h - ch) // 2, cw, ch)
-    cubierta = parte.scale_simple(ancho, alto, GdkPixbuf.InterpType.BILINEAR)
+    # HYPER es el filtro de mayor calidad de GdkPixbuf (antialias real): evita el «escalonado» y el muaré al
+    # reducir mucho (las resoluciones pequeñas del bloqueo y la miniatura). Es más lento que BILINEAR, pero
+    # importar() corre en un hilo aparte y las imágenes ya vienen reducidas a lo necesario al decodificar.
+    cubierta = parte.scale_simple(ancho, alto, GdkPixbuf.InterpType.HYPER)
     if cubierta is None:
         raise ErrorFondo("No hay memoria suficiente para preparar esta imagen.")
     return cubierta

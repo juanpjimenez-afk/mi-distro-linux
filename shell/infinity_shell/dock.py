@@ -18,6 +18,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
+from . import isla_logica  # noqa: E402  (parseo de volumen compartido con la isla: tolera la coma decimal)
 from .ajustes import valor as ajuste  # noqa: E402
 from .controles_logica import elegir_destino_clic, es_minimizada, restaurar  # noqa: E402
 
@@ -492,6 +493,11 @@ class Estado(Gtk.Window):
             nombre = os.path.basename(ruta)
             if nombre == "lo":
                 continue
+            # Saltar interfaces virtuales (docker0, virbr0, veth*, tun/tap, wg*, tailscale*): suelen estar «up»
+            # y por orden alfabético le ganarían al enlace real (p.ej. docker0 < enp..., tun0 < wlp...),
+            # mostrando un icono de red engañoso. Todas cuelgan de /sys/devices/virtual/.
+            if "/devices/virtual/" in os.path.realpath(ruta):
+                continue
             try:
                 with open(os.path.join(ruta, "operstate")) as f:
                     if f.read().strip() != "up":
@@ -532,20 +538,13 @@ class Estado(Gtk.Window):
             _ok, salida, _err = proc.communicate_utf8_finish(res)
         except GLib.Error:
             return
-        try:
-            valor = float((salida or "").split()[1])
-        except (IndexError, ValueError):
+        # Mismo parseo que la isla: tolera el locale con coma ('Volume: 0,45'), que en un sistema en español
+        # haría fallar un float() con punto y dejaría el icono sin actualizar en silencio.
+        datos = isla_logica.parsear_volumen(salida)
+        if datos is None:
             return
-        mudo = "[MUTED]" in (salida or "")
-        if mudo or valor == 0:
-            icono = "audio-volume-muted-symbolic"
-        elif valor < 0.34:
-            icono = "audio-volume-low-symbolic"
-        elif valor < 0.67:
-            icono = "audio-volume-medium-symbolic"
-        else:
-            icono = "audio-volume-high-symbolic"
-        self.vol_img.set_from_icon_name(icono)
+        valor, mudo = datos
+        self.vol_img.set_from_icon_name(isla_logica.icono_volumen(valor, mudo))
         self.vol.set_tooltip_text(f"Volumen {round(valor * 100)}%" + (" (silenciado)" if mudo else ""))
 
     def _wpctl(self, args):

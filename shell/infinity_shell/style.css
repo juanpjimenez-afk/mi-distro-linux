@@ -457,12 +457,15 @@ button.ctl-btn.ctl-cerrar:active {
   border-radius: 24px;
   padding: 0 16px;
 }
-/* la segunda burbuja cuando NO hay dos actividades: encogida a nada y transparente (se funde al dividir) */
+/* la segunda burbuja cuando NO hay dos actividades: encogida a nada y transparente (se funde al dividir).
+ * El borde también se anula: con min-width:0 un borde de 1px seguiría ocupando 2px y descentraría la
+ * píldora visible 1px (la ventana se auto-ajusta a la caja, así que ese ancho cuenta). */
 .isla-oculta {
   min-width: 0;
   min-height: 0;
   padding: 0;
   margin-left: 0;
+  border-width: 0;
   opacity: 0;
 }
 /* el hueco de aire entre las dos burbujas al dividirse (se anima con margin-left) */
