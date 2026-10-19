@@ -441,7 +441,7 @@ class TestPaginaYSuPuente(unittest.TestCase):
     def test_los_datos_no_se_duplican(self):
         # el calendario lee S.tasks: no existe otra clave de almacenamiento ni otro arreglo de eventos
         html = _leer(APP_HTML)
-        self.assertEqual(re.findall(r"localStorage\.(?:setItem|getItem)\(\s*(\w+)", html).count("KEY") > 0, True)
+        self.assertIn("localStorage.setItem(KEY,", html)  # S (tareas incluidas) se guarda bajo la clave de siempre
         self.assertNotIn("infinitos.calendario", html)
         self.assertNotIn("S.events", html)
         self.assertNotIn("S.eventos", html)
