@@ -24,6 +24,7 @@ udisks2
 sudo
 locales
 tzdata
+systemd-timesyncd         # hora automática por internet (Ajustes → Fecha y hora; sin él timedatectl dice «NTP not supported»)
 kbd
 bash-completion
 nano
