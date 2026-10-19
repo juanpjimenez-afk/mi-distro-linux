@@ -58,6 +58,12 @@ def setUpModule():
         _MOTIVO = "sin Playwright de Python"
         return
     try:
+        for tz in ZONAS:
+            ZoneInfo(tz)
+    except Exception:  # noqa: BLE001 - ZoneInfoNotFoundError u otro: no hay base de datos de zonas horarias
+        _MOTIVO = "sin base de datos de zonas horarias (paquete tzdata)"
+        return
+    try:
         _PW = sync_playwright().start()
         kw = {"args": ["--no-sandbox", "--disable-gpu"]}
         ruta = _chromium()
@@ -797,6 +803,9 @@ class TestPersistencia(unittest.TestCase):
             # antes, el perfil puede quedarse sin lo último. Se espera a verlo en disco; WebKitGTK, con su
             # NetworkSession persistente, hace lo suyo.
             self._esperar_en_disco(perfil, page, "Dentista")
+            # El dato aparece en el registro de LevelDB antes de que Chromium termine de confirmar la escritura:
+            # con la máquina cargada (otra suite en paralelo) cerrar justo ahí dejaba el perfil vacío.
+            page.wait_for_timeout(2500)
             ctx.close()  # se cierra la ventana (el perfil queda en disco, como la carpeta de datos de pAnkI)
             ctx2, page2 = self._abrir(perfil)
             despues = page2.evaluate("S.tasks.map(t=>[t.title,t.due,t.time,t.who||''].join('|'))")

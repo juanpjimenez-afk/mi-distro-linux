@@ -45,7 +45,7 @@ botones de minimizar/maximizar/cerrar) cuyo cuerpo es una `WebKit.WebView` (WebK
 
 ## El contrato con la página (2 puntos)
 
-Es el único contrato que hay; `panki_app.py` no toca `app.html`, solo lo aloja e inyecta un puente
+(Hay un tercero, el del calendario, descrito en la sección «Calendario» más abajo.) Es el contrato original; `panki_app.py` no toca `app.html`, solo lo aloja e inyecta un puente
 mínimo por código (`WebKit.UserScript`, al final del documento):
 
 - **`window.aplicarNombrePanki(nombre)`**: función global que la página expone. `panki_app.py` la
@@ -127,3 +127,108 @@ proveedor, es de alcance. pAnkI ahora:
   creadas con los permisos correctos, pero no que WebKitGTK efectivamente escriba y recupere
   `localStorage` de ahí entre dos arranques distintos del proceso, al no haber WebKitGTK real en este
   entorno.
+
+## Calendario (vista de pAnkI + app «Calendario»)
+
+pAnkI trae un calendario: una vista de la propia página (`app.html`) y una app del menú, «Calendario», que
+abre pAnkI directamente en ella. **No hay un segundo almacenamiento**: un evento es una tarea de `S.tasks`
+con `due` (`'AAAA-MM-DD'`) y `time` (`'HH:MM'`), más `who` (con quién) y `loc` (dónde) si los tiene. Lo
+que se agenda por chat sale en el calendario; lo creado en el calendario sale en «mis tareas», «organiza mi
+día» y la pestaña Agenda; y todo viaja en el mismo respaldo JSON y en el mismo `.ics`.
+
+### Agendar por chat
+
+«Agéndame una reunión a las 14:35 el 23 de octubre con pepe» crea el evento y responde con el **día de la
+semana calculado**: `Agendada: Reunión con Pepe · viernes 23 de octubre de 2026 a las 14:35`, con los
+botones «Deshacer» y «Ver en el calendario». Se entienden `agéndame / agenda / programa / anota / ponme /
+crea / apunta / reserva…` (y «¿puedes agendarme…?», «quiero agendar…»), fechas como `23 de octubre`,
+`23/10`, `2026-10-23`, `el viernes 23`, `mañana`, `pasado mañana`, `el próximo lunes`, `dentro de 3 días`,
+`en 2 meses`, y horas como `14:35`, `14.35`, `14h35`, `2 y media de la tarde`, `3 menos cuarto`, `2:35 pm`.
+La persona se guarda con mayúscula (`con pepe` → `Pepe`; `con el doctor lópez` → `el doctor López`; `con
+el equipo de ventas` se queda igual) y el lugar aparte (`en la oficina` → `loc`).
+
+Qué hace en los casos difíciles (todo con pruebas):
+
+- **Sin hora** → la guarda y pregunta «¿A qué hora es?»; la respuesta («a las 2 y media de la tarde») la
+  completa. **Sin día ni hora** → pregunta antes de guardar nada. Si repites la misma reunión ya con hora,
+  completa la existente en vez de duplicarla.
+- **Fecha inexistente** («31 de abril», «29/2/2027», «30 de febrero», hora «25:70») → lo dice
+  («El 31 de abril no existe: abril tiene 30 días») y **no guarda nada** (antes se desbordaba al mes siguiente).
+- **Sin año y ya pasó** → el año siguiente, y lo dice. El 29 de febrero busca el próximo año bisiesto.
+- **Día de la semana que no cuadra** («el lunes 23 de octubre» cuando cae viernes) → manda la fecha y avisa.
+- **Otro evento a la misma hora** → «ya tienes «X» a esa misma hora»; si solo se pisan, «se superpone con».
+- **Consultar, mover, borrar**: «¿qué tengo el 23 de octubre / mañana / el sábado?», «mueve la reunión con
+  Pepe al 24 a las 10» (solo la hora o solo el día conservan lo otro), «borra / cancela la reunión con
+  Pepe» (si hay varias, la más próxima, y lo dice). «Abre el calendario», «calendario de noviembre».
+
+### La vista
+
+Botón de calendario en la cabecera (o la pestaña Agenda, o un chip del chat, o «Ver en el calendario»):
+cuadrícula del mes con la **semana empezando en lunes** (L M X J V S D), mes y año en español con ‹ ›,
+botón «Hoy», el día de hoy resaltado, un punto por evento (rojo si venció sin hacerse, apagado si ya está
+hecho) y un contador si hay más de 3. Tocar un día muestra sus eventos (hora, título, con quién/dónde),
+con marcar hecho, borrar (con «Deshacer») y «＋ Añadir reunión» (título, hora, con quién, dónde). Flechas
+del teclado = día/semana, RePág/AvPág = mes. Cabe en 460×640 sin scroll horizontal. A medianoche el «hoy»
+se actualiza solo.
+
+### Fechas: cómo se calculan (y qué se corrigió)
+
+Regla: todo va con fechas de **calendario puro** (`dnum`/`wdayN`: aritmética entera sobre el calendario
+gregoriano, sin `Date` ni zonas horarias) y con **tablas propias** de días y meses en español. Nunca
+`new Date('AAAA-MM-DD')` (se lee como UTC y en Chile/Argentina da el día anterior), nunca `toISOString()`
+para «hoy», nunca sumar 24 h para «mañana», nada de `Intl`/`toLocaleDateString` para nombres. Hay una
+prueba estática (`TestAuditoriaEstaticaDeFechas`) que impide que esos patrones vuelvan.
+
+Auditoría de la versión anterior: «hoy», «mañana», «en N días», `dueLabel` y los días de la semana de fechas
+válidas **ya eran correctos** en 7 zonas y alrededor de los cambios de hora (usaba getters locales). Lo que
+fallaba y se corrigió: fechas inexistentes que saltaban al mes siguiente (el 31 de abril → 1 de mayo de 2027;
+29/2/2027 → 1 de marzo; `1/13` → enero del año siguiente), `en 1 mes` desde el 31 de enero (3 de marzo),
+`el 30` en febrero, «viernes 23» (dejaba «23» en el título y no usaba el número), «dentro de 3 días»
+(ignorado: quedaba para hoy), «2 y media de la tarde» sin «a las», «al 24» al mover una reunión (movía
+a mañana), el año siguiente sin avisar, el «qué hora es» y los nombres de día con el formato del locale
+(`es-AR`: «p. m.», comas) y **ninguna fecha lejana mostraba el día de la semana** (ahora «vie 23 oct»).
+
+### La app «Calendario»
+
+- `overlay/usr/bin/infinity-calendario` (sh, como `infinity-panki`): `exec python3 -m
+  infinity_shell.panki_app --calendario` (con una fecha `AAAA-MM-DD` como argumento, `--calendario=FECHA`).
+- `overlay/usr/share/applications/infinity-calendario.desktop`: `Name=Calendario`,
+  `Categories=Utility;Office;Calendar;`, palabras clave `calendario;agenda;reunion;…` (el buscador del
+  lanzador la encuentra al escribir «calendario» o «agenda», y sale en la rejilla de apps). **No** lleva
+  `StartupWMClass`: es la misma ventana de pAnkI (`org.infinity.Panki`) y el dock asocia ventana y app por
+  esa clase; si la reclamara, rotularía la ventana de pAnkI como «Calendario».
+- `overlay/usr/share/infinity/calendario.svg`: el icono (violeta `#b9a8ff` sobre el azul noche de pAnkI).
+  Todo vive en `overlay/`, que `build.sh` copia entero con rsync: no hizo falta tocar `build.sh`.
+- Contrato con la página, el tercero: **`window.pankiAbrirCalendario(fecha?)`** (global de `app.html`):
+  abre la vista, opcionalmente en un día `'AAAA-MM-DD'`; un valor que no sea una fecha válida abre el mes
+  actual. `panki_app.py` la llama (siempre con `json.dumps`, y tras validar la fecha) por
+  `--calendario[=AAAA-MM-DD]` (se puede combinar con `--preguntar`; la pregunta devuelve la vista al chat) y por la acción de
+  GApplication `calendario` (`gapplication action org.infinity.Panki calendario`), igual que `alternar`.
+  Si pAnkI ya está abierta se **reutiliza** (una sola ventana, un solo almacenamiento); si la página aún
+  carga, la petición espera al primer `load-changed == FINISHED`. `app.html#calendario` también la abre.
+
+### Persistencia
+
+Los eventos viven en el `localStorage` de la `NetworkSession` persistente de WebKit, en
+`~/.local/share/infinity/panki/webkit/{datos,cache}` (`$XDG_DATA_HOME` si existe; `panki_app._ruta_datos_web`).
+La ruta no depende de nada que cambie entre arranques (solo de `HOME`), y la ISO guarda el HOME en la
+partición «writable» de casper (modo `persistent`), así que sobrevive al apagado. Probado con Chromium
+(contexto persistente: agendar, cerrar, reabrir, siguen ahí).
+
+### Pruebas
+
+`shell/tests/test_panki_calendario.py` (sin pantalla ni navegador: archivos, lanzador, `.desktop`, línea de
+órdenes, JS inyectado, auditoría estática de fechas, búsqueda del lanzador y acción GIO con GTK) y
+`shell/tests/test_panki_calendario_web.py` (Playwright + Chromium: 7 zonas a las 23:30 y 00:30, cambios de
+hora, la frase del usuario y variantes en modos Rápido y Profundo, la vista, formulario, persistencia). Las
+de Playwright **se saltan** si no hay Playwright de Python o Chromium (`PANKI_CHROMIUM` indica la ruta).
+
+### Lo que no se pudo verificar aquí
+
+- **WebKitGTK 6.0 real** (como arriba): la página se probó en Chromium. Que `localStorage` de una página
+  `file://` persista en la `NetworkSession` de WebKitGTK entre arranques, y la entrega de
+  `--calendario`/`calendario` a una ventana ya abierta (D-Bus de GApplication), no se ejecutaron de verdad;
+  sí sus piezas puras y, con GTK real, que la acción existe y reutiliza la ventana.
+- **Escritura inmediata de `localStorage`**: Chromium la retrasa unos segundos; WebKit tiene su propio
+  retraso (no medido aquí). Un apagado brusco de la máquina justo después de agendar podría perder
+  lo último; cerrar sesión o apagar con normalidad lo guarda.

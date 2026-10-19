@@ -170,7 +170,7 @@ body.vcal #scroll,body.vcal footer{display:none}
     <button type="button" class="cal-nav" id="calNext" aria-label="Mes siguiente">›</button>
   </div>
   <div class="cal-dow" aria-hidden="true"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
-  <div class="cal-grid" id="calGrid" role="grid" aria-label="Días del mes"></div>
+  <div class="cal-grid" id="calGrid" role="group" aria-label="Días del mes"></div>
   <div class="cal-day">
     <div class="cal-dayhead"><div><h3 id="calDayTitle"></h3><div class="sub" id="calDaySub"></div></div><button type="button" class="pill" id="calNew">＋ Añadir reunión</button></div>
     <form id="calForm" hidden autocomplete="off">
@@ -3110,7 +3110,7 @@ input.addEventListener('keydown',e=>{
   if(e.key==='ArrowUp'&&hist.length){e.preventDefault();hi=Math.max(0,hi-1);input.value=hist[hi]||'';go.disabled=!input.value}
   else if(e.key==='ArrowDown'&&hist.length){e.preventDefault();hi=Math.min(hist.length,hi+1);input.value=hist[hi]||'';go.disabled=!input.value}
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('#panel').classList.contains('open'))$('#panel').classList.remove('open');else if(calOn&&calForm)calForma(false);else if(calOn)cerrarCalendario();if(isThinking)webAbortAll()}if(e.key==='/'&&document.activeElement!==input&&document.activeElement!==psearch){e.preventDefault();input.focus()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('#panel').classList.contains('open'))$('#panel').classList.remove('open');else if(calOn&&calForm)calForma(false);else if(calOn)cerrarCalendario();if(isThinking)webAbortAll()}if(e.key==='/'&&!/^(?:INPUT|TEXTAREA)$/.test((document.activeElement||{}).tagName||'')){e.preventDefault();input.focus()}});
 $('#menu').onclick=()=>{$('#panel').classList.toggle('open');renderPanel()};
 $('#close').onclick=()=>$('#panel').classList.remove('open');
 $('#chips').innerHTML=['Organiza mi día','Mis tareas','Organiza mi semana','Resumen','Ayuda'].map(s=>`<button class="pill" data-say="${s}">${s}</button>`).join('')+'<button class="pill" data-cal="">Calendario</button>';
@@ -3160,7 +3160,7 @@ function renderCal(){
   for(let i=0;i<total;i++){
     const k=nKey(first-off+i),other=+k.slice(5,7)-1!==cal.m,b=by[k],cnt=b?b.p+b.o+b.d:0;
     const dots=cnt>3?`<b>${cnt}</b>`:b?'<i class="od"></i>'.repeat(b.o)+'<i></i>'.repeat(b.p)+'<i class="dn"></i>'.repeat(b.d):'';
-    cells+=`<button type="button" class="cd${other?' o':''}${k===tk?' today':''}${k===sel?' sel':''}" data-cd="${k}" tabindex="${k===sel?0:-1}" aria-label="${esc(fechaLarga(k))}${cnt?', '+pl(cnt,'evento','eventos'):''}"${k===tk?' aria-current="date"':''}${k===sel?' aria-selected="true"':''}><span class="n">${+k.slice(8)}</span><span class="dots">${dots}</span></button>`;
+    cells+=`<button type="button" class="cd${other?' o':''}${k===tk?' today':''}${k===sel?' sel':''}" data-cd="${k}" tabindex="${k===sel?0:-1}" aria-label="${esc(fechaLarga(k))}${cnt?', '+pl(cnt,'evento','eventos'):''}"${k===tk?' aria-current="date"':''}${k===sel?' aria-pressed="true"':' aria-pressed="false"'}><span class="n">${+k.slice(8)}</span><span class="dots">${dots}</span></button>`;
   }
   $('#calTitle').textContent=capFirst(MONTHS[cal.m])+' de '+cal.y;
   $('#calGrid').innerHTML=cells;

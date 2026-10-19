@@ -305,14 +305,18 @@ class TestAplicacionConGtk(unittest.TestCase):
 
     def _app(self):
         app = P.Panki()
+        # otro id: así no se confunde con un pAnkI de verdad que esté corriendo en la sesión
+        app.set_application_id(f"org.infinity.test.calendario{id(app)}")
+        app.register(None)
         self.addCleanup(lambda: app.ventana is not None and app.ventana.destroy())
         return app
 
     def test_tiene_la_accion_calendario_junto_a_alternar(self):
         app = self._app()
-        self.assertTrue(app.has_action("calendario"))
-        self.assertTrue(app.has_action("alternar"))
-        self.assertIsNone(app.lookup_action("calendario").get_parameter_type())  # sin parámetro: `gapplication action … calendario`
+        self.assertIsNotNone(app.lookup_action("calendario"))
+        self.assertIsNotNone(app.lookup_action("alternar"))
+        # sin parámetro: se pide con `gapplication action org.infinity.Panki calendario`, igual que `alternar`
+        self.assertIsNone(app.lookup_action("calendario").get_parameter_type())
 
     def test_abrir_calendario_reutiliza_la_misma_ventana(self):
         app = self._app()
@@ -331,6 +335,24 @@ class TestAplicacionConGtk(unittest.TestCase):
         v._pagina_lista = False
         v.abrir_calendario("2026-10-23")
         self.assertEqual(v._calendario_pendiente, "2026-10-23")
+
+
+class TestRejillaDeApps(unittest.TestCase):
+    """La biblioteca (rejilla de apps) enumera los .desktop; Calendario se comporta como pAnkI y Ajustes."""
+
+    def test_aparece_en_la_rejilla_con_el_filtro_apagado_como_las_demas_apps_del_sistema(self):
+        from types import SimpleNamespace
+        from infinity_shell import biblioteca as B
+        ruta = "/usr/share/applications/infinity-calendario.desktop"  # donde build.sh instala el overlay
+        cal = SimpleNamespace(id="infinity-calendario.desktop", nombre="Calendario", ruta=ruta)
+        panki = SimpleNamespace(id="infinity-panki.desktop", nombre="pAnkI",
+                                ruta="/usr/share/applications/infinity-panki.desktop")
+        self.assertFalse(B.es_descargada(ruta))  # es una app del sistema, igual que pAnkI
+        b = B.Biblioteca(ruta=os.devnull)
+        b.solo_descargadas = False
+        self.assertEqual([a.nombre for a in b.vista([panki, cal])], ["Calendario", "pAnkI"])
+        b.solo_descargadas = True  # por defecto la rejilla oculta lo que viene con el sistema (decisión de la biblioteca)
+        self.assertEqual(b.vista([panki, cal]), [])
 
 
 class TestBuscadorDeApps(unittest.TestCase):
