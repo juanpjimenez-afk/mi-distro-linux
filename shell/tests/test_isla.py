@@ -114,6 +114,7 @@ class TestParseo(unittest.TestCase):
         self.assertEqual((b["pct"], b["fraccion"], b["icono"]), (40, 0.4, "display-brightness-symbolic"))
         m = L.datos_media("  Canción  ", "Artista")
         self.assertEqual((m["titulo"], m["artista"], m["reproduciendo"]), ("Canción", "Artista", True))
+        self.assertEqual(L.datos_media("T", album=" Disco ")["album"], "Disco")
 
 
 # ======================================================================= sin GTK: máquina de estados
@@ -426,6 +427,15 @@ class TestIslaVentana(unittest.TestCase):
             self.assertTrue(isla.der.has_css_class("isla-burbuja"))
             self.assertFalse(isla.der.has_css_class("isla-oculta"))
             self.assertEqual(len(isla._slots), 2)
+            self.assertTrue(isla.caja.has_css_class("isla-union"))   # una sola píldora, no dos separadas
+
+    def test_media_enseña_titulo_y_album_pequeno(self):
+        isla = self.crear()
+        isla._media_cambio(L.datos_media("Tema", "Grupo", album="Disco"))
+        self.pumpa(0.02)
+        refs = isla._slots[0]["refs"]
+        self.assertEqual((refs["titulo"].get_text(), refs["sub"].get_text()), ("Tema", "Disco"))
+        self.assertFalse(isla.caja.has_css_class("isla-union"))          # sola, no es dividida
 
     def test_auto_colapso_por_temporizador(self):
         isla = self.crear(logica=L.LogicaIsla(duracion_osd=0.05))
@@ -447,7 +457,8 @@ class TestIslaVentana(unittest.TestCase):
         isla._media_cambio(L.datos_media("Tema", "Grupo"))
         self.pumpa(0.02)
         self.assertEqual(isla.logica.estado(), L.EXPANDIDA)
-        self.assertEqual(isla._slots[0]["refs"]["titulo"].get_text(), "Tema — Grupo")
+        self.assertEqual(isla._slots[0]["refs"]["titulo"].get_text(), "Tema")
+        self.assertEqual(isla._slots[0]["refs"]["sub"].get_text(), "Grupo")   # sin álbum, cae al artista
         isla.mostrar_volumen()
         self.pumpa(0.02)
         self.assertEqual(isla.logica.estado(), L.DIVIDIDA)

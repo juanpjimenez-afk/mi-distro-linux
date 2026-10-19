@@ -468,9 +468,29 @@ button.ctl-btn.ctl-cerrar:active {
   border-width: 0;
   opacity: 0;
 }
-/* el hueco de aire entre las dos burbujas al dividirse (se anima con margin-left) */
+/* DIVIDIDA = una sola píldora: la caja (isla-union) lleva el fondo, el borde y la sombra; las dos zonas
+ * quedan transparentes y pegadas (sin hueco ni costura). Reproducción a la izquierda, OSD a la derecha. */
+.isla-union {
+  background-color: rgba(8, 9, 13, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 24px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 0 18px rgba(0, 0, 0, 0.45),
+    0 6px 22px rgba(0, 0, 0, 0.45);
+}
+.isla-union .isla-pildora {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+.isla-izq.isla-burbuja {
+  min-width: 210px;
+  padding: 0 8px 0 18px;
+}
 .isla-der.isla-burbuja {
-  margin-left: 16px;
+  min-width: 170px;
+  padding: 0 18px 0 8px;
 }
 
 /* contenido */
@@ -489,6 +509,11 @@ button.ctl-btn.ctl-cerrar:active {
   font-size: 13px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.92);
+}
+.isla-sub {
+  font-size: 10px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.55);
 }
 .isla-icono {
   color: rgba(255, 255, 255, 0.95);

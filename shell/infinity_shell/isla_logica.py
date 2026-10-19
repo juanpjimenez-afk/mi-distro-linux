@@ -38,9 +38,10 @@ DURACION_OSD = 1.5  # segundos que un OSD permanece antes de encogerse solo (sin
 # anima la transición entre estos tamaños (ver isla.py). Son el «esqueleto» que las pruebas comprueban.
 ANCHO_COLAPSADA, ALTO_COLAPSADA = 132, 34
 ANCHO_EXPANDIDA, ALTO_EXPANDIDA = 330, 56
-# La dividida son dos burbujas de ancho medio con un hueco en medio (aire transparente, «se parte»).
-ANCHO_BURBUJA = 176
-HUECO_BURBUJAS = 16
+# La dividida es UNA sola píldora ancha con dos zonas pegadas (sin hueco): reproducción a la izquierda y
+# el OSD a la derecha. Cada zona tiene su ancho mínimo en el CSS (.isla-izq / .isla-der .isla-burbuja).
+ANCHO_BURBUJA = 190
+HUECO_BURBUJAS = 0
 ANCHO_DIVIDIDA = 2 * ANCHO_BURBUJA + HUECO_BURBUJAS
 ALTO_DIVIDIDA = ALTO_EXPANDIDA
 
@@ -172,10 +173,10 @@ def datos_brillo(pct):
     return {"fraccion": p / 100.0, "pct": p, "icono": ICONO_BRILLO}
 
 
-def datos_media(titulo, artista="", reproduciendo=True):
+def datos_media(titulo, artista="", reproduciendo=True, album=""):
     """Diccionario de contenido de la reproducción en curso."""
     return {"titulo": (titulo or "").strip(), "artista": (artista or "").strip(),
-            "reproduciendo": bool(reproduciendo)}
+            "album": (album or "").strip(), "reproduciendo": bool(reproduciendo)}
 
 
 # ====================================================================== máquina de estados

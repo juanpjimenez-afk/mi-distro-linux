@@ -188,18 +188,25 @@ class Isla(Gtk.Window):
             lbl.set_hexpand(True)
             return lbl, {"label": lbl}
         if tipo == L.MEDIA:
-            caja = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            caja = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             img = Gtk.Image()
             img.add_css_class("isla-icono")
             img.set_pixel_size(18)
+            # dos líneas: el nombre del tema y, debajo y en chiquito, el álbum (o el artista si no hay álbum)
+            textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+            textos.set_valign(Gtk.Align.CENTER)
+            textos.set_hexpand(True)
             lbl = Gtk.Label(xalign=0)
             lbl.add_css_class("isla-titulo")
-            lbl.set_hexpand(True)
-            lbl.set_ellipsize(3)  # Pango.EllipsizeMode.END
-            lbl.set_single_line_mode(True)
+            sub = Gtk.Label(xalign=0)
+            sub.add_css_class("isla-sub")
+            for etiqueta in (lbl, sub):
+                etiqueta.set_ellipsize(3)  # Pango.EllipsizeMode.END
+                etiqueta.set_single_line_mode(True)
+                textos.append(etiqueta)
             caja.append(img)
-            caja.append(lbl)
-            return caja, {"imagen": img, "titulo": lbl}
+            caja.append(textos)
+            return caja, {"imagen": img, "titulo": lbl, "sub": sub}
         # VOLUMEN / BRILLO: icono + barra + porcentaje
         caja = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         img = Gtk.Image()
@@ -223,10 +230,10 @@ class Isla(Gtk.Window):
                 refs["label"].set_text("")
         elif tipo == L.MEDIA:
             refs["imagen"].set_from_icon_name(L.ICONO_PAUSA if datos.get("reproduciendo") else L.ICONO_PLAY)
-            titulo = datos.get("titulo") or "Reproduciendo"
-            if datos.get("artista"):
-                titulo = f"{titulo} — {datos['artista']}"
-            refs["titulo"].set_text(titulo)
+            refs["titulo"].set_text(datos.get("titulo") or "Reproduciendo")
+            sub = datos.get("album") or datos.get("artista") or ""
+            refs["sub"].set_text(sub)
+            refs["sub"].set_visible(bool(sub))
         else:  # VOLUMEN / BRILLO
             refs["imagen"].set_from_icon_name(datos.get("icono") or L.ICONO_BRILLO)
             refs["barra"].poner(datos.get("fraccion", 0.0))
@@ -293,6 +300,12 @@ class Isla(Gtk.Window):
 
     def _clases_de_tamano(self, estado):
         """Pone en cada burbuja la clase que el CSS anima. izq siempre se ve; der solo en dividida."""
+        # En dividida las dos zonas se pintan como UNA sola píldora: la caja lleva el fondo (isla-union) y las
+        # dos zonas quedan transparentes y pegadas, sin hueco ni costura.
+        if estado == L.DIVIDIDA:
+            self.caja.add_css_class("isla-union")
+        else:
+            self.caja.remove_css_class("isla-union")
         if estado == L.DIVIDIDA:
             izq_clase, der_clase = "isla-burbuja", "isla-burbuja"
         elif estado == L.EXPANDIDA:
@@ -440,8 +453,9 @@ class ReproduccionMPRIS:
         titulo = meta.get("xesam:title", "") or ""
         artistas = meta.get("xesam:artist", []) or []
         artista = artistas[0] if isinstance(artistas, (list, tuple)) and artistas else ""
+        album = meta.get("xesam:album", "") or ""
         if estado in ("Playing", "Paused") and (titulo or artista):
-            self._emitir(L.datos_media(titulo, artista, reproduciendo=(estado == "Playing")))
+            self._emitir(L.datos_media(titulo, artista, reproduciendo=(estado == "Playing"), album=album))
         else:
             self._emitir(None)
 
