@@ -437,6 +437,41 @@ class TestIslaVentana(unittest.TestCase):
         self.assertEqual((refs["titulo"].get_text(), refs["sub"].get_text()), ("Tema", "Disco"))
         self.assertFalse(isla.caja.has_css_class("isla-union"))          # sola, no es dividida
 
+    def test_portada_se_carga_una_vez_y_se_atenua_en_pausa(self):
+        pedidos = []
+        isla = self.crear(cargar_arte=lambda url, cb: pedidos.append((url, cb)))
+        isla._media_cambio(L.datos_media("T", album="A", arte="file:///x/c.jpg"))
+        self.pumpa(0.02)
+        refs = isla._slots[0]["refs"]
+        self.assertEqual([u for u, _ in pedidos], ["file:///x/c.jpg"])
+        self.assertFalse(refs["portada"].get_visible())                   # aún no llegó
+        pedidos[0][1](None)                                               # falla: se queda el icono
+        self.assertFalse(refs["portada"].get_visible())
+        self.assertTrue(refs["imagen"].get_visible())
+        isla._media_cambio(L.datos_media("T", album="A", arte="file:///x/c.jpg", reproduciendo=False))
+        self.pumpa(0.02)
+        self.assertEqual(len(pedidos), 1)                                 # misma URL: no se vuelve a pedir
+        self.assertLess(refs["portada"].get_opacity(), 1.0)
+
+    def test_portada_con_textura_sustituye_al_icono(self):
+        textura = self.isla_mod.Gdk.MemoryTexture.new(
+            2, 2, self.isla_mod.Gdk.MemoryFormat.R8G8B8A8, self.isla_mod.GLib.Bytes.new(bytes(16)), 8)
+        isla = self.crear(cargar_arte=lambda url, cb: cb(textura))
+        isla._media_cambio(L.datos_media("T", arte="file:///x/c.jpg"))
+        self.pumpa(0.02)
+        refs = isla._slots[0]["refs"]
+        self.assertTrue(refs["portada"].get_visible())
+        self.assertFalse(refs["imagen"].get_visible())
+
+    def test_cambio_de_tema_descarta_portada_vieja(self):
+        pedidos = []
+        isla = self.crear(cargar_arte=lambda url, cb: pedidos.append((url, cb)))
+        isla._media_cambio(L.datos_media("A", arte="file:///a.jpg"))
+        isla._media_cambio(L.datos_media("B", arte=""))
+        self.pumpa(0.02)
+        pedidos[0][1](object())                                           # la de A llega tarde: se ignora
+        self.assertFalse(isla._slots[0]["refs"]["portada"].get_visible())
+
     def test_auto_colapso_por_temporizador(self):
         isla = self.crear(logica=L.LogicaIsla(duracion_osd=0.05))
         isla.mostrar_volumen()

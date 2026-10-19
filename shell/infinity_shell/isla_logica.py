@@ -173,10 +173,10 @@ def datos_brillo(pct):
     return {"fraccion": p / 100.0, "pct": p, "icono": ICONO_BRILLO}
 
 
-def datos_media(titulo, artista="", reproduciendo=True, album=""):
-    """Diccionario de contenido de la reproducción en curso."""
+def datos_media(titulo, artista="", reproduciendo=True, album="", arte=""):
+    """Diccionario de contenido de la reproducción en curso. `arte` es la URL de la carátula (mpris:artUrl)."""
     return {"titulo": (titulo or "").strip(), "artista": (artista or "").strip(),
-            "album": (album or "").strip(), "reproduciendo": bool(reproduciendo)}
+            "album": (album or "").strip(), "arte": (arte or "").strip(), "reproduciendo": bool(reproduciendo)}
 
 
 # ====================================================================== máquina de estados

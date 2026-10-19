@@ -441,9 +441,10 @@ button.ctl-btn.ctl-cerrar:active {
 
 /* estados de tamaño (los pone isla.py; el CSS anima el paso de uno a otro) */
 .isla-colapsada {
-  min-width: 104px;
-  min-height: 34px;
-  border-radius: 17px;
+  min-width: 84px;
+  min-height: 28px;
+  border-radius: 14px;
+  opacity: 0.7;  /* en reposo es discreta: no compite con lo que haya debajo (p.ej. la barra del navegador) */
 }
 .isla-expandida {
   min-width: 300px;

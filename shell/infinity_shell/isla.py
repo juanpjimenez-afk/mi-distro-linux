@@ -31,6 +31,10 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gsk", "4.0")
 gi.require_version("Graphene", "1.0")
+import threading  # noqa: E402
+import urllib.request  # noqa: E402
+from urllib.parse import urlparse  # noqa: E402
+
 from gi.repository import Gdk, Gio, GLib, Graphene, Gsk, Gtk  # noqa: E402
 
 from . import isla_logica as L  # noqa: E402
@@ -133,17 +137,90 @@ class Barra(Gtk.Widget):
         snapshot.pop()
 
 
+# ---------------------------------------------------------------------------- carátula del álbum
+MAX_BYTES_ARTE = 3 * 1024 * 1024  # una carátula no pasa de unos MB; más es sospechoso y no se descarga
+LADO_ARTE = 38                    # px de la carátula (la píldora mide 56 de alto)
+RADIO_ARTE = 9
+
+
+class Portada(Gtk.Widget):
+    """La carátula: un cuadrado de LADO_ARTE px con esquinas redondeadas que recorta la imagen para llenarlo
+    (como «cover»). Dibujada con Gsk: a diferencia de Gtk.Picture, su tamaño no depende del de la imagen."""
+
+    __gtype_name__ = "InfinityIslaPortada"
+
+    def __init__(self):
+        super().__init__()
+        self._textura = None
+        self.set_size_request(LADO_ARTE, LADO_ARTE)
+        self.set_halign(Gtk.Align.CENTER)
+        self.set_valign(Gtk.Align.CENTER)
+        self.set_visible(False)
+
+    def poner(self, textura):
+        self._textura = textura
+        self.queue_draw()
+
+    def tiene_imagen(self):
+        return self._textura is not None
+
+    def do_measure(self, _orientacion, _para):
+        return LADO_ARTE, LADO_ARTE, -1, -1
+
+    def do_snapshot(self, snapshot):
+        t = self._textura
+        w, h = self.get_width(), self.get_height()
+        if t is None or w <= 0 or h <= 0:
+            return
+        marco = Gsk.RoundedRect()
+        marco.init_from_rect(Graphene.Rect().init(0, 0, w, h), RADIO_ARTE)
+        snapshot.push_rounded_clip(marco)
+        escala = max(w / t.get_width(), h / t.get_height())  # cover: llena el cuadrado y recorta lo que sobra
+        ancho, alto = t.get_width() * escala, t.get_height() * escala
+        snapshot.translate(Graphene.Point().init((w - ancho) / 2.0, (h - alto) / 2.0))
+        t.snapshot(snapshot, ancho, alto)
+        snapshot.pop()
+
+
 # ====================================================================== la ventana de la isla
+
+
+def cargar_arte_real(url, al_terminar):
+    """Descarga/lee la carátula y llama `al_terminar(Gdk.Texture | None)` en el hilo principal.
+
+    Admite file:// y http(s)://. Nunca lanza ni bloquea la interfaz: la lectura va en un hilo y cualquier fallo
+    (red caída, imagen rota, demasiado grande) acaba en None, que la isla traduce a «sin carátula»."""
+    def trabajo():
+        textura = None
+        try:
+            esquema = urlparse(url).scheme.lower()
+            if esquema == "file":
+                datos = Gio.File.new_for_uri(url).load_bytes(None)[0].get_data()[:MAX_BYTES_ARTE + 1]
+            elif esquema in ("http", "https"):
+                with urllib.request.urlopen(url, timeout=4) as r:  # noqa: S310  (esquema ya filtrado)
+                    datos = r.read(MAX_BYTES_ARTE + 1)
+            else:
+                datos = b""
+            if 0 < len(datos) <= MAX_BYTES_ARTE:
+                textura = Gdk.Texture.new_from_bytes(GLib.Bytes.new(datos))
+        except Exception:  # noqa: BLE001
+            textura = None
+        GLib.idle_add(lambda: (al_terminar(textura), False)[1])
+    threading.Thread(target=trabajo, daemon=True).start()
+
+
 class Isla(Gtk.Window):
     """La ventana de capa de la isla. Vive siempre; su contenido y su tamaño cambian según el estado."""
 
     def __init__(self, app, *, logica=None, leer_volumen=leer_volumen_wpctl,
-                 leer_brillo=leer_brillo_brightnessctl, reloj=reloj_local, reproduccion=None):
+                 leer_brillo=leer_brillo_brightnessctl, reloj=reloj_local, reproduccion=None,
+                 cargar_arte=cargar_arte_real):
         super().__init__(application=app, title="Infinity — Isla")
         self.logica = logica if logica is not None else L.LogicaIsla()
         self._leer_volumen = leer_volumen
         self._leer_brillo = leer_brillo
         self._reloj = reloj
+        self._cargar_arte = cargar_arte
         self._colapso = 0   # id del temporizador de auto-colapso (un disparo)
         self._tic_reloj = 0  # id del temporizador del reloj de reposo (solo mientras colapsada)
         self._firma = None   # tipos pintados ahora mismo, para no reconstruir sin necesidad
@@ -168,7 +245,20 @@ class Isla(Gtk.Window):
         # puede pasar ReproduccionMPRIS para leer el reproductor por D-Bus sin añadir dependencias.
         self._repro = reproduccion(self._media_cambio) if reproduccion is not None else None
 
+        # La isla es solo informativa: no debe tapar los clics de lo que haya debajo (la barra de direcciones del
+        # navegador queda justo bajo ella). Con una región de entrada vacía los clics la atraviesan.
+        self.connect("map", self._atravesable)
+
         self._aplicar()  # arranca en reposo (colapsada)
+
+    def _atravesable(self, *_):
+        try:
+            import cairo
+            superficie = self.get_surface()
+            if superficie is not None:
+                superficie.set_input_region(cairo.Region())  # vacía: ningún punto captura el puntero
+        except Exception:  # noqa: BLE001  (sin pycairo la isla funciona igual, solo que capta clics)
+            pass
 
     # ------------------------------------------------------------------ construcción
     @staticmethod
@@ -192,6 +282,7 @@ class Isla(Gtk.Window):
             img = Gtk.Image()
             img.add_css_class("isla-icono")
             img.set_pixel_size(18)
+            portada = Portada()  # oculta hasta que llega una carátula
             # dos líneas: el nombre del tema y, debajo y en chiquito, el álbum (o el artista si no hay álbum)
             textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
             textos.set_valign(Gtk.Align.CENTER)
@@ -204,9 +295,10 @@ class Isla(Gtk.Window):
                 etiqueta.set_ellipsize(3)  # Pango.EllipsizeMode.END
                 etiqueta.set_single_line_mode(True)
                 textos.append(etiqueta)
+            caja.append(portada)
             caja.append(img)
             caja.append(textos)
-            return caja, {"imagen": img, "titulo": lbl, "sub": sub}
+            return caja, {"imagen": img, "titulo": lbl, "sub": sub, "portada": portada, "arte": None}
         # VOLUMEN / BRILLO: icono + barra + porcentaje
         caja = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         img = Gtk.Image()
@@ -229,7 +321,9 @@ class Isla(Gtk.Window):
             except Exception:  # noqa: BLE001  (un reloj inyectable no debe tumbar la isla)
                 refs["label"].set_text("")
         elif tipo == L.MEDIA:
-            refs["imagen"].set_from_icon_name(L.ICONO_PAUSA if datos.get("reproduciendo") else L.ICONO_PLAY)
+            reproduciendo = bool(datos.get("reproduciendo"))
+            refs["imagen"].set_from_icon_name(L.ICONO_PAUSA if reproduciendo else L.ICONO_PLAY)
+            self._pintar_portada(refs, datos.get("arte") or "", reproduciendo)
             refs["titulo"].set_text(datos.get("titulo") or "Reproduciendo")
             sub = datos.get("album") or datos.get("artista") or ""
             refs["sub"].set_text(sub)
@@ -238,6 +332,27 @@ class Isla(Gtk.Window):
             refs["imagen"].set_from_icon_name(datos.get("icono") or L.ICONO_BRILLO)
             refs["barra"].poner(datos.get("fraccion", 0.0))
             refs["pct"].set_text(f"{datos.get('pct', 0)}%")
+
+    def _pintar_portada(self, refs, url, reproduciendo):
+        """La carátula sustituye al icono de play/pausa; en pausa se atenúa. Se carga una vez por URL."""
+        portada = refs["portada"]
+        if url != refs.get("arte"):
+            refs["arte"] = url
+            portada.poner(None)
+            portada.set_visible(False)
+            refs["imagen"].set_visible(True)
+            if url:
+                def listo(textura, refs=refs, url=url):
+                    if refs.get("arte") != url or textura is None:  # llegó tarde (cambió el tema) o falló
+                        return
+                    refs["portada"].poner(textura)
+                    refs["portada"].set_visible(True)
+                    refs["imagen"].set_visible(False)
+                try:
+                    self._cargar_arte(url, listo)
+                except Exception:  # noqa: BLE001
+                    pass
+        portada.set_opacity(1.0 if reproduciendo else 0.5)
 
     # ------------------------------------------------------------------ estados / acciones
     def mostrar_volumen(self, *_):
@@ -369,6 +484,11 @@ class Isla(Gtk.Window):
 
 
 # ====================================================================== reproducción (MPRIS, opcional)
+def _desempaquetar(valor):
+    """GLib.Variant -> tipos de Python (listas, dicts, str); un valor que ya es de Python se deja igual."""
+    return valor.unpack() if hasattr(valor, "unpack") else valor
+
+
 class ReproduccionMPRIS:
     """Lee el reproductor activo por MPRIS (D-Bus de sesión) usando solo Gio: NO añade dependencias
     (nada de playerctl). Es totalmente defensiva: si el bus o el reproductor fallan, no enseña nada y
@@ -427,7 +547,7 @@ class ReproduccionMPRIS:
 
     def _con_nombres(self, _origen, res):
         try:
-            (nombres,) = self._bus.call_finish(res)
+            (nombres,) = _desempaquetar(self._bus.call_finish(res))
         except GLib.Error:
             return
         reproductores = [n for n in nombres if n.startswith(self.MPRIS_PREFIJO)]
@@ -445,7 +565,7 @@ class ReproduccionMPRIS:
 
     def _con_props(self, _origen, res):
         try:
-            (props,) = self._bus.call_finish(res)
+            (props,) = _desempaquetar(self._bus.call_finish(res))
         except GLib.Error:
             return
         estado = props.get("PlaybackStatus", "")
@@ -454,8 +574,10 @@ class ReproduccionMPRIS:
         artistas = meta.get("xesam:artist", []) or []
         artista = artistas[0] if isinstance(artistas, (list, tuple)) and artistas else ""
         album = meta.get("xesam:album", "") or ""
+        arte = meta.get("mpris:artUrl", "") or ""
         if estado in ("Playing", "Paused") and (titulo or artista):
-            self._emitir(L.datos_media(titulo, artista, reproduciendo=(estado == "Playing"), album=album))
+            self._emitir(L.datos_media(titulo, artista, reproduciendo=(estado == "Playing"), album=album,
+                                       arte=arte))
         else:
             self._emitir(None)
 
