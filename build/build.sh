@@ -210,7 +210,7 @@ EOF
 etapa_iso() {
   compgen -G "$WORK/.paquetes-*" >/dev/null ||
     die "el sistema no esta completo (falta la instalacion de paquetes); ejecuta primero: $0 rootfs"
-  need mksquashfs grub-mkrescue xorriso mformat
+  need mksquashfs grub-mkrescue xorriso mformat python3
   [[ -d $ROOTFS/etc ]] || die "no hay sistema construido; ejecuta primero: $0 rootfs"
 
   log "Preparando la estructura de la ISO"
@@ -241,7 +241,11 @@ etapa_iso() {
 
   log "Generando la ISO híbrida (BIOS + UEFI)"
   rm -f "$ISO"
-  grub-mkrescue -o "$ISO" "$ISO_DIR" --product-name "$OS_NAME" --product-version "$VERSION" \
+  # build/xorriso-particion.py reescribe la orden de xorriso para que el sistema ISO quede DENTRO de una
+  # partición (como las ISO de Ubuntu). Sin eso casper monta el disco entero y, con el guardado de cambios
+  # (arranque «persistent»), no puede montar la partición «writable» del mismo USB («Device or resource busy»).
+  grub-mkrescue --xorriso="$ROOT/build/xorriso-particion.py" -o "$ISO" "$ISO_DIR" \
+    --product-name "$OS_NAME" --product-version "$VERSION" \
     -- -volid "INFINITY_OS" >"$WORK/grub-mkrescue.log" 2>&1 || {
     tail -20 "$WORK/grub-mkrescue.log"
     die "falló grub-mkrescue"

@@ -57,7 +57,8 @@ Probarla en una VM es lo más seguro: no toca tu Windows ni tus discos.
 
 Al arrancar verás el menú de Infinity OS:
 
-- **Infinity OS** — normal.
+- **Infinity OS** — normal; **guarda tus cambios** si hay dónde (ver [Guardar tus cambios](#guardar-tus-cambios-al-apagar)).
+- **sesión limpia** — igual, pero sin leer ni escribir el guardado (si un cambio guardado estropeó algo).
 - **gráficos seguros** — úsalo si la pantalla sale negra o el escritorio no aparece (típico en VM sin 3D).
   Desactiva desenfoque y animaciones y renderiza por software.
 - **gráficos seguros (nomodeset)** — último recurso.
@@ -69,6 +70,22 @@ cae con la sesión iniciada, vuelve al escritorio (hasta 3 veces). El registro q
 
 En modo en vivo el usuario es `infinity`, **sin contraseña** (en la pantalla de bloqueo basta pulsar Enter) y con
 `sudo` sin contraseña.
+
+### Guardar tus cambios al apagar
+
+Una ISO «en vivo» olvida todo al apagar. Infinity OS arranca con `persistent`: si hay un sitio donde guardar, **tu
+HOME, los ajustes, pAnkI y su calendario, las redes wifi y lo que instales sobreviven al apagado**.
+
+- **En un USB (equipo real):** grábalo con Rufus en modo **Imagen DD** (o con balenaEtcher) en un pendrive **más
+  grande que la ISO**. La primera vez que arranques, el sistema crea solo, en el espacio libre del USB, una partición
+  `writable` (necesita al menos 100 MiB libres) y desde entonces guarda ahí. No hay que hacer nada más.
+- **En una máquina virtual con la ISO como CD:** el CD no se puede escribir, así que añade un **segundo disco
+  virtual vacío** (4 GB bastan) y, una sola vez, en una terminal de Infinity OS: `lsblk` (para ver cuál es el
+  disco vacío; suele ser `sdb`) y `sudo mkfs.ext4 -L writable /dev/sdb`. Al reiniciar lo usa solo.
+- **Saber si se está guardando:** *Ajustes → Sistema → Guardado de cambios* lo dice.
+- **Ojo al actualizar la ISO:** el guardado conserva tu HOME antiguo y *tapa* los archivos de configuración que
+  traiga la ISO nueva. Si algo nuevo no aparece, arranca con **sesión limpia** o borra el guardado
+  (`sudo mkfs.ext4 -L writable /dev/sdXN` sobre esa partición; **borra todo lo guardado**).
 
 Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://rufus.ie) en modo
 **"Imagen DD"** o con [Ventoy](https://www.ventoy.net). Ojo: **aún no tiene instalador** (ver
@@ -330,7 +347,8 @@ y luego `sudo ./build/build.sh`. La ISO queda en `out/`.
 
 ## Estado y limitaciones
 
-Esto es la **versión 0.1**: una ISO "en vivo" (arranca sin instalar, lo que cambies se pierde al apagar).
+Esto es la **versión 0.1**: una ISO "en vivo" (arranca sin instalar). Lo que cambies **se guarda al apagar** solo si
+hay una partición de guardado (ver [Guardar tus cambios](#guardar-tus-cambios-al-apagar)); si no, se pierde.
 
 **Verificado** (construyendo la ISO desde cero y arrancándola en QEMU, controlada desde fuera):
 - Arranque completo por **BIOS**: GRUB → kernel → casper (crea el usuario) → `greetd` → Hyprland → shell.
