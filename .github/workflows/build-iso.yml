@@ -61,10 +61,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Subir ISO como artefacto
-        # Solo en construcciones SIN tag (dispatch manual o push a main): ahí el artefacto es la única
-        # forma de bajar la ISO. En una versión con tag la ISO va a Releases (permanente), así que aquí
-        # se OMITE para no gastar la cuota de artefactos (~1,2 GB cada una la agotaba).
-        if: ${{ ! startsWith(github.ref, 'refs/tags/v') }}
+        # Solo en push a main: ahí el artefacto es la única forma de bajar la ISO. En una versión con tag
+        # o en un dispatch manual la ISO va a Releases (permanente), así que aquí se OMITE para no gastar
+        # la cuota de artefactos (~1,2 GB cada una la agotaba y hacía fallar el build).
+        if: ${{ github.event_name != 'workflow_dispatch' && ! startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
           name: infinity-os-iso
@@ -75,11 +75,23 @@ jobs:
           retention-days: 1   # las ISO pesan ~1,2 GB: con 7 días se agota la cuota de almacenamiento de GitHub
           if-no-files-found: error
 
-      - name: Publicar en Releases (solo con tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publicar la ISO en Releases
+        # Con un tag v* (versión oficial) o con un dispatch manual (build personal "rodante"). En ambos
+        # casos la ISO queda en Releases, que no gasta la cuota de artefactos y da un enlace permanente.
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" out/*.iso out/*.sha256 \
-            --title "Infinity OS $GITHUB_REF_NAME" \
-            --notes "ISO en vivo de Infinity OS. Verifica la descarga con el archivo .sha256. Instrucciones en el README."
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            # Dispatch manual: la versión sale de VERSION y se REEMPLAZA en cada reconstrucción (una sola
+            # Release "última ISO", sin acumular). El tag se recrea apuntando al commit construido.
+            TAG="v$(cat VERSION)"
+            gh release delete "$TAG" --cleanup-tag --yes 2>/dev/null || true
+          fi
+          gh release create "$TAG" out/*.iso out/*.sha256 \
+            --target "$GITHUB_SHA" \
+            --title "Infinity OS $TAG" \
+            --notes "ISO en vivo de Infinity OS (commit ${GITHUB_SHA:0:7}). Verifica la descarga con el archivo .sha256. Instrucciones en el README."
