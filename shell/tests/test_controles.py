@@ -135,6 +135,12 @@ class TestQueVentanasLlevanPastilla(unittest.TestCase):
     def test_una_ventana_normal_si(self):
         self.assertTrue(self.llevan(A))
 
+    def test_calendario_y_contrasenas_tampoco_porque_traen_sus_botones(self):
+        for clase in ("org.infinity.Calendario", "org.infinity.Boveda", "ORG.INFINITY.BOVEDA"):
+            self.assertFalse(self.llevan(cliente("0x1", 100, 100, 820, 620, clase=clase)), clase)
+        self.assertFalse(self.llevan(cliente("0x1", 100, 100, 820, 620, clase="otra",
+                                             initialClass="org.infinity.Calendario")))
+
     def test_panki_no_porque_trae_sus_botones(self):
         self.assertFalse(self.llevan(cliente("0x1", 100, 100, 460, 640, clase="org.infinity.Panki")))
         self.assertFalse(self.llevan(cliente("0x1", 100, 100, 460, 640, clase="ORG.INFINITY.PANKI")))

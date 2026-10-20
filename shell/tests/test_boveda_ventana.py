@@ -1071,7 +1071,7 @@ class TestEstadoVacio(BaseVentana):
         b.bloquear()
         v = self.abierta()
         self.assertEqual(v.pila_detalle.get_visible_child_name(), "vacio")
-        self.assertEqual(v.vacio_titulo.get_text(), "Aún no hay contraseñas")
+        self.assertEqual(v.vacio_titulo.get_text(), "Tu bóveda está vacía")
         self.assertEqual(v.vacio_texto.get_text(), "Aún no hay contraseñas. Añade la de tu correo o la de tu router.")
         self.assertTrue(v.vacio_boton.get_visible())
         self.assertEqual(self.filas(v), [])

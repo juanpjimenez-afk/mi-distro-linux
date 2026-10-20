@@ -189,3 +189,6 @@ instancia (abrirla otra vez trae la ventana al frente).
   (Cambiar contraseña maestra, Exportar copia cifrada, Acerca de).
 - **Atajos**: Ctrl+F busca, Ctrl+N nueva, Ctrl+L bloquea, Esc limpia la búsqueda (o cierra el editor).
 - La búsqueda mira nombre, usuario, URL/IP, notas y categoría, sin mayúsculas ni acentos; **nunca la contraseña**.
+- En Hyprland la ventana debe ser flotante, centrada y de 880×600 (reglas por la clase `^org\.infinity\.Boveda$` en
+  `hyprland.conf`, como las de pAnkI); si la versión de Hyprland lo permite, conviene añadir también `no_screen_share`
+  para que no salga en capturas ni al compartir pantalla.

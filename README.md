@@ -218,6 +218,26 @@ contra la configuración como texto) y que sus datos sobrevivan de verdad a un r
 Detalles de diseño en [`docs/panki-web-diseno.md`](docs/panki-web-diseno.md) (el motor anterior, con
 Gemini, está en [`docs/panki-diseno.md`](docs/panki-diseno.md)).
 
+### Calendario
+
+Una **app aparte** (ventana propia, pinchable desde el dock, con tu logo de calendario: el número del icono es el
+**día de hoy** y cambia solo a medianoche). Comparte los datos con pAnkI: lo que le digas por chat («agéndame una
+reunión a las 14:35 el 23 de octubre con Pepe») aparece en el calendario abierto, y lo que crees en el calendario sale en
+las tareas de pAnkI. Semanas de lunes a domingo, nombres de días y meses en español (calculados por la propia app, no
+por el idioma del sistema). Vive en el mismo proceso que pAnkI (si no, dos procesos se pisarían los datos), pero la
+ventana tiene su propio identificador (`org.infinity.Calendario`) para que el dock y Hyprland la traten como otra app.
+Detalles en [`docs/panki-web-diseno.md`](docs/panki-web-diseno.md). El icono se genera con
+`python3 -I branding/make_calendario.py` (31 SVG, uno por día).
+
+### Contraseñas
+
+Un **gestor de contraseñas** (correo, router, webs, banco…) cuyo botón (la llave 🔑) está en la fila de abajo del
+buscador, junto al engranaje y los botones de apagar/suspender. Para entrar hay que escribir una **contraseña maestra**
+(la creas la primera vez). Todo se guarda cifrado en `~/.local/share/infinity/boveda/boveda.enc` (AES-256-GCM; la clave sale
+de tu contraseña maestra con scrypt) y, con el guardado de cambios activado, sobrevive al apagado. Se bloquea solo a los
+3 minutos sin usarlo, al suspender y con el botón; el portapapeles se borra a los 25 s. **Si olvidas la contraseña maestra,
+no hay forma de recuperar lo guardado.** Modelo de seguridad y límites (honestos) en [`docs/boveda.md`](docs/boveda.md).
+
 ## Optimización
 
 Qué se hizo para que sea ligera, y por qué:
@@ -336,6 +356,7 @@ docs/             capturas, diseño de pAnkI e informe de revisión
 | Añadir un ajuste nuevo | `shell/infinity_shell/ajustes.py`: una entrada en `SCHEMA` (la ventana crea el control sola) y, si toca un fichero, una línea en `generar()` |
 | Cambiar el aspecto de dock/orbe/buscador | `shell/infinity_shell/style.css` |
 | Apps fijadas en el dock | `overlay/etc/infinity/fijados` (o clic derecho en el dock) |
+| Icono del Calendario (31 días) | `branding/make_calendario.py` |
 | Fondo de pantalla | `branding/make_assets.py` (genera `wallpaper.jpg`) |
 | Cambiar el nombre del sistema | `OS_NAME` en `build/config.env` |
 

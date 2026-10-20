@@ -610,7 +610,9 @@ class VentanaBoveda(Gtk.ApplicationWindow):
 
     def _pagina_vacia(self):
         caja = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, halign=Gtk.Align.CENTER,
-                       valign=Gtk.Align.CENTER, width_request=340)
+                       valign=Gtk.Align.CENTER, width_request=300)
+        caja.set_margin_start(24)
+        caja.set_margin_end(24)
         icono = _imagen_icono(64)
         icono.set_opacity(0.85)
         caja.append(icono)
@@ -716,7 +718,9 @@ class VentanaBoveda(Gtk.ApplicationWindow):
         return tarjeta
 
     def _pagina_editor(self):
-        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        """El editor: los campos en una zona con desplazamiento y, fijos debajo, Cancelar y Guardar."""
+        pagina = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         caja = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         for lado in ("start", "end", "top", "bottom"):
             getattr(caja, f"set_margin_{lado}")(24 if lado in ("start", "end") else 16)
@@ -792,7 +796,8 @@ class VentanaBoveda(Gtk.ApplicationWindow):
         self.e_error.set_visible(False)
         caja.append(self.e_error)
         fila = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        fila.set_margin_top(6)
+        for lado in ("start", "end", "top", "bottom"):
+            getattr(fila, f"set_margin_{lado}")(24 if lado in ("start", "end") else 12)
         self.e_cancelar = Gtk.Button(label="Cancelar")
         self.e_cancelar.connect("clicked", lambda *_: self._cancelar_editor())
         self.e_guardar = Gtk.Button(label="Guardar")
@@ -800,11 +805,12 @@ class VentanaBoveda(Gtk.ApplicationWindow):
         self.e_guardar.connect("clicked", lambda *_: self._guardar_editor())
         fila.append(self.e_cancelar)
         fila.append(self.e_guardar)
-        caja.append(fila)
         for entrada in (self.e_servicio, self.e_usuario, self.e_clave, self.e_url):
             entrada.connect("activate", lambda *_: self._guardar_editor())
         scroll.set_child(caja)
-        return scroll
+        pagina.append(scroll)
+        pagina.append(fila)
+        return pagina
 
     # ------------------------------------------------------------- cambiar contraseña maestra
     def _pagina_cambiar_maestra(self):
@@ -1200,7 +1206,7 @@ class VentanaBoveda(Gtk.ApplicationWindow):
             self.vacio_texto.set_text("Selecciónala en la lista para ver sus datos.")
             self.vacio_boton.set_visible(False)
         else:
-            self.vacio_titulo.set_text("Aún no hay contraseñas")
+            self.vacio_titulo.set_text("Tu bóveda está vacía")
             self.vacio_texto.set_text("Aún no hay contraseñas. Añade la de tu correo o la de tu router.")
             self.vacio_boton.set_visible(True)
         self.pila_detalle.set_visible_child_name("vacio")
@@ -1265,7 +1271,7 @@ class VentanaBoveda(Gtk.ApplicationWindow):
     def _al_cambiar_portapapeles(self, estado):
         """boveda.PortapapelesTemporal avisa de lo que pasa con lo copiado."""
         if estado == "copiado":
-            self._avisar(f"Copiado", segundos=0)
+            self._avisar(f"Copiado; se borrará en {self._copiado.segundos:g} s", segundos=0)
         elif estado == "borrado":
             self._avisar("Portapapeles borrado.")
         else:
