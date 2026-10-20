@@ -5,7 +5,8 @@ perezosa, así que este módulo se puede importar y probar sin GTK ni WebKit ins
 las clases de aquí no necesitan ninguno de los dos. Cubren, sin pantalla:
   * el análisis de --preguntar (interpretar_argumentos, juntar_pregunta: igual que antes del motor web);
   * la resolución de la ruta de panki_web/app.html (variable de entorno, instalada, o la del repo);
-  * la validación del mensaje que llega desde la página por el puente de script de WebKit;
+  * la validación del mensaje que llega desde la página por el puente de script de WebKit («nombre» y «calendario»;
+    la app Calendario es otra ventana del mismo proceso: su cobertura está en test_panki_calendario.py);
   * la construcción del JavaScript que se le inyecta (window.aplicarNombrePanki, window.pankiPreguntar),
     siempre con json.dumps, nunca con texto crudo concatenado;
   * cómo se persiste panki.nombre cuando la página avisa de que el usuario se renombró;
@@ -170,6 +171,14 @@ class TestMensajeDesdeLaPagina(unittest.TestCase):
     def test_falta_valor_se_rechaza(self):
         self.assertIsNone(P._interpretar_mensaje_js('{"accion":"nombre"}'))
 
+    def test_calendario_se_acepta_vacio_o_con_una_fecha_real_y_nada_mas(self):
+        # «calendario» tiene su propia validación (el vacío vale; el recorte de espacios y el límite de 24 son de «nombre»)
+        self.assertEqual(P._interpretar_mensaje_js('{"accion":"calendario","valor":""}'), ("calendario", ""))
+        self.assertEqual(P._interpretar_mensaje_js('{"accion":"calendario","valor":"2026-10-23"}'),
+                         ("calendario", "2026-10-23"))
+        for malo in ("2026-02-30", " 2026-10-23", "hoy", "2026-10-23\n", "x" * 25):
+            self.assertIsNone(P._interpretar_mensaje_js(json.dumps({"accion": "calendario", "valor": malo})), malo)
+
 
 class TestConstruccionDeJavaScript(unittest.TestCase):
     """Lo que se le pasa a evaluate_javascript: siempre con json.dumps, nunca texto crudo concatenado."""
@@ -224,6 +233,13 @@ class TestNombreSistema(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}):
             self.assertTrue(P._guardar_nombre("Nova"))
             self.assertEqual(P._leer_nombre_sistema(), "Nova")
+
+    def test_el_nombre_solo_llega_de_la_pagina_de_panki_no_de_la_del_calendario(self):
+        # la ventana Calendario no registra manejador de mensajes ni inyecta el puente: no puede cambiar el nombre
+        self.assertTrue(hasattr(P.VentanaPanki, "_al_mensaje_js"))
+        self.assertFalse(hasattr(P.CalendarioVentana, "_al_mensaje_js"))
+        self.assertIsNot(P.VentanaPanki._preparar_contenido, P._VentanaWeb._preparar_contenido)
+        self.assertIs(P.CalendarioVentana._preparar_contenido, P._VentanaWeb._preparar_contenido)
 
     def test_la_pagina_aplica_el_nombre_del_sistema_antes_del_saludo(self):
         # El contrato de los dos lados: el host deja el nombre en window.__PANKI_NOMBRE_SISTEMA__ (document-start)
@@ -398,6 +414,15 @@ class TestVentana(unittest.TestCase):
     def test_geometria_460x640(self):
         v = self._ventana()
         self.assertEqual(v.get_default_size(), (460, 640))
+
+    def test_titulo_y_clase_de_pankI_no_cambian_con_la_app_calendario(self):
+        v = self._ventana()
+        self.assertEqual(v.get_title(), "pAnkI")
+        self.assertFalse(v.has_css_class("calendario-ventana"))
+        c = P.CalendarioVentana(self.app)
+        self.addCleanup(c.destroy)
+        self.assertEqual((c.get_title(), c.get_default_size()), ("Calendario", (820, 620)))
+        self.assertTrue(c.has_css_class("calendario-ventana"))
 
     def test_arranca_oculta_y_alternar_la_muestra_y_la_oculta(self):
         v = self._ventana()

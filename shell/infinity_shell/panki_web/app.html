@@ -144,6 +144,30 @@ body.vcal #scroll,body.vcal footer{display:none}
 .ev .eb .meta{font-size:12.5px}
 .ev .x{opacity:1}
 #calList .empty{color:var(--mut);padding:18px 0;text-align:center}
+/* modo calendario (?vista=calendario): la ventana «Calendario» de Infinity OS, aparte de la de pAnkI. Solo el calendario,
+   a toda la ventana. Ancho (≥700px): a la izquierda el mes, a la derecha el día seleccionado; estrecho: una columna. */
+body.modo-cal header,body.modo-cal #scroll,body.modo-cal footer,body.modo-cal #panel{display:none}
+body.modo-cal #toast{bottom:20px}
+body.modo-cal .cal{max-width:none;padding:4px 18px 18px}
+body.modo-cal .cal-top{padding:8px 0}
+body.modo-cal .cal-top h2{flex:0 1 auto;margin-right:8px}
+body.modo-cal #calNew{margin:0 0 0 auto;flex:none;white-space:nowrap;background:var(--fg);color:var(--bg);border-color:var(--fg)}
+body.modo-cal #calNew:hover{color:var(--bg);border-color:var(--fg);opacity:.85}
+@media(max-width:560px){
+  body.modo-cal .cal-top h2{font-size:16px;margin-right:2px}
+  body.modo-cal #calNew{padding:3px 10px;font-size:12.5px}
+}
+@media(min-width:700px){
+  body.modo-cal #calView{overflow:hidden}
+  body.modo-cal .cal{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 320px;grid-template-rows:auto minmax(0,1fr);column-gap:26px;padding:4px 26px 22px}
+  body.modo-cal .cal-top{grid-column:1/-1;padding:10px 0 14px}
+  body.modo-cal .cal-top h2{font-size:22px}
+  body.modo-cal .cal-mes{min-height:0;overflow:auto;align-self:start}
+  body.modo-cal .cd{height:clamp(52px,11.5vh,78px)}
+  body.modo-cal .cd .n{width:32px;height:32px;font-size:15px}
+  body.modo-cal .cal-day{margin:0;border-top:0;border-left:1px solid var(--line);padding:2px 0 0 24px;min-height:0;overflow:auto}
+  body.modo-cal .cal-dayhead h3{font-size:17px}
+}
 </style>
 </head>
 <body>
@@ -169,8 +193,10 @@ body.vcal #scroll,body.vcal footer{display:none}
     <button type="button" class="pill" id="calHoy">Hoy</button>
     <button type="button" class="cal-nav" id="calNext" aria-label="Mes siguiente">›</button>
   </div>
-  <div class="cal-dow" aria-hidden="true"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
-  <div class="cal-grid" id="calGrid" role="group" aria-label="Días del mes"></div>
+  <div class="cal-mes">
+    <div class="cal-dow" aria-hidden="true"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+    <div class="cal-grid" id="calGrid" role="group" aria-label="Días del mes"></div>
+  </div>
   <div class="cal-day">
     <div class="cal-dayhead"><div><h3 id="calDayTitle"></h3><div class="sub" id="calDaySub"></div></div><button type="button" class="pill" id="calNew">＋ Añadir reunión</button></div>
     <form id="calForm" hidden autocomplete="off">
@@ -216,6 +242,10 @@ body.vcal #scroll,body.vcal footer{display:none}
 'use strict';
 const KEY='infinitos.v1';
 const $=s=>document.querySelector(s);
+/* Modo calendario: la app «Calendario» de Infinity OS es una ventana APARTE (no la de pAnkI) que carga esta misma página con
+   ?vista=calendario (o #calendario). Muestra solo el calendario y comparte los datos con pAnkI por localStorage; NO saluda, no
+   toca el chat, no arranca tick() ni lanza recordatorios (los dispara solo la ventana de pAnkI, o se duplicarían). */
+const MODO_CAL=(()=>{try{return new URLSearchParams(location.search).get('vista')==='calendario'||location.hash==='#calendario'}catch(e){return false}})();
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /* Normaliza garantizando relación estricta 1:1 en longitud de caracteres (para que m.indices nunca se desfase) */
@@ -235,14 +265,51 @@ const pad=n=>String(n).padStart(2,'0');
 
 /* ---------- estado y persistencia ---------- */
 const blank=()=>({profile:{},facts:[],tasks:[],notes:[],log:[],model:{},next:1,chat:[],lastBrief:0,asked:false,mode:'deep',web:true,nombre:'pAnkI'});
-function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.tasks)){const s=Object.assign(blank(),d);if(!s.mode)s.mode='deep';if(!s.nombre||typeof s.nombre!=='string'||!s.nombre.trim())s.nombre='pAnkI';return s}}catch(e){}return blank()}
+/* Datos compartidos entre las dos ventanas (pAnkI y Calendario): MISMO proceso y MISMA sesión de red, así que comparten
+   localStorage y el evento `storage` avisa a la otra página de cada guardado. Reglas para que ninguna pise a la otra:
+   · AGENDA_KEYS es lo único que se sincroniza (tareas/eventos y lo que cuelga de ellos); el chat, el modo, la red, el nombre
+     y asked/lastBrief son de la ventana de pAnkI y nunca se sobrescriben desde fuera.
+   · rawVisto = el último texto de KEY que ESTA página leyó o escribió. Si el de localStorage es otro, la otra ventana guardó.
+   · agendaFresca() recarga la agenda si hace falta; se llama al entrar en cada acción que cambia datos (respond, respondDeep,
+     tick, calendario), antes de buscar nada en S.tasks, para no trabajar con objetos viejos.
+   · en el modo calendario, save() parte de lo ÚLTIMO guardado y solo le cambia la agenda: no escribe un chat viejo encima. */
+const AGENDA_KEYS=['tasks','notes','facts','profile','model','log','next'];
+let rawVisto=null;
+function load(){try{const raw=localStorage.getItem(KEY),d=JSON.parse(raw);if(d&&Array.isArray(d.tasks)){const s=Object.assign(blank(),d);if(!s.mode)s.mode='deep';if(!s.nombre||typeof s.nombre!=='string'||!s.nombre.trim())s.nombre='pAnkI';rawVisto=raw;return s}}catch(e){}return blank()}
 let S=load();
 /* modo y red se guardan aparte: otra pestaña con datos viejos no puede reactivar internet */
 const PREFKEY='infinitos.prefs';
 function savePrefs(){try{localStorage.setItem(PREFKEY,JSON.stringify({mode:S.mode,web:S.web}))}catch(e){}}
 function applyPrefs(raw){try{const pf=JSON.parse(raw);if(pf&&typeof pf==='object'){if(pf.mode==='fast'||pf.mode==='deep')S.mode=pf.mode;if(typeof pf.web==='boolean')S.web=pf.web}}catch(e){}}
 try{applyPrefs(localStorage.getItem(PREFKEY))}catch(e){}
-function save(){S.chat=S.chat.slice(-40);S.log=S.log.slice(-600);try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){
+  S.chat=S.chat.slice(-40);S.log=S.log.slice(-600);
+  try{
+    let out=S;
+    if(MODO_CAL){
+      let base=null;try{base=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+      out=base&&typeof base==='object'&&Array.isArray(base.tasks)?base:blank();
+      AGENDA_KEYS.forEach(k=>{out[k]=S[k]});
+    }
+    const txt=JSON.stringify(out);localStorage.setItem(KEY,txt);rawVisto=txt;
+  }catch(e){}
+}
+/* Si otra ventana guardó una agenda distinta, la trae a S (solo AGENDA_KEYS). Devuelve true si cambió algo que haya que repintar. */
+function agendaFresca(){
+  let raw=null;try{raw=localStorage.getItem(KEY)}catch(e){return false}
+  if(raw===null||raw===rawVisto)return false;
+  rawVisto=raw;
+  let d=null;try{d=JSON.parse(raw)}catch(e){}
+  if(!d||typeof d!=='object'||!Array.isArray(d.tasks))return false;
+  const n=Object.assign(blank(),d);
+  for(const k of ['tasks','notes','facts','log'])if(!Array.isArray(n[k]))n[k]=[];
+  for(const k of ['profile','model'])if(!n[k]||typeof n[k]!=='object'||Array.isArray(n[k]))n[k]={};
+  if(!Number.isFinite(+n.next)||+n.next<1)n.next=1+n.tasks.concat(n.notes).reduce((m,t)=>Math.max(m,+t.id||0),0);
+  if(AGENDA_KEYS.every(k=>JSON.stringify(S[k])===JSON.stringify(n[k])))return false; /* solo cambió el chat u otra cosa: nada que repintar */
+  AGENDA_KEYS.forEach(k=>{S[k]=n[k]});
+  UNDO.length=0;pending=null;calUndo=null; /* los deshacer y las confirmaciones pendientes eran de la agenda anterior */
+  return true;
+}
 const UNDO=[];
 function snap(){UNDO.push(JSON.stringify({tasks:S.tasks,notes:S.notes,facts:S.facts,profile:S.profile,model:S.model,next:S.next}));if(UNDO.length>30)UNDO.shift()}
 function logAct(k,c){S.log.push({t:Date.now(),k,c})}
@@ -989,6 +1056,7 @@ function notify(title,body){toast(title+(body?': '+body:''));try{if('Notificatio
 let lastDayKey=todayK();
 function tick(){
   const now=new Date();let ch=false;
+  const ext=agendaFresca(); /* la otra ventana (Calendario) pudo cambiar la agenda: trabajar siempre con lo último */
   if(todayK()!==lastDayKey){lastDayKey=todayK();ch=true} /* pasó la medianoche: «hoy» del calendario y de las listas cambia */
   S.tasks.forEach(t=>{
     if(t.done||!t.due||!t.time||t.notified)return;
@@ -997,6 +1065,7 @@ function tick(){
       if(now-d<12*36e5){addMsg('ai',`<p>Recordatorio: <b>${esc(t.title)}</b></p>${row(t)}`);notify('Recordatorio',t.title)}}
   });
   if(ch){save();renderPanel()}
+  else if(ext){renderPanel();syncChatDOM()}
 }
 let activeTimer=null;
 function updateTimerUI(){
@@ -1133,8 +1202,9 @@ R(/^(?:(?:abre|abrir|muestra(?:me)?|ver|ve a|ir a|llevame a|ensena(?:me)?)\s+)?(
       k=(y===y0&&mo===m0)?todayK():ymdKey(y,mo,1);
     }else{const w=parseWhen(arg);if(w.bad)return badWhenMsg(w);k=w.date}
   }
-  abrirCalendario(k);
-  return `<p>Abrí el calendario${k?` en ${MONTHS[+k.slice(5,7)-1]} de ${k.slice(0,4)}`:''}. Toca un día para ver sus eventos o añadir una reunión.</p>`;
+  const app=pedirCalendarioApp(k);if(!app)abrirCalendario(k);
+  const en=k?` en ${MONTHS[+k.slice(5,7)-1]} de ${k.slice(0,4)}`:'';
+  return app?`<p>Abrí la app Calendario${en}, en su propia ventana.</p>`:`<p>Abrí el calendario${en}. Toca un día para ver sus eventos o añadir una reunión.</p>`;
 });
 /* «pon/agenda/crea… una reunión…» va ANTES de la regla de «pon X a mañana» (mover), que si no la confundiría con ella */
 R(new RegExp('^(?:agenda|agendar|programa|programar|reserva|reservar|pon|poner|crea|crear|anota|anotar|apunta|apuntar|agrega|agregar|anade|anadir|registra|registrar|fija|fijar)\\s+(?:(?:en|a)\\s+(?:mi\\s+)?(?:agenda|calendario)\\s+)?(?:(?:una?|la|el|mi|otra|otro|nueva|nuevo)\\s+)*(?:'+EVN_ALT+')\\b'),addTaskFn);
@@ -1821,6 +1891,7 @@ function nameFromFirst(c){
 }
 
 function respond(raw){
+  agendaFresca();
   const c=prepInput(raw);
   if(c.empty)return '<p>…</p>';
   if(c.onlyEmoji)return `<p>${pick(['Entendido.','Jaja, me gusta tu estilo.','Aquí estoy. ¿Qué necesitas?'])}</p>`;
@@ -1948,6 +2019,7 @@ function buildDeepTaskAdvice(t){
 const DEEPBADGE={howru:'Conversación','howru-back':'Conversación',persona:'Conversación',fav:'Conversación',charla:'Conversación',queja:'Conversación',confuso:'Conversación',ayuda:'Conversación',dato:'Dato curioso',comida:'Idea de comida',chiste:'Humor',desconocido:'Sin internet'};
 function deepWrap(h){const tp=conv.topic||'',b=DEEPBADGE[tp]||(/^rec-|^rec$/.test(tp)?'Recomendación':'Acompañamiento');return `<div class="deep-card"><div class="deep-badge">🧠 ${b}</div>${h}</div>`}
 function respondDeep(raw,opts={}){
+  agendaFresca();
   const c=prepInput(raw);
   if(c.empty)return '<p>…</p>';
   if(c.onlyEmoji){
@@ -3098,7 +3170,7 @@ document.addEventListener('click',e=>{
     const t=S.tasks.find(x=>x.id===+b.dataset.ics);
     if(t)downloadICS([t],`evento-${t.id}.ics`);
   }
-  else if(b.dataset.cal!==undefined){abrirCalendario(okKey(b.dataset.cal)?b.dataset.cal:null)}
+  else if(b.dataset.cal!==undefined){const k=okKey(b.dataset.cal)?b.dataset.cal:null;if(!pedirCalendarioApp(k))abrirCalendario(k)}
   else if(b.dataset.say){say(b.dataset.say)}
   else if(b.dataset.cmd){act(b.dataset.cmd)}
   else if(b.dataset.fill){input.value=b.dataset.fill;input.focus();go.disabled=false}
@@ -3136,7 +3208,18 @@ function calMes(n){
   if(y<1900||y>2200)return;
   calUndo=null;calSet(ymdKey(y,mo,Math.min(+(cal.sel||todayK()).slice(8),dimOf(y,mo))));renderCal();
 }
+/* Dentro de la ventana de pAnkI el calendario es una app APARTE: se lo pide al host por el puente (panki_app.py abre o presenta la
+   ventana «Calendario», en esa fecha si va una 'AAAA-MM-DD'). Devuelve true si el aviso salió. Sin puente (la página abierta en
+   un navegador) devuelve false y quien llama usa la vista embebida de siempre. En modo calendario nunca se pide: ya es el calendario. */
+function pedirCalendarioApp(k){
+  if(MODO_CAL)return false;
+  try{
+    window.webkit.messageHandlers.panki.postMessage(JSON.stringify({accion:'calendario',valor:okKey(k)?k:''}));
+    return true;
+  }catch(e){return false}
+}
 function abrirCalendario(k){
+  agendaFresca();
   calSet(k||todayK());calOn=true;calUndo=null;
   document.body.classList.add('vcal');$('#panel').classList.remove('open');
   const b=$('#btnCal');if(b){b.setAttribute('aria-pressed','true');b.title='Volver al chat'}
@@ -3144,6 +3227,7 @@ function abrirCalendario(k){
   const sel=document.querySelector('#calGrid .cd.sel');if(sel&&sel.scrollIntoView)try{sel.scrollIntoView({block:'nearest'})}catch(e){}
 }
 function cerrarCalendario(){
+  if(MODO_CAL){calForm=false;const f0=$('#calForm');if(f0)f0.hidden=true;return} /* en la app Calendario la vista no se cierra */
   calOn=false;calForm=false;document.body.classList.remove('vcal');
   const f=$('#calForm');if(f)f.hidden=true;
   const b=$('#btnCal');if(b){b.setAttribute('aria-pressed','false');b.title='Calendario'}
@@ -3169,7 +3253,7 @@ function renderCal(){
   $('#calDaySub').textContent=d===0?'Hoy':d===1?'Mañana':d===-1?'Ayer':d>1?`En ${d} días`:`Hace ${-d} días`;
   const list=S.tasks.filter(t=>t.due===sel).sort((a,b)=>(a.time?1:0)-(b.time?1:0)||(a.time||'').localeCompare(b.time||'')||a.id-b.id);
   $('#calUndo').innerHTML=calUndo?`<div class="cal-undo"><span>Borrado «${esc(calUndo)}»</span><button type="button" class="pill" data-cmd="deshacer">Deshacer</button></div>`:'';
-  $('#calList').innerHTML=list.length?list.map(evRow).join(''):'<div class="empty">Nada agendado este día.<br><span class="sub">Escríbele a '+esc(S.nombre)+': «agéndame una reunión a las 14:35 el 23 de octubre con Pepe»</span></div>';
+  $('#calList').innerHTML=list.length?list.map(evRow).join(''):'<div class="empty">Nada agendado este día.<br><span class="sub">'+(MODO_CAL?'Pulsa «＋ Añadir reunión» o pídeselo a '+esc(S.nombre)+'.':'Escríbele a '+esc(S.nombre)+': «agéndame una reunión a las 14:35 el 23 de octubre con Pepe»')+'</span></div>';
 }
 function calForma(abrir){
   calForm=abrir;const f=$('#calForm');f.hidden=!abrir;
@@ -3185,6 +3269,7 @@ function horaCampo(v){
 }
 /* única forma de crear un evento a mano (el chat usa addTask, que llega al mismo S.tasks) */
 function crearEvento({title,due,time,who,loc}){
+  agendaFresca();
   title=capFirst(String(title||'').replace(/\s+/g,' ').trim()||'Reunión');
   who=who?nameCase(who.replace(/\s+/g,' ').trim()):'';loc=loc?loc.replace(/\s+/g,' ').trim():'';
   if(who&&!/\bcon\b/i.test(title))title+=' con '+who;
@@ -3195,6 +3280,7 @@ function crearEvento({title,due,time,who,loc}){
   return t;
 }
 function calDelete(id){
+  if(agendaFresca()){renderPanel();syncChatDOM()}
   const t=S.tasks.find(x=>x.id===id);if(!t)return;
   snap();S.tasks=S.tasks.filter(x=>x!==t);calUndo=t.title;save();renderPanel();syncChatDOM();
 }
@@ -3214,7 +3300,7 @@ $('#calForm').addEventListener('submit',e=>{
   if(time===null){toast('Hora no válida: usa un formato como 14:35');$('#cfTime').focus();return}
   const t=crearEvento({title:$('#cfTitle').value,due:cal.sel||todayK(),time,who:$('#cfWho').value,loc:$('#cfLoc').value});
   calForma(false);toast('Agendada: '+t.title);
-  if(t.time&&'Notification' in window&&Notification.permission==='default')try{Notification.requestPermission()}catch(x){}
+  if(!MODO_CAL&&t.time&&'Notification' in window&&Notification.permission==='default')try{Notification.requestPermission()}catch(x){} /* los avisos los da pAnkI: la app Calendario no pide permisos */
 });
 /* teclado en la cuadrícula: flechas = día/semana, RePág/AvPág = mes */
 $('#calGrid').addEventListener('keydown',e=>{
@@ -3222,7 +3308,7 @@ $('#calGrid').addEventListener('keydown',e=>{
   if(dk!==undefined){e.preventDefault();calUndo=null;calSet(addK(cal.sel||todayK(),dk));renderCal();const s=document.querySelector('#calGrid .cd.sel');if(s)s.focus()}
   else if(e.key==='PageUp'||e.key==='PageDown'){e.preventDefault();calMes(e.key==='PageUp'?-1:1);const s=document.querySelector('#calGrid .cd.sel');if(s)s.focus()}
 });
-$('#btnCal').onclick=()=>calOn?cerrarCalendario():abrirCalendario();
+$('#btnCal').onclick=()=>{if(!pedirCalendarioApp(null))calOn?cerrarCalendario():abrirCalendario()};
 
 function renderPanel(){
   const p=$('#panel');if(!p)return;
@@ -3278,26 +3364,48 @@ $('#file').onchange=e=>{
 /* ---------- arranque ---------- */
 /* El host deja el nombre del sistema en document-start (window.__PANKI_NOMBRE_SISTEMA__). Es la fuente de
    verdad: aplícalo antes del saludo para que la bienvenida ya use el nombre elegido, sin parpadeo. */
-try{var _sis=window.__PANKI_NOMBRE_SISTEMA__;if(typeof _sis==='string'){var _ns=sanitizeNombre(_sis);if(_ns&&_ns!==S.nombre){S.nombre=_ns;save()}}}catch(e){}
+try{var _sis=window.__PANKI_NOMBRE_SISTEMA__;if(typeof _sis==='string'){var _ns=sanitizeNombre(_sis);if(_ns&&_ns!==S.nombre){S.nombre=_ns;if(!MODO_CAL)save()}}}catch(e){}
 updateModeUI();
 updateHdrNombre();
-window.addEventListener('storage',e=>{if(e.key===PREFKEY&&e.newValue){applyPrefs(e.newValue);if(S.mode==='fast'||S.web===false)webAbortAll();updateModeUI();renderPanel()}});
+window.addEventListener('storage',e=>{
+  if(e.key===PREFKEY&&e.newValue){applyPrefs(e.newValue);if(S.mode==='fast'||S.web===false)webAbortAll();updateModeUI();renderPanel()}
+  else if(e.key===KEY||e.key===null){if(agendaFresca()){renderPanel();syncChatDOM()}} /* la otra ventana guardó: repinta calendario y tareas */
+});
 $('#btnDeep').onclick=()=>setMode('deep');
 $('#btnFast').onclick=()=>setMode('fast');
-while(S.chat.length&&S.chat[S.chat.length-1].r==='user')S.chat.pop(); /* una recarga a mitad de respuesta no deja un mensaje sin contestar */
-S.chat.slice(-30).forEach(m=>addMsg(m.r,cleanHTML(m.h),false));
-syncChatDOM();
-if(!S.asked){S.asked=true;awaitName=true;addMsg('ai',briefing());S.lastBrief=Date.now()}
-else if(Date.now()-S.lastBrief>3*36e5){addMsg('ai',briefing());S.lastBrief=Date.now()}
-save();renderPanel();tick();setInterval(tick,15000);lastGreet=Date.now();
+if(MODO_CAL){
+  /* App Calendario: nada de saludo, chat, tick() ni recordatorios (S.chat, S.asked y S.lastBrief no se tocan). Solo el calendario, y
+     vigilar que «hoy» siga siendo hoy (cada 30 s y al recuperar el foco) y que la agenda sea la última guardada. */
+  document.body.classList.add('modo-cal');document.title='Calendario';
+  const top=document.querySelector('.cal-top'),nuevo=$('#calNew');
+  if(top&&nuevo)top.appendChild(nuevo); /* «＋ Añadir reunión» va en la cabecera del calendario */
+  abrirCalendario();
+  const vigilarDia=()=>{
+    let rep=agendaFresca();
+    const hoy=todayK();
+    if(hoy!==lastDayKey){if(cal.sel===lastDayKey)calSet(hoy);lastDayKey=hoy;rep=true} /* pasó la medianoche: el «hoy» y la selección siguen al día */
+    if(rep)renderCal();
+  };
+  setInterval(vigilarDia,30000);
+  window.addEventListener('focus',vigilarDia);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)vigilarDia()});
+}else{
+  while(S.chat.length&&S.chat[S.chat.length-1].r==='user')S.chat.pop(); /* una recarga a mitad de respuesta no deja un mensaje sin contestar */
+  S.chat.slice(-30).forEach(m=>addMsg(m.r,cleanHTML(m.h),false));
+  syncChatDOM();
+  if(!S.asked){S.asked=true;awaitName=true;addMsg('ai',briefing());S.lastBrief=Date.now()}
+  else if(Date.now()-S.lastBrief>3*36e5){addMsg('ai',briefing());S.lastBrief=Date.now()}
+  save();renderPanel();tick();setInterval(tick,15000);lastGreet=Date.now();
+  window.addEventListener('focus',()=>{if(agendaFresca()){renderPanel();syncChatDOM()}}); /* red de seguridad por si se perdiera un evento `storage` */
+}
 /* a partir de aquí, aplicarNombrePanki() ya puede aplicarse de inmediato (ver definición arriba) */
 pankiNombreListo=true;
 if(pankiNombrePendiente!=null){const _pend=pankiNombrePendiente;pankiNombrePendiente=null;window.aplicarNombrePanki(_pend)}
 /* Puente para el host (panki_app.py: `infinity-calendario`, `--calendario`, la acción `calendario`): abre la vista
    Calendario, opcionalmente en un día concreto ('AAAA-MM-DD'). CONTRATO: nombre de la función fijo. Segura de
-   llamar en cualquier momento; un valor que no sea una fecha válida abre el mes actual. */
+   llamar en cualquier momento; un valor que no sea una fecha válida abre el mes actual. Desde que el Calendario es una ventana
+   aparte (?vista=calendario), el host se la pide a ESA ventana; en la de pAnkI solo queda como vista embebida de respaldo. */
 window.pankiAbrirCalendario=function(fecha){try{abrirCalendario(typeof fecha==='string'&&okKey(fecha)?fecha:null)}catch(e){console.error(e)}};
-if(location.hash==='#calendario')window.pankiAbrirCalendario();
 </script>
 </body>
 </html>

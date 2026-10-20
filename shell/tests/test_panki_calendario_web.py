@@ -8,18 +8,27 @@ Verifica, con el reloj y la zona horaria simulados:
     título, aviso del año siguiente, fecha inválida, hora que falta, otro evento a la misma hora);
   * consultar, mover y borrar por chat; la vista del calendario (cuadrícula con la semana desde el LUNES,
     puntos y contadores, lista del día, añadir a mano, borrar, marcar hecho, deshacer, navegación);
-  * que los eventos son las mismas entradas que las tareas y que sobreviven a cerrar y reabrir el navegador.
+  * que los eventos son las mismas entradas que las tareas y que sobreviven a cerrar y reabrir el navegador;
+  * la app «Calendario» como ventana APARTE: el «modo calendario» de la página (?vista=calendario: solo el calendario, dos
+    columnas si es ancho, sin chat, sin tick() ni recordatorios), la SINCRONIZACIÓN entre dos páginas del mismo contexto
+    (mismo localStorage, como las dos ventanas del mismo proceso con la misma NetworkSession) y el aviso que la página de
+    pAnkI manda por el puente para abrir esa ventana (con respaldo a la vista embebida cuando no hay puente).
 
 Se SALTAN si no hay Playwright de Python o un Chromium que lanzar (la CI de GitHub solo tiene python3).
 Variable opcional PANKI_CHROMIUM: ruta del ejecutable de Chromium.
 """
 import datetime as dt
+import functools
 import glob
 import html as htmlmod
+import http.server
+import json
 import os
 import re
 import tempfile
 import sys
+import threading
+import time
 import unittest
 from zoneinfo import ZoneInfo
 
@@ -39,6 +48,13 @@ MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto
 _PW = None
 _BROWSER = None
 _MOTIVO = None
+_SERVIDOR = None  # servidor HTTP local de app.html: lo usan SOLO las pruebas de dos páginas (ver BaseApp)
+URL_HTTP = None
+
+
+class _Silencioso(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
 
 
 def _chromium():
@@ -63,6 +79,17 @@ def setUpModule():
     except Exception:  # noqa: BLE001 - ZoneInfoNotFoundError u otro: no hay base de datos de zonas horarias
         _MOTIVO = "sin base de datos de zonas horarias (paquete tzdata)"
         return
+    global _SERVIDOR, URL_HTTP
+    try:
+        # app.html por HTTP en 127.0.0.1: con file:// Chromium a veces da a cada página su PROPIO localStorage (se vio en ~10 %
+        # de los arranques de dos páginas) y no se pueden probar dos ventanas que comparten datos. WebKitGTK, con una sola
+        # NetworkSession, no es Chromium: lo que NO se puede verificar aquí es el comportamiento de file:// en él.
+        _SERVIDOR = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), functools.partial(_Silencioso, directory=os.path.dirname(APP_HTML)))
+        threading.Thread(target=_SERVIDOR.serve_forever, daemon=True).start()
+        URL_HTTP = "http://127.0.0.1:%d/app.html" % _SERVIDOR.server_address[1]
+    except OSError:
+        _SERVIDOR = URL_HTTP = None
     try:
         _PW = sync_playwright().start()
         kw = {"args": ["--no-sandbox", "--disable-gpu"]}
@@ -81,7 +108,11 @@ def setUpModule():
 
 
 def tearDownModule():
-    global _PW, _BROWSER
+    global _PW, _BROWSER, _SERVIDOR, URL_HTTP
+    if _SERVIDOR is not None:
+        _SERVIDOR.shutdown()
+        _SERVIDOR.server_close()
+        _SERVIDOR = URL_HTTP = None
     if _BROWSER is not None:
         _BROWSER.close()
         _BROWSER = None
@@ -702,11 +733,15 @@ class TestVistaCalendario(Base):
             self.assertEqual(page.inner_text("#calTitle"), "Octubre de 2026", repr(malo))  # cae al mes actual
         self.assertTrue(page.evaluate("typeof window.pankiAbrirCalendario==='function'"))
 
-    def test_la_pagina_con_el_hash_calendario_abre_la_vista(self):
+    def test_la_pagina_con_el_hash_calendario_abre_el_modo_calendario(self):
+        # #calendario ya no abre la vista embebida de pAnkI: activa el modo calendario (la app Calendario), igual que ?vista=
         page = self.pagina()
         page.goto(URL + "#calendario")
         page.reload()
         self.assertTrue(page.evaluate("calOn"))
+        self.assertTrue(page.evaluate("MODO_CAL"))
+        self.assertTrue(page.evaluate("document.body.classList.contains('modo-cal')"))
+        self.assertFalse(page.is_visible("#in"))
 
     def test_cabe_en_460x640_sin_desbordar(self):
         page = self.pagina(scale=2)
@@ -755,6 +790,577 @@ class TestImportarExportar(Base):
 
 
 # =========================================================================================== persistencia
+# =========================================================================================== la app Calendario
+SEMILLA = {"profile": {}, "facts": [], "notes": [], "log": [], "model": {}, "next": 2, "lastBrief": 0, "asked": True,
+           "mode": "fast", "web": False, "nombre": "pAnkI",
+           "tasks": [{"id": 1, "title": "Llamar al banco", "cat": "General", "pri": 2, "due": "2026-10-19", "time": "11:00",
+                      "done": False, "created": 1, "notified": False}],
+           "chat": [{"r": "ai", "h": "<p>Hola, soy pAnkI.</p>"}]}
+NOTIF_JS = ("window.__notif=[];try{window.Notification=class{static get permission(){return '%s'}"
+            "static requestPermission(){window.__notif.push('perm');return Promise.resolve('%s')}"
+            "constructor(t){window.__notif.push('new:'+t)}}}catch(e){}")  # %s = 'granted' (avisa) o 'default' (pide permiso)
+PUENTE_FALSO_JS = ("window.__msgs=[];window.webkit={messageHandlers:{panki:{postMessage:function(m){window.__msgs.push(m)}}}};")
+CAL_URL = URL + "?vista=calendario"  # para las pruebas de una sola página (file://, como lo carga el host)
+
+
+class BaseApp(Base):
+    """Dos páginas en el MISMO contexto del navegador (mismo localStorage): lo que son las ventanas de pAnkI y del Calendario,
+    del mismo proceso y con la misma NetworkSession de WebKit. Van por HTTP local (ver setUpModule)."""
+
+    def setUp(self):
+        super().setUp()
+        if URL_HTTP is None:
+            self.skipTest("no se pudo abrir un servidor HTTP local")
+
+    def dos(self, ancho=820, alto=620, scale=1, scheme="light", semilla=None, ahora=None, tz=None, puente=False,
+            notif=None, sufijo_cal="?vista=calendario", con_chat=True):
+        tz = tz or self.TZ
+        ahora = ahora or self.AHORA
+        ctx = _BROWSER.new_context(timezone_id=tz, locale="es-CL", viewport={"width": ancho, "height": alto},
+                                   device_scale_factor=scale, color_scheme=scheme)
+        self.addCleanup(ctx.close)
+        ctx.add_init_script("window.__PANKI_NOMBRE_SISTEMA__='pAnkI';")
+        ctx.add_init_script("try{localStorage.setItem('infinitos.prefs',JSON.stringify({mode:'fast',web:false}))}catch(e){}")
+        if semilla is not None:
+            ctx.add_init_script("try{if(!localStorage.getItem('infinitos.v1'))localStorage.setItem('infinitos.v1',%s)}catch(e){}"
+                                % json.dumps(json.dumps(semilla)))
+        if notif:
+            ctx.add_init_script(NOTIF_JS % (notif, notif))
+        if puente:
+            ctx.add_init_script(PUENTE_FALSO_JS)
+        self.errores = []
+        paginas = []
+        for destino in ((URL_HTTP,) if con_chat else ()) + (URL_HTTP + sufijo_cal,):
+            pg = ctx.new_page()
+            pg.on("pageerror", lambda e: self.errores.append(str(e)))
+            pg.clock.install(time=instante(tz, *ahora))
+            pg.goto(destino)
+            paginas.append(pg)
+        return (paginas[0], paginas[1]) if con_chat else (None, paginas[0])
+
+    @staticmethod
+    def guardado(page):
+        return page.evaluate("JSON.parse(localStorage.getItem('infinitos.v1'))")
+
+    @staticmethod
+    def esperar(page, js, limite=8.0):
+        """Espera a que `js` sea verdadero. Bucle propio: wait_for_function con sondeo evalúa el predicado con eval() y la
+        Content-Security-Policy de la página (sin 'unsafe-eval') lo bloquea en cuanto el primer intento da falso."""
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < limite:
+            if page.evaluate(js):
+                return
+            page.wait_for_timeout(50)
+        raise AssertionError(f"no se cumplió a tiempo: {js}")
+
+    @staticmethod
+    def agendar(chat, frase=FRASE_USUARIO):
+        antes = chat.evaluate("document.querySelectorAll('#chat .m.a').length")
+        chat.fill("#in", frase)
+        chat.press("#in", "Enter")
+        BaseApp.esperar(chat, f"document.querySelectorAll('#chat .m.a').length>{antes}")
+
+    @staticmethod
+    def crear_en_calendario(cal, titulo, hora="", quien="", donde=""):
+        cal.click("#calNew")
+        cal.fill("#cfTitle", titulo)
+        cal.fill("#cfTime", hora)
+        cal.fill("#cfWho", quien)
+        cal.fill("#cfLoc", donde)
+        cal.click("#calForm button[type=submit]")
+
+
+class TestModoCalendario(BaseApp):
+    """?vista=calendario: la página sin nada de pAnkI, con el calendario a toda la ventana."""
+
+    def test_solo_se_ve_el_calendario_con_su_cabecera(self):
+        _, cal = self.dos()
+        self.assertTrue(cal.evaluate("document.body.classList.contains('modo-cal')"))
+        self.assertEqual(cal.title(), "Calendario")
+        for oculto in ("header", "#modelSwitch", "#btnDeep", "#btnFast", "#btnCal", "#menu", "#scroll", "#chat", "#chips",
+                       "#in", "#go", "#form", "#panel", "#timerPill"):
+            self.assertFalse(cal.is_visible(oculto), oculto)
+        for visible in ("#calView", "#calGrid", "#calTitle", "#calHoy", "#calPrev", "#calNext", "#calNew", "#calList"):
+            self.assertTrue(cal.is_visible(visible), visible)
+        self.assertEqual(cal.inner_text("#calTitle"), "Octubre de 2026")
+        self.assertEqual(cal.locator("#calGrid .cd.today").get_attribute("data-cd"), "2026-10-19")
+        self.assertEqual(cal.locator("#calGrid .cd.sel").get_attribute("data-cd"), "2026-10-19")
+        # «＋ Añadir reunión» está en la cabecera del calendario, junto al mes y a ‹ Hoy ›
+        self.assertEqual(cal.evaluate("document.querySelector('#calNew').parentElement.className"), "cal-top")
+        self.assertIn("Añadir reunión", cal.inner_text("#calNew"))
+        self.assertEqual(cal.evaluate("document.querySelectorAll('.cal-dow span').length"), 7)
+        self.assertEqual(cal.evaluate("[...document.querySelectorAll('.cal-dow span')].map(x=>x.textContent).join('')"), "LMXJVSD")
+        self.assertEqual(self.errores, [])
+
+    def test_la_pagina_de_panki_sigue_igual_sin_la_consulta(self):
+        chat, _ = self.dos()
+        self.assertFalse(chat.evaluate("MODO_CAL"))
+        self.assertFalse(chat.evaluate("document.body.classList.contains('modo-cal')"))
+        for visible in ("header", "#modelSwitch", "#btnCal", "#menu", "#chips", "#in"):
+            self.assertTrue(chat.is_visible(visible), visible)
+        self.assertFalse(chat.is_visible("#calView"))
+
+    def test_otras_consultas_no_activan_el_modo(self):
+        for sufijo in ("?vista=chat", "?vista=calendario2", "?x=vista=calendario", "?vista="):
+            _, cal = self.dos(sufijo_cal=sufijo, con_chat=False)
+            self.assertFalse(cal.evaluate("MODO_CAL"), sufijo)
+
+    def test_tambien_con_vista_entre_otros_parametros_y_con_el_hash(self):
+        _, cal = self.dos(sufijo_cal="?a=1&vista=calendario&b=2", con_chat=False)
+        self.assertTrue(cal.evaluate("MODO_CAL"))
+        _, cal2 = self.dos(sufijo_cal="#calendario", con_chat=False)
+        self.assertTrue(cal2.evaluate("MODO_CAL"))
+
+    def test_no_pinta_el_saludo_ni_toca_el_chat_ni_lanza_tick_ni_recordatorios(self):
+        sem = json.loads(json.dumps(SEMILLA))
+        # control: la página de pAnkI SÍ saluda (lastBrief viejo) y SÍ dispara el recordatorio vencido (11:00 < 12:00)
+        chat, _ = self.dos(semilla=sem, notif="granted")
+        self.assertGreater(chat.evaluate("S.chat.length"), 1)
+        self.assertTrue(chat.evaluate("S.tasks[0].notified"))
+        self.assertIn("new:Recordatorio", chat.evaluate("window.__notif"))
+        # la app Calendario SOLA (pAnkI sin arrancar, el peor caso para ella): ni saludo, ni chat, ni tick, ni permisos
+        _, cal = self.dos(semilla=sem, notif="granted", con_chat=False)
+        self.assertEqual(cal.evaluate("S.chat.length"), 1, "no añade ningún mensaje de bienvenida")
+        self.assertEqual(cal.evaluate("S.lastBrief"), 0)
+        self.assertTrue(cal.evaluate("S.asked"))
+        self.assertEqual(cal.evaluate("document.querySelector('#chat').children.length"), 0, "ni siquiera pinta el chat")
+        self.assertFalse(cal.evaluate("S.tasks[0].notified"), "el recordatorio lo dispara solo la ventana de pAnkI")
+        cal.clock.run_for(5 * 60 * 1000)  # cinco minutos: con tick() se habría avisado veinte veces
+        self.assertFalse(cal.evaluate("S.tasks[0].notified"))
+        self.assertEqual(cal.evaluate("window.__notif"), [], "sin notificaciones ni permisos")
+        self.assertEqual(cal.evaluate("S.chat.length"), 1)
+        self.assertEqual(self.guardado(cal)["chat"], sem["chat"], "lo guardado: ni un mensaje más")
+        self.assertEqual((self.guardado(cal)["lastBrief"], self.guardado(cal)["tasks"][0]["notified"]), (0, False))
+        self.assertEqual(self.errores, [])
+
+    def test_no_escribe_nada_al_arrancar_ni_siquiera_con_el_nombre_del_sistema(self):
+        ctx = _BROWSER.new_context(timezone_id=self.TZ, locale="es-CL", viewport={"width": 820, "height": 620})
+        self.addCleanup(ctx.close)
+        ctx.add_init_script("window.__PANKI_NOMBRE_SISTEMA__='Nova';")
+        page = ctx.new_page()
+        page.goto(CAL_URL)
+        self.assertIsNone(page.evaluate("localStorage.getItem('infinitos.v1')"))
+        self.assertIsNone(page.evaluate("localStorage.getItem('infinitos.prefs')"))
+
+    def test_no_pide_permiso_de_notificaciones_ni_al_anadir_una_reunion_con_hora(self):
+        chat, cal = self.dos(notif="default")  # sin permiso concedido: pAnkI lo pediría al agendar con hora
+        chat.evaluate("respond('agéndame una reunión a las 14:35 el 23 de octubre con pepe')")
+        self.assertEqual(chat.evaluate("window.__notif"), ["perm"], "control: pAnkI sí lo pide")
+        self.esperar(cal, "S.tasks.length===1")
+        self.crear_en_calendario(cal, "Revisión", "10:00", "Ana")
+        self.assertEqual(cal.evaluate("S.tasks.length"), 2, (cal.evaluate("S.tasks.map(t=>t.title)"), chat.evaluate("S.tasks.map(t=>t.title)"), self.guardado(cal)["tasks"]))  # la de pAnkI (sincronizada) y la suya
+        self.assertEqual(cal.evaluate("window.__notif"), [])
+
+    def test_anadir_desde_el_calendario_no_ensucia_el_chat_de_panki(self):
+        sem = json.loads(json.dumps(SEMILLA))
+        chat, cal = self.dos(semilla=sem)
+        chat.evaluate("aplicarNombrePanki('Nova')")
+        self.esperar(cal, "JSON.parse(localStorage.getItem(KEY)).nombre==='Nova'")  # que la otra ventana ya lo vea guardado
+        antes = self.guardado(chat)["chat"]
+        self.crear_en_calendario(cal, "Dentista", "9:30")
+        despues = self.guardado(cal)
+        self.assertEqual(despues["chat"], antes, "el chat guardado sigue siendo el de pAnkI")
+        self.assertEqual((despues["mode"], despues["nombre"], despues["asked"]), ("fast", "Nova", True))
+        self.assertEqual(len(despues["tasks"]), 2)
+
+    def test_navegar_a_una_fecha_con_pankiAbrirCalendario(self):
+        _, cal = self.dos()
+        cal.evaluate("window.pankiAbrirCalendario('2027-02-14')")
+        self.assertEqual(cal.inner_text("#calTitle"), "Febrero de 2027")
+        self.assertEqual(cal.locator("#calGrid .cd.sel").get_attribute("data-cd"), "2027-02-14")
+        self.assertEqual(cal.inner_text("#calDayTitle"), "Domingo 14 de febrero de 2027")
+        for malo in ("ayer", "2026-02-30", "", None, 42):
+            cal.evaluate("(v)=>{window.pankiAbrirCalendario(v)}", malo)
+            self.assertEqual(cal.inner_text("#calTitle"), "Octubre de 2026", repr(malo))
+        self.assertTrue(cal.is_visible("#calView"), "el calendario no se cierra nunca")
+
+    def test_cabecera_navegacion_hoy_y_anadir_reunion(self):
+        _, cal = self.dos()
+        cal.click("#calNext")
+        self.assertEqual(cal.inner_text("#calTitle"), "Noviembre de 2026")
+        cal.click("#calPrev")
+        cal.click("#calPrev")
+        self.assertEqual(cal.inner_text("#calTitle"), "Septiembre de 2026")
+        cal.click("#calHoy")
+        self.assertEqual(cal.inner_text("#calTitle"), "Octubre de 2026")
+        self.assertEqual(cal.locator("#calGrid .cd.sel").get_attribute("data-cd"), "2026-10-19")
+        self.assertFalse(cal.is_visible("#calForm"))
+        cal.click("#calNew")
+        self.assertTrue(cal.is_visible("#calForm"))
+        cal.keyboard.press("Escape")
+        self.assertFalse(cal.is_visible("#calForm"))
+        self.assertTrue(cal.is_visible("#calView"), "Escape cierra el formulario, no el calendario")
+        self.crear_en_calendario(cal, "Revisión", "10:00", "Ana", "la oficina")
+        self.assertIn("Revisión con Ana", cal.inner_text("#calList"))
+        self.assertIn("la oficina", cal.inner_text("#calList"))
+
+    def test_el_texto_del_dia_vacio_no_manda_a_escribir_en_un_chat_que_no_esta(self):
+        _, cal = self.dos()
+        self.assertIn("Nada agendado este día", cal.inner_text("#calList"))
+        self.assertIn("Añadir reunión", cal.inner_text("#calList"))
+
+    # ------------------------------------------------------------------ el día cambia
+    def test_el_hoy_se_repinta_a_medianoche_cada_30_segundos(self):
+        _, cal = self.dos(ahora=(2026, 10, 19, 23, 59))
+        self.assertEqual(cal.locator("#calGrid .cd.today").get_attribute("data-cd"), "2026-10-19")
+        cal.clock.fast_forward(2 * 60 * 1000)  # son las 00:01 del martes 20
+        cal.clock.run_for(31000)
+        self.assertEqual(cal.locator("#calGrid .cd.today").get_attribute("data-cd"), "2026-10-20")
+        self.assertEqual(cal.locator("#calGrid .cd.sel").get_attribute("data-cd"), "2026-10-20", "la selección sigue al día")
+        self.assertEqual(cal.inner_text("#calDaySub"), "Hoy")
+
+    def test_el_hoy_se_repinta_al_volver_a_tener_foco(self):
+        _, cal = self.dos(ahora=(2026, 10, 19, 23, 59))
+        cal.clock.set_system_time(instante(self.TZ, 2026, 10, 20, 0, 5))  # sin disparar temporizadores
+        self.assertEqual(cal.locator("#calGrid .cd.today").get_attribute("data-cd"), "2026-10-19")
+        cal.evaluate("window.dispatchEvent(new Event('focus'))")
+        self.assertEqual(cal.locator("#calGrid .cd.today").get_attribute("data-cd"), "2026-10-20")
+
+    def test_si_habias_navegado_a_otro_dia_la_seleccion_no_se_mueve(self):
+        _, cal = self.dos(ahora=(2026, 10, 19, 23, 59))
+        cal.click('#calGrid .cd[data-cd="2026-10-23"]')
+        cal.clock.set_system_time(instante(self.TZ, 2026, 10, 20, 0, 5))
+        cal.evaluate("window.dispatchEvent(new Event('focus'))")
+        self.assertEqual(cal.locator("#calGrid .cd.today").get_attribute("data-cd"), "2026-10-20")
+        self.assertEqual(cal.locator("#calGrid .cd.sel").get_attribute("data-cd"), "2026-10-23")
+
+    def test_el_cambio_de_mes_a_medianoche_lleva_al_mes_nuevo(self):
+        _, cal = self.dos(ahora=(2026, 10, 31, 23, 59))
+        cal.clock.set_system_time(instante(self.TZ, 2026, 11, 1, 0, 2))
+        cal.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        self.assertEqual(cal.inner_text("#calTitle"), "Noviembre de 2026")
+        self.assertEqual(cal.locator("#calGrid .cd.today").get_attribute("data-cd"), "2026-11-01")
+
+    # ------------------------------------------------------------------ diseño
+    def test_dos_columnas_si_es_ancho_y_una_si_es_estrecho(self):
+        _, cal = self.dos(ancho=820, alto=620)
+        medidas = """()=>{const r=s=>document.querySelector(s).getBoundingClientRect().toJSON();
+            return {grid:r('#calGrid'),dia:r('.cal-day'),top:r('.cal-top'),lista:r('#calList'),
+                    sw:document.documentElement.scrollWidth,iw:innerWidth,ih:innerHeight}}"""
+        ancho = cal.evaluate(medidas)
+        self.assertLessEqual(ancho["grid"]["right"], ancho["dia"]["left"], "ancho: el día va a la derecha del mes")
+        self.assertLess(abs(ancho["grid"]["top"] - ancho["dia"]["top"]), 60, "y a la misma altura")
+        self.assertLessEqual(ancho["sw"], ancho["iw"])
+        self.assertLessEqual(ancho["dia"]["bottom"], ancho["ih"] + 1, "cabe en la ventana sin bajar")
+        cal.set_viewport_size({"width": 460, "height": 640})
+        estrecho = cal.evaluate(medidas)
+        self.assertGreaterEqual(estrecho["dia"]["top"], estrecho["grid"]["bottom"] - 1, "estrecho: una sola columna")
+        self.assertLessEqual(estrecho["sw"], estrecho["iw"], "sin scroll horizontal a 460 px")
+        self.assertLessEqual(estrecho["top"]["right"], estrecho["iw"])
+        # el umbral: 699 px = una columna; 700 px = dos
+        cal.set_viewport_size({"width": 699, "height": 620})
+        self.assertGreaterEqual(cal.evaluate(medidas)["dia"]["top"], cal.evaluate(medidas)["grid"]["bottom"] - 1)
+        cal.set_viewport_size({"width": 700, "height": 620})
+        m = cal.evaluate(medidas)
+        self.assertLessEqual(m["grid"]["right"], m["dia"]["left"])
+
+    def test_la_cabecera_cabe_en_460_con_el_mes_mas_largo(self):
+        _, cal = self.dos(ancho=460, alto=640)
+        cal.evaluate("pankiAbrirCalendario('2026-09-15')")  # «Septiembre de 2026»
+        d = cal.evaluate("""()=>{const r=s=>document.querySelector(s).getBoundingClientRect();
+            return {tit:r('#calTitle').toJSON(),nuevo:r('#calNew').toJSON(),next:r('#calNext').toJSON(),iw:innerWidth,
+                    corta:document.querySelector('#calTitle').scrollWidth>document.querySelector('#calTitle').clientWidth}}""")
+        self.assertLessEqual(d["nuevo"]["right"], d["iw"])
+        self.assertLessEqual(d["next"]["right"], d["nuevo"]["left"], "los botones no se pisan")
+        self.assertFalse(d["corta"], "el mes y el año se leen enteros")
+
+    def test_el_modo_oscuro_se_respeta(self):
+        _, cal = self.dos(scheme="dark")
+        self.assertEqual(cal.evaluate("getComputedStyle(document.body).backgroundColor"), "rgb(15, 15, 16)")
+        self.assertTrue(cal.is_visible("#calGrid"))
+        _, cal2 = self.dos(scheme="light")
+        self.assertEqual(cal2.evaluate("getComputedStyle(document.body).backgroundColor"), "rgb(251, 251, 250)")
+
+    def test_la_cuadricula_sigue_empezando_en_lunes_en_modo_calendario(self):
+        _, cal = self.dos()
+        primera = cal.locator("#calGrid .cd").first.get_attribute("data-cd")
+        self.assertEqual(primera, "2026-09-28")  # el lunes anterior al jueves 1 de octubre de 2026
+        self.assertEqual(dt.date.fromisoformat(primera).weekday(), 0)
+
+
+class TestSincronizacionEntreVentanas(BaseApp):
+    """Dos páginas del mismo contexto = mismo localStorage: lo que hace una sale en la otra (evento `storage`)."""
+
+    def test_lo_que_se_agenda_por_chat_sale_en_el_calendario(self):
+        chat, cal = self.dos()
+        self.assertEqual(cal.evaluate("S.tasks.length"), 0)
+        self.agendar(chat)
+        self.esperar(cal, "S.tasks.length===1")
+        cal.evaluate("pankiAbrirCalendario('2026-10-23')")
+        self.assertEqual(cal.inner_text("#calDayTitle"), "Viernes 23 de octubre de 2026")
+        self.assertIn("Reunión con Pepe", cal.inner_text("#calList"))
+        self.assertIn("14:35", cal.inner_text("#calList"))
+        self.assertEqual(cal.locator('#calGrid .cd[data-cd="2026-10-23"] .dots i').count(), 1)
+
+    def test_aparece_al_instante_en_el_calendario_ya_abierto_en_ese_dia(self):
+        chat, cal = self.dos()
+        cal.evaluate("pankiAbrirCalendario('2026-10-23')")
+        self.assertIn("Nada agendado", cal.inner_text("#calList"))
+        self.agendar(chat)
+        self.esperar(cal, "document.querySelector('#calList').textContent.includes('Reunión con Pepe')")  # sin recargar ni tocar nada
+        self.assertEqual(cal.locator('#calGrid .cd[data-cd="2026-10-23"] .dots i').count(), 1)
+
+    def test_lo_que_se_crea_en_el_calendario_sale_en_las_tareas_de_panki(self):
+        chat, cal = self.dos()
+        cal.evaluate("pankiAbrirCalendario('2026-10-23')")
+        self.crear_en_calendario(cal, "Dentista", "9:30", "Eva", "la clínica")
+        self.esperar(chat, "S.tasks.length===1")
+        t = self.tareas(chat)[0]
+        self.assertEqual((t["title"], t["due"], t["time"], t["who"], t["loc"]),
+                         ("Dentista con Eva", "2026-10-23", "09:30", "Eva", "la clínica"))
+        chat.click("#menu")
+        self.esperar(chat, "document.querySelector('#pbody').textContent.includes('Dentista con Eva')")
+        self.assertIn("Dentista con Eva", chat.inner_text("#pbody"))
+        # y por chat: «organiza mi día» / «qué tengo el 23 de octubre» lo ven
+        self.assertIn("Dentista", self.di(chat, "qué tengo el 23 de octubre"))
+
+    def test_borrar_en_el_calendario_lo_borra_en_panki(self):
+        chat, cal = self.dos()
+        self.agendar(chat)
+        self.esperar(cal, "S.tasks.length===1")
+        fila = chat.locator('#chat .row[data-tid]').last
+        cal.evaluate("pankiAbrirCalendario('2026-10-23')")
+        cal.click('#calList [data-caldel]')
+        self.esperar(chat, "S.tasks.length===0")
+        self.assertEqual(self.tareas(chat), [])
+        self.assertEqual(fila.evaluate("e=>e.style.opacity"), "0.35", "la fila del chat queda atenuada: ya no existe")
+        chat.click("#menu")
+        self.assertIn("Sin tareas pendientes", chat.inner_text("#pbody"))
+
+    def test_marcar_hecho_en_el_calendario_se_ve_en_panki(self):
+        chat, cal = self.dos()
+        self.agendar(chat)
+        self.esperar(cal, "S.tasks.length===1")
+        cal.evaluate("pankiAbrirCalendario('2026-10-23')")
+        cal.click('#calList .chk')
+        self.esperar(chat, "S.tasks[0].done===true")
+        self.assertTrue(chat.locator('#chat .row[data-tid]').last.evaluate("e=>e.classList.contains('done')"))
+        # y al revés: reabrirla desde pAnkI la deja pendiente también en el calendario
+        self.di(chat, "reabre 1")
+        self.esperar(cal, "S.tasks[0].done===false")
+        self.assertEqual(cal.locator('#calList .row.ev.done').count(), 0)
+
+    def test_mover_en_el_chat_se_ve_en_el_calendario(self):
+        chat, cal = self.dos()
+        self.agendar(chat)
+        self.esperar(cal, "S.tasks.length===1")
+        chat.evaluate("respond('mueve la reunión con Pepe al 24 a las 10')")
+        chat.evaluate("save()")
+        self.esperar(cal, "S.tasks[0].due==='2026-10-24'")
+        self.assertEqual(cal.evaluate("S.tasks[0].time"), "10:00")
+        self.assertEqual(cal.locator('#calGrid .cd[data-cd="2026-10-23"] .dots i').count(), 0)
+        self.assertEqual(cal.locator('#calGrid .cd[data-cd="2026-10-24"] .dots i').count(), 1)
+
+    def test_borrar_en_el_chat_lo_quita_del_calendario(self):
+        chat, cal = self.dos()
+        self.agendar(chat)
+        self.esperar(cal, "S.tasks.length===1")
+        cal.evaluate("pankiAbrirCalendario('2026-10-23')")
+        self.assertIn("Reunión con Pepe", cal.inner_text("#calList"))
+        self.agendar(chat, "borra la reunión con Pepe")
+        self.esperar(cal, "S.tasks.length===0")
+        self.assertIn("Nada agendado", cal.inner_text("#calList"))
+        self.assertEqual(cal.locator('#calGrid .cd[data-cd="2026-10-23"] .dots i').count(), 0)
+
+    def test_cambios_que_no_son_de_agenda_no_tocan_nada_en_la_otra(self):
+        chat, cal = self.dos()
+        self.crear_en_calendario(cal, "Dentista", "9:30")
+        self.esperar(chat, "S.tasks.length===1")
+        chat_antes = cal.evaluate("S.chat.length")
+        cal.click("#calNew")  # un formulario a medio escribir en el calendario...
+        cal.fill("#cfTitle", "Reunión a medias")
+        self.agendar(chat, "hola")  # ...mientras pAnkI solo guarda chat
+        self.agendar(chat, "qué día es el 19/10/2026")
+        self.assertTrue(cal.is_visible("#calForm"))
+        self.assertEqual(cal.input_value("#cfTitle"), "Reunión a medias", "no se pierde lo que se está escribiendo")
+        self.assertEqual(cal.evaluate("S.chat.length"), chat_antes, "el chat de pAnkI no se sincroniza con el calendario")
+        self.assertEqual(cal.evaluate("S.tasks.length"), 1)
+
+    def test_el_estado_propio_de_cada_ventana_no_se_pisa(self):
+        chat, cal = self.dos()
+        chat.evaluate("aplicarNombrePanki('Nova')")
+        chat.evaluate("setMode('deep')")
+        self.esperar(cal, "JSON.parse(localStorage.getItem(KEY)).nombre==='Nova'")
+        self.crear_en_calendario(cal, "Dentista", "9:30")
+        self.esperar(chat, "S.tasks.length===1")
+        self.assertEqual(chat.evaluate("S.nombre"), "Nova")
+        self.assertEqual(chat.evaluate("S.mode"), "deep")
+        g = self.guardado(chat)
+        self.assertEqual(g["nombre"], "Nova")
+        self.assertEqual(g["asked"], True)
+        self.assertGreaterEqual(len(g["chat"]), 1, "el chat de pAnkI sigue guardado")
+
+    # ------------------------------------------------------------------ carreras
+    def test_el_calendario_no_pisa_un_cambio_reciente_de_panki_aunque_aun_no_le_haya_llegado(self):
+        """En UNA sola tarea de JS (el evento `storage` no puede llegar en medio): la otra ventana guarda y esta, que sigue
+        con la agenda vieja, crea un evento. Tienen que quedar los DOS, con ids distintos."""
+        chat, cal = self.dos()
+        self.crear_en_calendario(cal, "Primero", "8:00")
+        self.esperar(chat, "S.tasks.length===1")
+        g = cal.evaluate("""()=>{
+            const d=JSON.parse(localStorage.getItem(KEY));
+            d.tasks.push({id:d.next,title:'De pAnkI',cat:'General',pri:2,due:'2026-10-23',time:'14:35',done:false,created:2,notified:false});
+            d.next+=1;d.chat.push({r:'ai',h:'<p>mensaje nuevo</p>'});
+            localStorage.setItem(KEY,JSON.stringify(d));   /* «otra ventana» guardó... */
+            crearEvento({title:'Segundo',due:'2026-10-24',time:'9:00'});  /* ...y esta aún no se enteró */
+            return JSON.parse(localStorage.getItem(KEY))}""")
+        titulos = sorted(t["title"] for t in g["tasks"])
+        self.assertEqual(titulos, ["De pAnkI", "Primero", "Segundo"])
+        ids = [t["id"] for t in g["tasks"]]
+        self.assertEqual(len(ids), len(set(ids)), "ids únicos")
+        self.assertEqual(g["next"], max(ids) + 1)
+        self.assertIn("mensaje nuevo", json.dumps(g["chat"]), "y el chat que pAnkI acababa de guardar sigue ahí")
+
+    def test_panki_no_pisa_un_cambio_reciente_del_calendario_aunque_aun_no_le_haya_llegado(self):
+        chat, cal = self.dos()
+        self.agendar(chat, "agéndame una reunión a las 9:00 el 21 de octubre con ana")
+        self.esperar(cal, "S.tasks.length===1")
+        g = chat.evaluate("""()=>{
+            const d=JSON.parse(localStorage.getItem(KEY));
+            d.tasks.push({id:d.next,title:'Del calendario',cat:'General',pri:2,due:'2026-10-23',time:'14:35',done:false,created:2,notified:false});
+            d.next+=1;localStorage.setItem(KEY,JSON.stringify(d));
+            respond('agéndame una reunión a las 10:00 el 22 de octubre con eva');
+            return JSON.parse(localStorage.getItem(KEY))}""")
+        self.assertEqual(sorted(t["title"] for t in g["tasks"]),
+                         ["Del calendario", "Reunión con Ana", "Reunión con Eva"])
+        self.assertEqual(len({t["id"] for t in g["tasks"]}), 3)
+
+    def test_tick_de_panki_tampoco_pisa_la_agenda_nueva(self):
+        sem = json.loads(json.dumps(SEMILLA))
+        chat, _ = self.dos(semilla=sem)
+        g = chat.evaluate("""()=>{
+            const d=JSON.parse(localStorage.getItem(KEY));
+            d.tasks.push({id:d.next,title:'Del calendario',cat:'General',pri:2,due:'2026-10-23',time:'14:35',done:false,created:2,notified:false});
+            d.tasks.push({id:d.next+1,title:'Vencida sin avisar',cat:'General',pri:2,due:'2026-10-19',time:'11:30',done:false,created:2,notified:false});
+            d.next+=2;localStorage.setItem(KEY,JSON.stringify(d));
+            tick();   /* avisa «Vencida sin avisar» y guarda: no puede perder lo que acaba de llegar */
+            return JSON.parse(localStorage.getItem(KEY))}""")
+        self.assertEqual(sorted(t["title"] for t in g["tasks"]), ["Del calendario", "Llamar al banco", "Vencida sin avisar"])
+        self.assertTrue(all(t["notified"] for t in g["tasks"] if t["title"] == "Vencida sin avisar"))
+
+    def test_deshacer_no_revierte_lo_que_hizo_la_otra_ventana(self):
+        chat, cal = self.dos()
+        chat.evaluate("respond('tarea: comprar pan')")
+        chat.evaluate("save()")
+        self.esperar(cal, "S.tasks.length===1")
+        self.crear_en_calendario(cal, "Dentista", "9:30")
+        self.esperar(chat, "S.tasks.length===2")
+        r = self.di(chat, "deshacer")
+        self.assertIn("No hay nada que deshacer", r)
+        self.assertEqual(sorted(t["title"] for t in self.tareas(chat)), ["Comprar pan", "Dentista"])
+        # lo suyo propio sí se deshace
+        self.di(chat, "tarea: llamar a Luis")
+        self.assertIn("Deshecho", self.di(chat, "deshacer"))
+        self.assertEqual(len(self.tareas(chat)), 2)
+
+    def test_un_guardado_corrupto_de_la_otra_ventana_no_rompe_ni_vacia_nada(self):
+        chat, cal = self.dos()
+        self.crear_en_calendario(cal, "Dentista", "9:30")
+        self.esperar(chat, "S.tasks.length===1")
+        chat.evaluate("localStorage.setItem(KEY,'{esto no es json')")
+        cal.wait_for_timeout(200)
+        self.assertEqual(cal.evaluate("S.tasks.length"), 1, "se queda con lo que tenía")
+        self.assertEqual(self.errores, [])
+        chat.evaluate("localStorage.setItem(KEY,JSON.stringify({tasks:'no soy una lista'}))")
+        cal.wait_for_timeout(200)
+        self.assertEqual(cal.evaluate("S.tasks.length"), 1)
+        self.assertEqual(self.errores, [])
+
+
+class TestEnlaceDesdePanki(BaseApp):
+    """En la ventana de pAnkI, los botones del calendario avisan al host por el puente (que abre la app Calendario). Sin
+    puente (la página suelta en un navegador) se conserva la vista embebida."""
+
+    @staticmethod
+    def mensajes(page):
+        return page.evaluate("window.__msgs.map(m=>JSON.parse(m))")
+
+    def test_el_boton_de_la_cabecera_pide_la_app_y_no_abre_la_vista_embebida(self):
+        chat, _ = self.dos(puente=True)
+        chat.click("#btnCal")
+        self.assertEqual(self.mensajes(chat), [{"accion": "calendario", "valor": ""}])
+        self.assertFalse(chat.is_visible("#calView"))
+        self.assertTrue(chat.is_visible("#in"), "pAnkI se queda como estaba")
+        self.assertFalse(chat.evaluate("calOn"))
+
+    def test_el_chip_calendario_pide_la_app(self):
+        chat, _ = self.dos(puente=True)
+        chat.click('#chips [data-cal]')
+        self.assertEqual(self.mensajes(chat), [{"accion": "calendario", "valor": ""}])
+        self.assertFalse(chat.evaluate("calOn"))
+
+    def test_ver_en_el_calendario_pide_la_app_en_esa_fecha(self):
+        chat, _ = self.dos(puente=True)
+        self.agendar(chat)
+        boton = chat.locator("#chat .m.a").last.locator("[data-cal]")
+        self.assertEqual(boton.get_attribute("data-cal"), "2026-10-23")
+        boton.click()
+        self.assertEqual(self.mensajes(chat), [{"accion": "calendario", "valor": "2026-10-23"}])
+        self.assertFalse(chat.evaluate("calOn"))
+        self.assertFalse(chat.is_visible("#calView"))
+
+    def test_abrir_calendario_del_panel_de_agenda_pide_la_app(self):
+        chat, _ = self.dos(puente=True)
+        chat.evaluate("respond('agéndame una reunión a las 14:35 el 23 de octubre con pepe')")
+        chat.click("#menu")
+        chat.click('#panel [data-tab="agenda"]')
+        chat.click('#pbody [data-cal]')
+        self.assertEqual(self.mensajes(chat), [{"accion": "calendario", "valor": ""}])
+
+    def test_la_orden_por_chat_abre_la_app_y_lo_dice(self):
+        chat, _ = self.dos(puente=True)
+        r = self.di(chat, "abre el calendario")
+        self.assertIn("app Calendario", r)
+        self.assertNotIn("Toca un día", r)
+        self.di(chat, "calendario de marzo de 2028")
+        self.assertEqual(self.mensajes(chat), [{"accion": "calendario", "valor": ""},
+                                                {"accion": "calendario", "valor": "2028-03-01"}])
+        self.assertFalse(chat.evaluate("calOn"))
+
+    def test_lo_que_la_pagina_envia_lo_acepta_el_validador_del_host(self):
+        # contrato entre los dos lados: cada mensaje que sale de la página pasa por panki_app._interpretar_mensaje_js
+        chat, _ = self.dos(puente=True)
+        self.agendar(chat)
+        chat.locator("#chat .m.a").last.locator("[data-cal]").click()
+        chat.click("#btnCal")
+        self.di(chat, "calendario de marzo de 2028")
+        crudos = chat.evaluate("window.__msgs")
+        self.assertEqual(len(crudos), 3)
+        self.assertEqual([panki_app._interpretar_mensaje_js(m) for m in crudos],
+                         [("calendario", "2026-10-23"), ("calendario", ""), ("calendario", "2028-03-01")])
+
+    def test_un_valor_raro_en_data_cal_se_envia_como_vacio(self):
+        chat, _ = self.dos(puente=True)
+        chat.evaluate("""()=>{const b=document.createElement('button');b.dataset.cal='2026-02-30; alert(1)';b.id='raro';
+                          document.body.appendChild(b)}""")
+        chat.click("#raro")
+        self.assertEqual(self.mensajes(chat), [{"accion": "calendario", "valor": ""}])
+
+    def test_sin_puente_se_mantiene_la_vista_embebida(self):
+        chat, _ = self.dos(puente=False)
+        chat.click("#btnCal")
+        self.assertTrue(chat.is_visible("#calView"))
+        self.assertTrue(chat.evaluate("calOn"))
+        chat.click("#btnCal")
+        self.agendar(chat)
+        chat.locator("#chat .m.a").last.locator("[data-cal]").click()
+        self.assertEqual(chat.inner_text("#calDayTitle"), "Viernes 23 de octubre de 2026")
+        self.assertFalse(chat.evaluate("document.body.classList.contains('modo-cal')"))
+
+    def test_si_el_puente_falla_tambien_se_mantiene_la_vista_embebida(self):
+        chat, _ = self.dos(puente=False)
+        chat.evaluate("window.webkit={messageHandlers:{panki:{postMessage(){throw new Error('sin host')}}}}")
+        chat.click("#btnCal")
+        self.assertTrue(chat.evaluate("calOn"))
+
+    def test_la_pagina_del_calendario_nunca_pide_la_app_a_si_misma(self):
+        _, cal = self.dos(puente=True)
+        self.assertFalse(cal.evaluate("pedirCalendarioApp('2026-10-23')"))
+        self.assertEqual(self.mensajes(cal), [])
+        cal.evaluate("pankiAbrirCalendario('2026-10-23')")
+        self.assertEqual(self.mensajes(cal), [])
+
+
 class TestPersistencia(unittest.TestCase):
     def setUp(self):
         if _BROWSER is None:

@@ -2,9 +2,10 @@
 Type=Application
 Name=Calendario
 GenericName=Agenda y calendario
-Comment=Tu calendario, vinculado a pAnkI: dile «agéndame una reunión a las 14:35 el 23 de octubre con Pepe» y queda anotado
+Comment=Tu calendario, con los mismos datos que pAnkI: dile «agéndame una reunión a las 14:35 el 23 de octubre con Pepe» y queda anotado
 Exec=infinity-calendario
-Icon=/usr/share/infinity/calendario.svg
+Icon=/usr/share/infinity/calendario/dia-01.svg
 Terminal=false
 Categories=Utility;Office;Calendar;
+StartupWMClass=org.infinity.Calendario
 Keywords=calendario;agenda;reunion;reuniones;citas;eventos;fechas;panki;

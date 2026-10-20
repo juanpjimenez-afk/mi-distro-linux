@@ -1,15 +1,17 @@
 #!/bin/sh
-# Calendario de Infinity OS: abre pAnkI directamente en su vista Calendario (cuadrícula del mes, eventos del día,
-# añadir reuniones a mano). Es la MISMA ventana y los MISMOS datos que pAnkI: lo que le digas por chat
-# («agéndame una reunión a las 14:35 el 23 de octubre con Pepe») sale aquí, y lo que crees aquí sale en sus
-# tareas. Si pAnkI ya está abierta se reutiliza (no hay segunda ventana). Código: shell/infinity_shell/panki_app.py
-# (se instala en /usr/lib/infinity); la página: /usr/share/infinity/panki/app.html (window.pankiAbrirCalendario).
+# Calendario de Infinity OS: una APP APARTE, con su ventana propia (820×620, app_id org.infinity.Calendario), no la ventana
+# de pAnkI. Cuadrícula del mes, eventos del día y añadir reuniones a mano. Usa los MISMOS datos que pAnkI: lo que le digas por chat
+# («agéndame una reunión a las 14:35 el 23 de octubre con Pepe») sale aquí al instante, y lo que crees aquí sale en sus tareas.
+# Vive en el mismo proceso que pAnkI (org.infinity.Panki: una sola sesión de WebKit con los mismos datos): si ya está en marcha
+# se reutiliza y solo se presenta la ventana del Calendario; la de pAnkI no se muestra. Código: shell/infinity_shell/panki_app.py
+# (CalendarioVentana, se instala en /usr/lib/infinity); la página: /usr/share/infinity/panki/app.html (?vista=calendario).
 #
 #   infinity-calendario              abre el calendario en el mes actual
 #   infinity-calendario AAAA-MM-DD   lo abre en ese día (p. ej. 2026-10-23)
 #
 # Con pAnkI en marcha también se puede pedir sin lanzar otro proceso:
 #   gapplication action org.infinity.Panki calendario
+#   gapplication action org.infinity.Panki calendario-fecha "'2026-10-23'"
 export PYTHONPATH=/usr/lib/infinity
 export GSK_RENDERER="${GSK_RENDERER:-cairo}"
 case "$1" in
