@@ -27,6 +27,8 @@ def _segundos_confirmacion():
     return int(ajuste("buscador.confirmar_s"))
 
 BUSCADOR_WEB = "https://www.google.com/search?q="
+# Icono del botón «Contraseñas»: el primero que exista en el tema (los tres están en Adwaita y en Papirus)
+ICONOS_CONTRASENAS = ("dialog-password-symbolic", "changes-prevent-symbolic", "system-lock-screen-symbolic")
 
 
 class Resultado:
@@ -114,13 +116,14 @@ class Launcher(Gtk.Window):
         self.scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.panel.append(self.scroll)
 
-        # Fila inferior: estado + ajustes + botones de energía
+        # Fila inferior: estado + contraseñas + ajustes + botones de energía
         inferior = Gtk.Box(spacing=6)
         inferior.add_css_class("launcher-bottom")
         self.estado = Gtk.Label(label="", xalign=0)
         self.estado.add_css_class("launcher-status")
         self.estado.set_hexpand(True)
         inferior.append(self.estado)
+        inferior.append(self._boton_contrasenas())
         inferior.append(self._boton_ajustes())
         self.botones = {}
         for a in power.ACCIONES:
@@ -358,6 +361,31 @@ class Launcher(Gtk.Window):
             r.lbl_sub.set_text(r.subtitulo)
             r.lbl_sub.remove_css_class("warn")
         return False
+
+    # -------------------------------------------------------------- contraseñas
+    @staticmethod
+    def _icono_contrasenas():
+        """Llave o candado del tema de iconos; si el tema no tiene ninguno, el último nombre (GTK pone su imagen genérica)."""
+        pantalla = Gdk.Display.get_default()
+        tema = Gtk.IconTheme.get_for_display(pantalla) if pantalla is not None else None
+        for nombre in ICONOS_CONTRASENAS:
+            if tema is not None and tema.has_icon(nombre):
+                return nombre
+        return ICONOS_CONTRASENAS[-1]
+
+    def _boton_contrasenas(self):
+        """Llave junto al engranaje: abre Contraseñas (el gestor de contraseñas, infinity-boveda)."""
+        b = self.boton_contrasenas = Gtk.Button()
+        b.set_child(_imagen(self._icono_contrasenas(), 18))
+        b.add_css_class("power-btn")
+        b.set_tooltip_text("Contraseñas")
+        b.update_property([Gtk.AccessibleProperty.LABEL], ["Contraseñas"])
+        b.connect("clicked", self._abrir_contrasenas)
+        return b
+
+    def _abrir_contrasenas(self, _boton):
+        self.cerrar()
+        self._lanzar(["infinity-boveda"])  # como Ajustes, pero sin romper si el comando no está
 
     # ------------------------------------------------------------------ ajustes
     def _boton_ajustes(self):

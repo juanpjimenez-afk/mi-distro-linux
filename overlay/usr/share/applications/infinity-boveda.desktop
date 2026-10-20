@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Contraseñas
+GenericName=Gestor de contraseñas
+Comment=Guarda las contraseñas de tu correo, tu router y tus webs, cifradas con una contraseña maestra
+Exec=infinity-boveda
+Icon=/usr/share/infinity/boveda.svg
+Terminal=false
+Categories=Utility;Security;
+Keywords=contraseñas;claves;passwords;boveda;llavero;correo;router;
+StartupWMClass=org.infinity.Boveda

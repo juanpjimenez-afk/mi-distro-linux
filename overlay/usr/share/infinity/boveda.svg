@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Icono de Contraseñas (la bóveda): un candado violeta (#b9a8ff, el acento de Infinity) sobre un cuadrado redondeado oscuro. -->
+  <defs>
+    <linearGradient id="fondo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#262c58"/>
+      <stop offset="1" stop-color="#12162c"/>
+    </linearGradient>
+    <linearGradient id="cuerpo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cfc3ff"/>
+      <stop offset="1" stop-color="#a794f5"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="58" fill="url(#fondo)"/>
+  <rect x="9" y="9" width="238" height="238" rx="57" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="2"/>
+  <!-- arco del candado -->
+  <path d="M90 116V90a38 38 0 0 1 76 0v26" fill="none" stroke="#b9a8ff" stroke-width="20" stroke-linecap="round"/>
+  <!-- cuerpo -->
+  <rect x="64" y="112" width="128" height="104" rx="24" fill="url(#cuerpo)"/>
+  <!-- ojo de la cerradura -->
+  <circle cx="128" cy="152" r="14" fill="#12162c"/>
+  <rect x="121" y="158" width="14" height="30" rx="7" fill="#12162c"/>
+</svg>

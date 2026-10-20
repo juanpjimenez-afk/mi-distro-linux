@@ -4,7 +4,9 @@ Las pruebas de URL y de texto leen launcher.py con ast (sin ejecutarlo). Las de 
 GTK 4 y una pantalla (xvfb-run): se saltan si no están.
 """
 import ast
+import contextlib
 import gc
+import io
 import os
 import sys
 import time
@@ -279,6 +281,136 @@ class TestBusquedaDiferida(unittest.TestCase):
         self.assertEqual([r.titulo for r in res], ["Ejecutar: echo hola"])
         res = self.buscar("2+2")
         self.assertEqual(res[0].titulo, "= 4")
+
+
+class TestBotonContrasenasFuente(unittest.TestCase):
+    """El botón «Contraseñas» de la zona de apagado (código leído sin ejecutarlo)."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(RUTA, encoding="utf-8") as f:
+            cls.fuente = f.read()
+
+    def test_esta_en_la_fila_inferior_entre_el_estado_y_el_engranaje(self):
+        i_estado = self.fuente.index("inferior.append(self.estado)")
+        i_contrasenas = self.fuente.index("inferior.append(self._boton_contrasenas())")
+        i_ajustes = self.fuente.index("inferior.append(self._boton_ajustes())")
+        self.assertLess(i_estado, i_contrasenas)
+        self.assertLess(i_contrasenas, i_ajustes)
+
+    def test_lanza_infinity_boveda_como_argumento_sin_shell(self):
+        self.assertIn('self._lanzar(["infinity-boveda"])', self.fuente)
+        self.assertNotIn("sh -c infinity-boveda", self.fuente)
+
+    def test_icono_y_texto(self):
+        self.assertIn('("dialog-password-symbolic", "changes-prevent-symbolic", "system-lock-screen-symbolic")',
+                      self.fuente)
+        self.assertIn('b.set_tooltip_text("Contraseñas")', self.fuente)
+        self.assertIn('b.add_css_class("power-btn")', self.fuente)
+
+
+@unittest.skipUnless(PANTALLA, "necesita una pantalla (xvfb-run)")
+class TestBotonContrasenas(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import gi
+            gi.require_version("Gtk", "4.0")
+            gi.require_version("Gdk", "4.0")
+            from gi.repository import GLib, Gtk
+            cls.L = _cargar_launcher()
+        except (ImportError, ValueError) as e:
+            raise unittest.SkipTest(f"sin GTK 4: {e}")
+        cls.GLib, cls.Gtk = GLib, Gtk
+
+    def setUp(self):
+        self.app = self.Gtk.Application(application_id=f"org.infinity.test.lanzador.contrasenas{time.time_ns()}")
+        self.app.register(None)
+        self.lz = self.L.Launcher(self.app, _IndiceFalso(3))
+        self.lz.abrir()
+
+    def tearDown(self):
+        self.lz.destroy()
+        del self.lz
+        gc.collect()
+
+    def botones_de_la_fila(self):
+        """Los botones de la fila inferior, de izquierda a derecha."""
+        fila = self.lz.estado.get_parent()
+        hijos, h = [], fila.get_first_child()
+        while h is not None:
+            hijos.append(h)
+            h = h.get_next_sibling()
+        return hijos
+
+    def test_el_boton_esta_junto_al_engranaje_antes_de_los_de_energia(self):
+        hijos = self.botones_de_la_fila()
+        self.assertIs(hijos[0], self.lz.estado)
+        self.assertIs(hijos[1], self.lz.boton_contrasenas)
+        self.assertEqual(hijos[2].get_tooltip_text(), "Ajustes")
+        self.assertEqual([b.get_tooltip_text() for b in hijos[3:]],
+                         ["Bloquear", "Suspender", "Cerrar sesión", "Reiniciar", "Apagar"])
+
+    def test_tooltip_clase_e_icono(self):
+        b = self.lz.boton_contrasenas
+        self.assertEqual(b.get_tooltip_text(), "Contraseñas")
+        self.assertTrue(b.has_css_class("power-btn"))
+        self.assertFalse(b.has_css_class("danger"))
+        imagen = b.get_child()
+        self.assertIsInstance(imagen, self.Gtk.Image)
+        self.assertIn(imagen.get_icon_name(), self.L.ICONOS_CONTRASENAS)
+        self.assertEqual(imagen.get_pixel_size(), 18)
+
+    def test_el_icono_elegido_existe_en_el_tema_si_hay_alguno(self):
+        from gi.repository import Gdk
+        tema = self.Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+        nombre = self.L.Launcher._icono_contrasenas()
+        existentes = [n for n in self.L.ICONOS_CONTRASENAS if tema.has_icon(n)]
+        if existentes:
+            self.assertEqual(nombre, existentes[0], "debe elegir el primero que exista")
+
+    def test_se_usa_el_primero_que_existe_y_si_no_hay_ninguno_el_ultimo(self):
+        class TemaFalso:
+            def __init__(self, tiene):
+                self.tiene = tiene
+
+            def has_icon(self, n):
+                return n in self.tiene
+
+        for tiene, esperado in (({"dialog-password-symbolic", "changes-prevent-symbolic"}, "dialog-password-symbolic"),
+                                ({"changes-prevent-symbolic", "system-lock-screen-symbolic"}, "changes-prevent-symbolic"),
+                                ({"system-lock-screen-symbolic"}, "system-lock-screen-symbolic"),
+                                (set(), "system-lock-screen-symbolic")):
+            with self.subTest(tiene=sorted(tiene)), \
+                    mock.patch.object(self.Gtk.IconTheme, "get_for_display", return_value=TemaFalso(tiene)):
+                self.assertEqual(self.L.Launcher._icono_contrasenas(), esperado)
+
+    def test_clic_cierra_el_lanzador_y_ejecuta_infinity_boveda(self):
+        self.assertTrue(self.lz.get_visible())
+        with mock.patch.object(self.L.Launcher, "_lanzar") as lanzar:
+            self.lz.boton_contrasenas.emit("clicked")
+        lanzar.assert_called_once_with(["infinity-boveda"])
+        self.assertFalse(self.lz.get_visible(), "el lanzador se cierra al abrir Contraseñas")
+
+    def test_clic_lanza_el_proceso_separado_de_la_shell(self):
+        with mock.patch.object(self.L.subprocess, "Popen") as popen:
+            self.lz.boton_contrasenas.emit("clicked")
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args[0][0], ["infinity-boveda"])
+        self.assertTrue(popen.call_args[1]["start_new_session"])
+
+    def test_si_falta_el_comando_no_revienta(self):
+        salida = io.StringIO()
+        with mock.patch.object(self.L.subprocess, "Popen", side_effect=FileNotFoundError("infinity-boveda")), \
+                contextlib.redirect_stdout(salida):
+            self.lz.boton_contrasenas.emit("clicked")  # solo escribe un aviso en la salida
+        self.assertFalse(self.lz.get_visible())
+        self.assertIn("no se pudo ejecutar infinity-boveda", salida.getvalue())
+
+    def test_los_botones_de_energia_siguen_en_su_sitio(self):
+        self.assertEqual(sorted(self.lz.botones), sorted(a.clave for a in self.L.power.ACCIONES))
+        for clave, boton in self.lz.botones.items():
+            self.assertTrue(boton.has_css_class("power-btn"), clave)
 
 
 if __name__ == "__main__":

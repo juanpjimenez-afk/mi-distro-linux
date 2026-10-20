@@ -1,0 +1,9 @@
+#!/bin/sh
+# Contraseñas, el gestor de contraseñas de Infinity OS: correo, router, webs, banco... en una bóveda cifrada
+# (AES-256-GCM, clave derivada con scrypt) que solo se abre con tu contraseña maestra. Sin red ni telemetría.
+# La lógica está en shell/infinity_shell/boveda.py (formato, cifrado, ficheros) y la ventana en boveda_app.py
+# (se instalan en /usr/lib/infinity). Necesita el paquete python3-cryptography. El modelo de seguridad, con
+# sus límites, está en docs/boveda.md. Datos: ~/.local/share/infinity/boveda/boveda.enc
+export PYTHONPATH=/usr/lib/infinity
+export GSK_RENDERER="${GSK_RENDERER:-cairo}"
+exec python3 -m infinity_shell.boveda_app "$@"
