@@ -356,16 +356,23 @@ class TestFijarAppId(unittest.TestCase):
         self.assertFalse(P.fijar_app_id_wayland(sup, "org.infinity.Calendario", GdkWayland=self.GdkWayland))
 
     def test_sin_el_typelib_de_gdkwayland_no_rompe(self):
-        from types import SimpleNamespace
-
-        def sin_typelib(nombre, version):
-            raise ValueError(f"Namespace {nombre} not available")
-        with mock.patch.dict(sys.modules, {"gi": SimpleNamespace(require_version=sin_typelib)}):
+        # el módulo lo carga al importarse; sin typelib queda en None y no se fija nada (ni se rompe)
+        with mock.patch.object(P, "_GDKWAYLAND", None):
             self.assertFalse(P.fijar_app_id_wayland(object(), "org.infinity.Calendario"))
 
-    def test_sin_gi_instalado_no_rompe(self):
-        with mock.patch.dict(sys.modules, {"gi": None}):  # «import gi» -> ImportError
-            self.assertFalse(P.fijar_app_id_wayland(object(), "org.infinity.Calendario"))
+    def test_gdkwayland_se_carga_al_importar_el_modulo_no_al_fijar_el_id(self):
+        # Comprobado en Hyprland real: si GdkWayland se importa DESPUÉS de envolver la superficie en Python, PyGObject le da un
+        # tipo genérico y el isinstance(..., WaylandToplevel) falla en silencio. Tiene que estar cargado antes.
+        with open(P.__file__, encoding="utf-8") as f:
+            codigo = f.read()
+        arriba, _, funcion = codigo.partition("def fijar_app_id_wayland(")
+        self.assertIn("_GDKWAYLAND", arriba)
+        self.assertIn('require_version("GdkWayland", "4.0")', arriba)
+        self.assertNotIn("import GdkWayland", funcion.split("\ndef ", 1)[0])   # nada de importarlo dentro de la función
+
+    def test_con_el_typelib_cargado_es_el_modulo_de_gdkwayland(self):
+        if P._GDKWAYLAND is not None:
+            self.assertTrue(hasattr(P._GDKWAYLAND, "WaylandToplevel"))
 
     def test_el_app_id_es_el_del_desktop(self):
         self.assertEqual(P.APP_ID_CALENDARIO, "org.infinity.Calendario")
@@ -806,21 +813,39 @@ class TestDosVentanasUnProceso(unittest.TestCase):
         self.assertIsNone(self.app.ventana)
 
     # ------------------------------------------------------------------ app_id
-    def test_el_app_id_se_fija_tras_realize_y_antes_de_present(self):
+    def test_el_app_id_se_fija_justo_despues_de_present(self):
+        # Comprobado en Hyprland real: ANTES de present() no surte efecto; justo DESPUÉS (o en «map») sí.
         cal = self.app._asegurar_calendario()
         orden = []
-        with mock.patch.object(P.CalendarioVentana, "realize", lambda self: orden.append("realize")), \
-                mock.patch.object(P.CalendarioVentana, "present", lambda self: orden.append("present")), \
+        with mock.patch.object(P.CalendarioVentana, "present", lambda self: orden.append("present")), \
                 mock.patch.object(P.CalendarioVentana, "get_surface", lambda self: "la-superficie"), \
                 mock.patch.object(P, "fijar_app_id_wayland",
                                   lambda sup, app_id: orden.append(("app_id", sup, app_id))):
             cal.mostrar()
-            cal.mostrar()  # solo la primera vez: la superficie ya está mapeada
-        self.assertEqual(orden, ["realize", ("app_id", "la-superficie", "org.infinity.Calendario"), "present", "present"])
+        self.assertEqual(orden, ["present", ("app_id", "la-superficie", "org.infinity.Calendario")])
+
+    def test_cada_vez_que_se_vuelve_a_mapear_se_fija_otra_vez(self):
+        # Al ocultarla GTK destruye la superficie: la señal «map» (conectada una sola vez) vuelve a fijar el id.
+        cal = self.app._asegurar_calendario()
+        llamadas, conexiones = [], []
+        conectar = P.CalendarioVentana.connect
+        with mock.patch.object(P.CalendarioVentana, "present", lambda self: None), \
+                mock.patch.object(P.CalendarioVentana, "get_surface", lambda self: "sup"), \
+                mock.patch.object(P.CalendarioVentana, "connect",
+                                  lambda self, senal, cb, *a: conexiones.append((senal, cb))), \
+                mock.patch.object(P, "fijar_app_id_wayland", lambda sup, app_id: llamadas.append(app_id)):
+            cal.mostrar()
+            cal.mostrar()
+            self.assertEqual([c[0] for c in conexiones], ["map"])        # una sola conexión aunque se muestre dos veces
+            antes = len(llamadas)
+            conexiones[0][1](cal)                                        # lo que hace GTK al volver a mapear
+        self.assertEqual(llamadas[:antes], ["org.infinity.Calendario"] * 2)  # una por cada mostrar()
+        self.assertEqual(len(llamadas), antes + 1)                            # y una más por la señal
+        self.assertTrue(callable(conectar))
 
     def test_un_fallo_al_fijar_el_app_id_no_impide_mostrar_la_ventana(self):
         cal = self.app._asegurar_calendario()
-        with mock.patch.object(P.CalendarioVentana, "realize", side_effect=RuntimeError("sin superficie")), \
+        with mock.patch.object(P, "fijar_app_id_wayland", side_effect=RuntimeError("sin superficie")), \
                 mock.patch.object(P, "registrar") as reg:
             cal.mostrar()
         self.assertTrue(cal.get_visible())
@@ -834,14 +859,13 @@ class TestDosVentanasUnProceso(unittest.TestCase):
         self.assertFalse(P.fijar_app_id_wayland(cal.get_surface(), "org.infinity.Calendario"))
 
     def test_con_una_superficie_wayland_de_pega_se_llama_a_set_application_id(self):
-        # el camino completo: mostrar() -> realize() -> fijar_app_id_wayland(get_surface()) -> set_application_id -> present()
+        # el camino completo: mostrar() -> present() -> fijar_app_id_wayland(get_surface()) -> set_application_id
         cal = self.app._asegurar_calendario()
         sup = TestFijarAppId._Toplevel()
         gdk = TestFijarAppId._GdkWayland()
         gdk.WaylandToplevel = TestFijarAppId._Toplevel
         real = P.fijar_app_id_wayland
-        with mock.patch.object(P.CalendarioVentana, "realize", lambda self: None), \
-                mock.patch.object(P.CalendarioVentana, "present", lambda self: None), \
+        with mock.patch.object(P.CalendarioVentana, "present", lambda self: None), \
                 mock.patch.object(P.CalendarioVentana, "get_surface", lambda self: sup), \
                 mock.patch.object(P, "fijar_app_id_wayland", lambda s, a: real(s, a, GdkWayland=gdk)):
             cal.mostrar()

@@ -51,6 +51,16 @@ try:
 except (ImportError, ValueError):
     Gdk = Gio = GLib = Gtk = None  # sin GTK 4: el módulo se puede importar igual (ver el docstring)
 
+# GdkWayland se carga AQUÍ, al importar el módulo, y no dentro de fijar_app_id_wayland(): si la superficie de una ventana
+# ya se envolvió en Python antes de cargar el typelib, PyGObject le da un tipo genérico («GdkWaylandToplevel») que NO es
+# una instancia de GdkWayland.WaylandToplevel y el isinstance falla en silencio (comprobado en Hyprland real). Sin el
+# typelib (o sin Wayland) queda en None y el app_id propio simplemente no se fija.
+try:
+    gi.require_version("GdkWayland", "4.0")
+    from gi.repository import GdkWayland as _GDKWAYLAND  # noqa: E402
+except (NameError, ImportError, ValueError):
+    _GDKWAYLAND = None
+
 APP_ID = "org.infinity.Panki"
 APP_ID_CALENDARIO = "org.infinity.Calendario"  # el app_id de la ventana Calendario (dock, reglas de Hyprland, StartupWMClass)
 MAX_PREGUNTA = 4000  # caracteres de --preguntar; más es casi seguro un error del llamador
@@ -406,17 +416,15 @@ def fijar_app_id_wayland(superficie, app_id, GdkWayland=None):
     """Fija el app_id de una superficie Wayland (xdg_toplevel), para que el dock y Hyprland traten esa ventana como una app
     distinta de la que da nombre al proceso (GTK pone el id de la Gtk.Application, org.infinity.Panki, a todas sus ventanas).
 
-    Hay que llamarlo tras `ventana.realize()` y ANTES de `present()`. Solo hace algo si la superficie es de verdad un
+    Hay que llamarlo justo DESPUÉS de `present()` (o en `map`): antes no surte efecto (comprobado en Hyprland real). Solo hace algo si la superficie es de verdad un
     GdkWayland.WaylandToplevel (GTK 4.14 o más: gdk_wayland_toplevel_set_application_id); bajo X11 (xvfb), sin el typelib de
     GdkWayland o ante cualquier fallo se ignora EN SILENCIO y la ventana funciona igual, solo que con el app_id de la
     aplicación. Devuelve True si lo fijó. `GdkWayland` sustituye al módulo en las pruebas. Nunca lanza.
     """
     try:
         if GdkWayland is None:
-            import gi as _gi
-            _gi.require_version("GdkWayland", "4.0")
-            from gi.repository import GdkWayland
-        if superficie is not None and isinstance(superficie, GdkWayland.WaylandToplevel):
+            GdkWayland = _GDKWAYLAND  # cargado al importar el módulo (ver arriba)
+        if GdkWayland is not None and superficie is not None and isinstance(superficie, GdkWayland.WaylandToplevel):
             superficie.set_application_id(app_id)
             return True
     except Exception:  # noqa: BLE001 - ImportError/ValueError si falta el typelib, o lo que falle al fijarlo
@@ -645,7 +653,7 @@ class CalendarioVentana(_VentanaWeb):
     AVISO_SIN_WEBKIT = "No se pudo cargar el Calendario: falta WebKitGTK 6.0."
 
     _calendario_pendiente = None  # fecha pedida antes de terminar de cargar ("" = sin fecha, None = nada pendiente)
-    _app_id_fijado = False
+    _app_id_conectado = False  # la señal «map» que fija el app_id se conecta una sola vez
 
     def __init__(self, app, proveedor_sesion=None):
         super().__init__(app, proveedor_sesion)
@@ -672,20 +680,25 @@ class CalendarioVentana(_VentanaWeb):
             self._calendario_pendiente = fecha or ""
 
     def _fijar_app_id(self):
-        """Antes de mostrar la ventana por primera vez: realize() crea su superficie y se le fija el app_id propio. Todo en
-        try/except: si no es Wayland (xvfb/X11) o falla, la ventana se muestra igual con el app_id de la aplicación."""
-        if self._app_id_fijado:
-            return
-        self._app_id_fijado = True
+        """Fija el app_id propio de la superficie Wayland YA creada.
+
+        Comprobado en Hyprland real (la ISO en QEMU): fijarlo ANTES de `present()` (aunque sea tras `realize()`) NO surte
+        efecto, porque GTK crea el xdg_toplevel al mostrar y le pone el id de la aplicación. Justo DESPUÉS de `present()`
+        (o en la señal `map`) sí, y llega antes de que el compositor mapee la ventana: Hyprland la ve desde el primer momento
+        con el id nuevo (`initialClass`), así que el dock y las reglas de ventana la reconocen. Todo en try/except: si no es
+        Wayland (xvfb/X11) o falla, la ventana funciona igual con el app_id de la aplicación."""
         try:
-            self.realize()
             fijar_app_id_wayland(self.get_surface(), APP_ID_CALENDARIO)
         except Exception:
             registrar("No se pudo fijar el app_id de la ventana Calendario:\n" + traceback.format_exc())
 
     def mostrar(self):
-        self._fijar_app_id()  # tras realize() y ANTES de present(): la superficie aún no se ha mapeado
-        super().mostrar()
+        if not self._app_id_conectado:
+            # Al ocultar la ventana GTK destruye su superficie: cada vez que se vuelve a mapear hay que fijar el id otra vez.
+            self._app_id_conectado = True
+            self.connect("map", lambda *_: self._fijar_app_id())
+        super().mostrar()        # present(): crea la superficie
+        self._fijar_app_id()     # justo después: antes de que el compositor mapee la ventana
 
 
 # ------------------------------------------------------------------------------- aplicación

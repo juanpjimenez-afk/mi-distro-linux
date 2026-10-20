@@ -885,7 +885,7 @@ class TestModoCalendario(BaseApp):
         self.assertEqual(cal.inner_text("#calTitle"), "Octubre de 2026")
         self.assertEqual(cal.locator("#calGrid .cd.today").get_attribute("data-cd"), "2026-10-19")
         self.assertEqual(cal.locator("#calGrid .cd.sel").get_attribute("data-cd"), "2026-10-19")
-        # «＋ Añadir reunión» está en la cabecera del calendario, junto al mes y a ‹ Hoy ›
+        # «+ Añadir reunión» está en la cabecera del calendario, junto al mes y a ‹ Hoy ›
         self.assertEqual(cal.evaluate("document.querySelector('#calNew').parentElement.className"), "cal-top")
         self.assertIn("Añadir reunión", cal.inner_text("#calNew"))
         self.assertEqual(cal.evaluate("document.querySelectorAll('.cal-dow span').length"), 7)

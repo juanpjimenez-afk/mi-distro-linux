@@ -39,14 +39,17 @@ PUNTOS = "•" * 10       # fijo: así la longitud de la contraseña no se adivi
 VAR_ICONO_DEV = "INFINITY_BOVEDA_ICONO"
 RUTA_ICONO_INSTALADA = "/usr/share/infinity/boveda.svg"
 
-# El acento violeta (#b9a8ff) es el de pAnkI y de todo Infinity OS. El fondo oscuro translúcido deja que Hyprland
-# desenfoque lo de detrás (blur de ventanas); el resto del estilo del shell vive en style.css, que aquí NO se carga.
+# El acento violeta (#b9a8ff) es el de pAnkI y de todo Infinity OS. El fondo es OPACO (a diferencia del de pAnkI): una
+# bóveda no debe dejar entrever lo que hay en otras ventanas; el resto del estilo del shell vive en style.css, que aquí NO se carga.
 ESTILO = """
-window.boveda-ventana { background-color: rgba(18, 22, 44, 0.93); color: #e9ebf7; }
+window.boveda-ventana { background-color: rgb(18, 22, 44); color: #e9ebf7; }
 
 headerbar.boveda-cabecera { min-height: 34px; padding: 0 6px 0 14px; background: none; border: none; box-shadow: none; }
-headerbar.boveda-cabecera windowcontrols button { opacity: 0.5; }
-headerbar.boveda-cabecera windowcontrols button:hover { opacity: 1; }
+headerbar.boveda-cabecera windowcontrols button {
+  opacity: 0.5; padding: 0; min-width: 24px; min-height: 24px;
+  background-color: transparent; border-color: transparent; border-radius: 99px;
+}
+headerbar.boveda-cabecera windowcontrols button:hover { opacity: 1; background-color: rgba(255, 255, 255, 0.12); }
 label.boveda-marca { color: #b9a8ff; font-size: 14px; font-weight: 600; }
 headerbar.boveda-cabecera image.boveda-marca { color: #b9a8ff; }
 

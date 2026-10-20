@@ -163,7 +163,7 @@ Por eso la `Gtk.Application` `org.infinity.Panki` crea las dos ventanas:
 
 GTK pone el id de la `Gtk.Application` (`org.infinity.Panki`) a todas sus ventanas, y el dock y Hyprland asocian
 ventana y app por esa clase. Para que traten el Calendario como otra app, `CalendarioVentana.mostrar()` (la
-primera vez) hace `realize()` → `fijar_app_id_wayland(get_surface(), "org.infinity.Calendario")` → `present()`:
+primera vez) hace `present()` → `fijar_app_id_wayland(get_surface(), "org.infinity.Calendario")` (y otra vez en cada `map`; ANTES de `present()` no surte efecto, comprobado en Hyprland real):
 si la superficie es un `GdkWayland.WaylandToplevel`, llama a `set_application_id(...)` (existe desde GTK 4.14;
 la ISO lleva 4.22). Todo en `try/except`: sin el typelib de `GdkWayland`, bajo X11 (xvfb) o si algo falla, se
 ignora **en silencio** y la ventana funciona igual (solo con el `app_id` de la aplicación). El `.desktop` lleva
@@ -195,7 +195,7 @@ ignora **en silencio** y la ventana funciona igual (solo con el `app_id` de la a
 ### Modo calendario de la página (`?vista=calendario` o `#calendario`)
 
 `MODO_CAL` oculta todo lo de pAnkI (cabecera con Profundo/Rápido, chat, chips, caja de texto, panel lateral) y
-muestra solo el calendario a toda la ventana, con su cabecera: mes y año, ‹ Hoy › y «＋ Añadir reunión». Con
+muestra solo el calendario a toda la ventana, con su cabecera: mes y año, ‹ Hoy › y «+ Añadir reunión». Con
 **≥ 700 px** de ancho, dos columnas (a la izquierda la cuadrícula del mes; a la derecha el día seleccionado, con
 su lista y el formulario); más estrecho, una columna (cabe en 460×640 sin scroll horizontal, también con
 «Septiembre de 2026»). Mismo estilo y colores que el resto de la app, con modo oscuro. Semana desde el LUNES.
@@ -266,7 +266,7 @@ respaldo, con el botón de calendario de la cabecera, la pestaña Agenda, el chi
 Cuadrícula del mes con la **semana empezando en lunes** (L M X J V S D), mes y año en español con ‹ ›,
 botón «Hoy», el día de hoy resaltado, un punto por evento (rojo si venció sin hacerse, apagado si ya está
 hecho) y un contador si hay más de 3. Tocar un día muestra sus eventos (hora, título, con quién/dónde),
-con marcar hecho, borrar (con «Deshacer») y «＋ Añadir reunión» (título, hora, con quién, dónde). Flechas
+con marcar hecho, borrar (con «Deshacer») y «+ Añadir reunión» (título, hora, con quién, dónde). Flechas
 del teclado = día/semana, RePág/AvPág = mes. Cabe en 460×640 sin scroll horizontal. A medianoche el «hoy»
 se actualiza solo.
 
@@ -320,7 +320,7 @@ partición «writable» de casper (modo `persistent`), así que sobrevive al apa
   `CalendarioVentana.abrir`, auditoría estática de fechas, búsqueda del lanzador) y, con GTK real, las dos
   ventanas con una **WebKit de pega** (`TestDosVentanasUnProceso`: una sola `NetworkSession`, la URI con
   `?vista=calendario`, solo la página de pAnkI con puente, la acción abre el Calendario y no muestra la de pAnkI,
-  orden `realize` → `app_id` → `present`, 820×620 y título «Calendario»).
+  orden `present` → `app_id`, 820×620 y título «Calendario»).
 - `shell/tests/test_panki_calendario_web.py` (Playwright + Chromium; **se salta** si no hay Playwright de Python
   o Chromium, `PANKI_CHROMIUM` indica la ruta): las fechas en 7 zonas, el agendar por chat, la vista, y para la
   app aparte: el modo calendario (no toca el chat ni lanza `tick()`; dos columnas/una; el día cambia), la

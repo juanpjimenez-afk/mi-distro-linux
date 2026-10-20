@@ -198,7 +198,7 @@ body.modo-cal #calNew:hover{color:var(--bg);border-color:var(--fg);opacity:.85}
     <div class="cal-grid" id="calGrid" role="group" aria-label="Días del mes"></div>
   </div>
   <div class="cal-day">
-    <div class="cal-dayhead"><div><h3 id="calDayTitle"></h3><div class="sub" id="calDaySub"></div></div><button type="button" class="pill" id="calNew">＋ Añadir reunión</button></div>
+    <div class="cal-dayhead"><div><h3 id="calDayTitle"></h3><div class="sub" id="calDaySub"></div></div><button type="button" class="pill" id="calNew">+ Añadir reunión</button></div>
     <form id="calForm" hidden autocomplete="off">
       <input id="cfTitle" placeholder="Título (por defecto: Reunión)" maxlength="80" aria-label="Título">
       <div class="cf2"><input id="cfTime" placeholder="Hora: 14:35" inputmode="numeric" maxlength="9" aria-label="Hora"><input id="cfWho" placeholder="Con quién (opcional)" maxlength="60" aria-label="Con quién"></div>
@@ -3253,7 +3253,7 @@ function renderCal(){
   $('#calDaySub').textContent=d===0?'Hoy':d===1?'Mañana':d===-1?'Ayer':d>1?`En ${d} días`:`Hace ${-d} días`;
   const list=S.tasks.filter(t=>t.due===sel).sort((a,b)=>(a.time?1:0)-(b.time?1:0)||(a.time||'').localeCompare(b.time||'')||a.id-b.id);
   $('#calUndo').innerHTML=calUndo?`<div class="cal-undo"><span>Borrado «${esc(calUndo)}»</span><button type="button" class="pill" data-cmd="deshacer">Deshacer</button></div>`:'';
-  $('#calList').innerHTML=list.length?list.map(evRow).join(''):'<div class="empty">Nada agendado este día.<br><span class="sub">'+(MODO_CAL?'Pulsa «＋ Añadir reunión» o pídeselo a '+esc(S.nombre)+'.':'Escríbele a '+esc(S.nombre)+': «agéndame una reunión a las 14:35 el 23 de octubre con Pepe»')+'</span></div>';
+  $('#calList').innerHTML=list.length?list.map(evRow).join(''):'<div class="empty">Nada agendado este día.<br><span class="sub">'+(MODO_CAL?'Pulsa «+ Añadir reunión» o pídeselo a '+esc(S.nombre)+'.':'Escríbele a '+esc(S.nombre)+': «agéndame una reunión a las 14:35 el 23 de octubre con Pepe»')+'</span></div>';
 }
 function calForma(abrir){
   calForm=abrir;const f=$('#calForm');f.hidden=!abrir;
@@ -3378,7 +3378,7 @@ if(MODO_CAL){
      vigilar que «hoy» siga siendo hoy (cada 30 s y al recuperar el foco) y que la agenda sea la última guardada. */
   document.body.classList.add('modo-cal');document.title='Calendario';
   const top=document.querySelector('.cal-top'),nuevo=$('#calNew');
-  if(top&&nuevo)top.appendChild(nuevo); /* «＋ Añadir reunión» va en la cabecera del calendario */
+  if(top&&nuevo)top.appendChild(nuevo); /* «+ Añadir reunión» va en la cabecera del calendario */
   abrirCalendario();
   const vigilarDia=()=>{
     let rep=agendaFresca();
