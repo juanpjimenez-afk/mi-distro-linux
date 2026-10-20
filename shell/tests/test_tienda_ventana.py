@@ -2189,8 +2189,23 @@ class TestAplicacion(BaseVentana):
         with mock.patch.object(self.X, "AppTienda", AppFalsa):
             self.assertEqual(self.X.main(["infinity-tienda"]), 7)
             self.assertEqual(self.X.main(["infinity-tienda", "--catalogo", "/tmp/otro.json"]), 7)
+            self.assertEqual(self.X.main(["infinity-tienda", "--catalogo=/tmp/tercero.json", "--gtk-debug=misc"]), 7)
         self.assertEqual(AppFalsa.hechos, [("nueva", None), ("run", ["infinity-tienda"]),
-                                           ("nueva", "/tmp/otro.json"), ("run", ["infinity-tienda"])])
+                                           ("nueva", "/tmp/otro.json"), ("run", ["infinity-tienda"]),
+                                           ("nueva", "/tmp/tercero.json"), ("run", ["infinity-tienda", "--gtk-debug=misc"])],
+                         "lo que no es del Tienda se le deja a GTK")
+
+    def test_main_ayuda_y_errores_en_espanol_sin_abrir_nada(self):
+        import io
+        with mock.patch.object(self.X, "AppTienda") as app, mock.patch.object(self.X.sys, "stdout", io.StringIO()) as salida, \
+                mock.patch.object(self.X.sys, "stderr", io.StringIO()) as error:
+            self.assertEqual(self.X.main(["infinity-tienda", "--help"]), 0)
+            self.assertEqual(self.X.main(["infinity-tienda", "--catalogo"]), 2)
+            self.assertEqual(self.X.main(["infinity-tienda", "--catalogo="]), 2)
+        app.assert_not_called()
+        self.assertIn("uso: infinity-tienda", salida.getvalue())
+        self.assertIn("--catalogo RUTA", salida.getvalue())
+        self.assertIn("necesita la ruta", error.getvalue())
 
 
 # ============================================================================ aviso del modo en vivo

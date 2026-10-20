@@ -24,7 +24,6 @@ Resumen de lo que hace esta ventana:
 El estilo (azul noche translúcido para que el desenfoque de Hyprland se note, tarjetas de cristal sutil, acento violeta
 #b9a8ff y, con mucha moderación, cian neón #7cf0ff) va en ESTILO; el resto del shell vive en style.css, que aquí NO se carga.
 """
-import argparse
 import os
 import subprocess
 import sys
@@ -1609,12 +1608,52 @@ class AppTienda(Gtk.Application):
         Gtk.Application.do_shutdown(self)
 
 
+AYUDA = """uso: infinity-tienda [--catalogo RUTA]
+
+La Tienda de aplicaciones de Infinity OS (la ventana). Desde la terminal y sin ventana, el mismo comando sabe «listar»,
+«instalar», «quitar» y «actualizar» (se explica con «infinity-tienda --help»).
+
+  --catalogo RUTA   catálogo JSON que usar en vez del del sistema (para desarrollar)
+  -h, --help        esta ayuda
+"""
+
+
+def leer_argumentos(argv):
+    """Los argumentos de la línea de órdenes: (ruta del catálogo o None, el resto, que es para GTK). Lanza ValueError (en
+    español) si `--catalogo` no lleva ruta, y _PideAyuda con -h/--help."""
+    ruta, resto = None, []
+    it = iter(argv)
+    for a in it:
+        if a in ("-h", "--help"):
+            raise _PideAyuda()
+        if a == "--catalogo":
+            ruta = next(it, None)
+            if not ruta:
+                raise ValueError("--catalogo necesita la ruta de un catálogo")
+        elif a.startswith("--catalogo="):
+            ruta = a.partition("=")[2]
+            if not ruta:
+                raise ValueError("--catalogo necesita la ruta de un catálogo")
+        else:
+            resto.append(a)
+    return ruta, resto
+
+
+class _PideAyuda(Exception):
+    pass
+
+
 def main(argv=None):
     argv = list(sys.argv if argv is None else argv)
-    analizador = argparse.ArgumentParser(prog="infinity-tienda", description="La Tienda de aplicaciones de Infinity OS.")
-    analizador.add_argument("--catalogo", metavar="RUTA", help="catálogo JSON que usar en vez del del sistema (para desarrollar)")
-    args, resto = analizador.parse_known_args(argv[1:])
-    return AppTienda(args.catalogo).run([argv[0]] + resto)
+    try:
+        ruta, resto = leer_argumentos(argv[1:])
+    except _PideAyuda:
+        sys.stdout.write(AYUDA)
+        return 0
+    except ValueError as e:
+        sys.stderr.write(f"infinity-tienda: {e}\n")
+        return 2
+    return AppTienda(ruta).run([argv[0]] + resto)
 
 
 if __name__ == "__main__":
