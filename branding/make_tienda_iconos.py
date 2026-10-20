@@ -3,19 +3,19 @@
 
     python3 branding/make_tienda_iconos.py                  # escribe en overlay/usr/share/infinity/
     python3 branding/make_tienda_iconos.py --destino DIR    # lo mismo, pero bajo DIR (para probar sin tocar el repo)
-    python3 branding/make_tienda_iconos.py --probar [PNG]   # además deja una hoja de contacto (rsvg-convert + ImageMagick)
+    python3 branding/make_tienda_iconos.py --probar [PNG]   # además, una hoja de contacto (rsvg-convert + ImageMagick)
 
-(con `python3 -I` también vale, como en make_calendario.py). Escribe, con la estructura que tiene /usr/share/infinity en
-la ISO:
+(con `python3 -I` también vale, como en make_calendario.py). Escribe, con la estructura que tiene
+/usr/share/infinity en la ISO:
 
     tienda/iconos/<id>.svg   spotify, antigravity, netflix, hbo-max, disney-plus, claude, gemini, notebooklm,
                              classroom, youtube, chrome y brave (los ids son los de tienda/catalogo.json)
     tienda.svg               el icono de la propia Tienda (lanzador y dock)
 
 Todos comparten el estilo de Contraseñas (overlay/usr/share/infinity/boveda.svg): una baldosa de 240x240 con 8 px de
-margen en un lienzo de 256x256, de esquinas continuas («squircle», 22 %, como los iconos de iOS y macOS), con degradado
-vertical del color de la marca, un borde de luz fino arriba y una sombra suave que cabe en el margen. Encima va un
-glifo grande y limpio, pensado para leerse a 24 px.
+margen en un lienzo de 256x256, de esquinas continuas («squircle», 22 %, como los iconos de iOS y macOS), con
+degradado vertical del color de la marca, un borde de luz fino arriba y una sombra suave que cabe en el margen.
+Encima va un glifo grande y limpio, pensado para leerse a 24 px.
 
 Son dibujos ORIGINALES, inspirados en el color y en la idea de cada app, no copias de ningún logotipo. Ninguno usa
 tipografías (la N y la H son trazos y rectángulos de aquí), ni <filter>, ni imágenes, ni scripts, ni referencias
@@ -64,8 +64,9 @@ MARGEN = 8                     # aire alrededor de la baldosa (donde cabe la som
 LADO = LIENZO - 2 * MARGEN     # 240
 RADIO = 54                     # 22 % del lado: la esquina «de iOS»
 SUAVIDAD = 0.6                 # cuánto se alarga la curva de la esquina por el borde (0 = esquina redonda normal)
-# sombra suave sin <filter>: capas cada vez más anchas y tenues, siempre dentro del lienzo (ensanche, bajada, opacidad)
-SOMBRA = ((0, 3, 0.16), (2, 4, 0.08), (4, 4, 0.04))
+# sombra suave sin <filter>: capas cada vez más anchas y tenues (ensanche, bajada, opacidad). La de más abajo acaba en
+# y = 255: queda dentro del lienzo, sin que el borde del viewBox la corte.
+SOMBRA = ((0, 3, 0.16), (2, 3, 0.08), (3, 4, 0.04))
 
 
 def n(v):
@@ -97,8 +98,8 @@ def squircle(x, y, w, h, r, suavidad=SUAVIDAD):
     """Contorno de esquinas continuas (como los iconos de iOS/macOS) para un recuadro de x, y, w, h.
 
     Cada esquina es un arco de circunferencia de radio r entre dos curvas de Bézier que lo enlazan con el borde recto
-    sin el «salto» de curvatura de un rectángulo redondeado normal (el esquema de Figma: la curva ocupa (1 + suavidad)·r
-    del borde). Con suavidad = 0 sale el rectángulo redondeado de siempre.
+    sin el «salto» de curvatura de un rectángulo redondeado normal (el esquema de Figma: la curva ocupa
+    (1 + suavidad)·r del borde). Con suavidad = 0 sale el rectángulo redondeado de siempre.
     """
     p = (1 + suavidad) * r
     grados = 90 * (1 - suavidad)                                   # lo que queda de arco circular en la esquina
@@ -133,7 +134,7 @@ def estrella4(cx, cy, r, pellizco=0.07, hondo=0.45):
 
     `hondo` hunde los lados hacia el centro (más = más fina) y `pellizco` los afila junto a cada punta.
     """
-    c1, c2, fin = (pellizco, -hondo), (hondo, -pellizco), (1, 0)       # el lado de arriba a la derecha, en unidades de r
+    c1, c2, fin = (pellizco, -hondo), (hondo, -pellizco), (1, 0)       # el lado de arriba a la derecha (en r)
     pasos = []
     for _ in range(4):
         pasos.append("C" + " ".join(pt(cx + r * x, cy + r * y) for x, y in (c1, c2, fin)))
@@ -142,7 +143,7 @@ def estrella4(cx, cy, r, pellizco=0.07, hondo=0.45):
 
 
 def infinito(cx, cy, a, b):
-    """Datos de un trazo con el símbolo ∞ (dos lazos que se cruzan en el centro): a es la mitad del ancho y b el alto de control."""
+    """El símbolo ∞ como trazo (dos lazos que se cruzan en el centro): a = media anchura, b = alto de control."""
     k = 0.42
     return (f"M{pt(cx, cy)}C{pt(cx + k * a, cy - b)} {pt(cx + a, cy - b)} {pt(cx + a, cy)}"
             f"C{pt(cx + a, cy + b)} {pt(cx + k * a, cy + b)} {pt(cx, cy)}"
@@ -151,7 +152,7 @@ def infinito(cx, cy, a, b):
 
 
 def simetrico(mitad, cx=128):
-    """Polígono simétrico respecto a x = cx, a partir de su mitad izquierda dada como (distancia al eje, y) de arriba abajo."""
+    """Polígono simétrico respecto a x = cx a partir de su mitad izquierda: (distancia al eje, y), de arriba abajo."""
     puntos = [(cx - dx, y) for dx, y in mitad] + [(cx + dx, y) for dx, y in reversed(mitad)]
     limpios = [p for i, p in enumerate(puntos) if p != puntos[i - 1]]      # los puntos sobre el eje no se repiten
     return "M" + "L".join(pt(p) for p in limpios) + "Z"
@@ -165,7 +166,7 @@ def parada(offset, color, opacidad=None):
 
 
 def lineal(id_, paradas, x1=0, y1=0, x2=0, y2=1, absoluto=False):
-    """<linearGradient>; por defecto vertical sobre el recuadro del objeto, con absoluto=True en coordenadas del lienzo."""
+    """<linearGradient>: vertical sobre el recuadro del objeto, o con absoluto=True en coordenadas del lienzo."""
     unidades = ' gradientUnits="userSpaceOnUse"' if absoluto else ""
     cuerpo = "\n".join(f"  {parada(*p)}" for p in paradas)
     return (f'<linearGradient id="{id_}"{unidades} x1="{n(x1)}" y1="{n(y1)}" x2="{n(x2)}" y2="{n(y2)}">\n'
@@ -218,7 +219,8 @@ def icono(id_, titulo, nota, defs=(), cuerpo=(), *, luz=0.12, claro=False):
     """El SVG completo de un icono: sombra, baldosa con degradado, luz y borde finos, y el glifo (`cuerpo`).
 
     `defs` son degradados extra del glifo (ids con el prefijo del icono), `luz` la opacidad del brillo blanco de la
-    mitad de arriba (0 en las baldosas claras) y `claro` marca una baldosa clara, que necesita el borde de abajo más marcado.
+    mitad de arriba (0 en las baldosas claras) y `claro` marca una baldosa clara, que lleva más marcado el borde de
+    abajo.
     """
     arriba, abajo = COLORES[id_]
     todos = [lineal(f"{id_}-fondo", [(0, arriba), (1, abajo)])]
@@ -291,7 +293,8 @@ def svg_netflix():
 def svg_hbo_max():
     """Una «H» cursiva hecha con tres barras de esquinas redondeadas."""
     barras = ('<g transform="translate(128 128) skewX(-9) translate(-128 -128)">'
-              '<rect x="70" y="60" width="38" height="136" rx="14"/><rect x="148" y="60" width="38" height="136" rx="14"/>'
+              '<rect x="70" y="60" width="38" height="136" rx="14"/>'
+              '<rect x="148" y="60" width="38" height="136" rx="14"/>'
               '<rect x="96" y="112" width="64" height="32" rx="4"/></g>')
     return icono("hbo-max", "HBO Max", "Monograma «H» cursiva de barras redondeadas, propio.",
                  defs=[blanco("hbo-max", 56, 200, "#d9c8ff")],
@@ -304,7 +307,8 @@ def svg_disney_plus():
     cuerpo = capa([f'<path fill="none" d="{arco(126, 146, 84, -168, -34)}"/>'], None, "url(#disney-plus-glifo)", 16)
     cuerpo += capa(['<path d="M124 118V190M88 154H160"/>'], None, "url(#disney-plus-glifo)", 28)
     cuerpo += capa([f'<path d="{estrella4(fin[0], fin[1], 27, 0.1, 0.46)}"/>'], "url(#disney-plus-glifo)")
-    return icono("disney-plus", "Disney+", "Un «+» bajo un arco que acaba en estrella; sin tipografía ni silueta de marca.",
+    return icono("disney-plus", "Disney+",
+                 "Un «+» bajo un arco que acaba en estrella; sin tipografía ni silueta de marca.",
                  defs=[blanco("disney-plus", 50, 200, "#cfdcff")], cuerpo=cuerpo)
 
 
@@ -343,7 +347,8 @@ def svg_notebooklm():
                  claro=True, luz=0,
                  defs=[lineal("notebooklm-tapa", [(0, "#4a5bdc"), (1, "#242d8a")], 0, 56, 0, 206, absoluto=True),
                        lineal("notebooklm-anilla", [(0, "#f7f8ff"), (1, "#b4bce0")], 0, 70, 0, 200, absoluto=True),
-                       lineal("notebooklm-destello", [(0, "#ffd54a"), (1, "#ff8a1f")], 147, 34, 197, 122, absoluto=True)],
+                       lineal("notebooklm-destello", [(0, "#ffd54a"), (1, "#ff8a1f")], 147, 34, 197, 122,
+                              absoluto=True)],
                  cuerpo=cuerpo)
 
 
@@ -379,7 +384,8 @@ def svg_youtube():
     cuerpo = [f'<rect x="42" y="70" width="172" height="118" rx="40" fill="{NEGRO}" fill-opacity="0.28"/>',
               '<rect x="43" y="71" width="170" height="116" rx="39" fill="none" stroke="#ffffff" stroke-opacity="0.18"'
               ' stroke-width="2"/>']
-    cuerpo += capa(['<path d="M114 102V156L158 129Z"/>'], "url(#youtube-glifo)", "url(#youtube-glifo)", 12, opacidad=0.28)
+    cuerpo += capa(['<path d="M114 102V156L158 129Z"/>'], "url(#youtube-glifo)", "url(#youtube-glifo)", 12,
+                   opacidad=0.28)
     return icono("youtube", "YouTube", "Pastilla con un triángulo de reproducción blanco.",
                  defs=[blanco("youtube", 90, 170, "#ffe3e3")], cuerpo=cuerpo)
 
@@ -398,7 +404,8 @@ def svg_chrome():
                f'<path d="{cortes}" fill="none" stroke="#ffffff" stroke-width="5"/>',
                f'<circle cx="{cx}" cy="{cy}" r="40" fill="#ffffff"/>',
                f'<circle cx="{cx}" cy="{cy}" r="30" fill="url(#chrome-centro)"/>']
-    return icono("chrome", "Google Chrome", "Rueda de cuatro colores con centro azul: un navegador, sin copiar el logotipo.",
+    return icono("chrome", "Google Chrome",
+                 "Rueda de cuatro colores con centro azul: un navegador, sin copiar el logotipo.",
                  claro=True, luz=0,
                  defs=[lineal("chrome-centro", [(0, "#5a9bff"), (1, "#1a62d8")], 0, 98, 0, 158, absoluto=True)],
                  cuerpo=cuerpo)
@@ -409,7 +416,8 @@ def svg_brave():
     dy = -5                                              # todo el dibujo, subido para que quede centrado
     escudo = (f"M64 {58 + dy}H192V{120 + dy}C192 {162 + dy} 166 {190 + dy} 128 {212 + dy}"
               f"C90 {190 + dy} 64 {162 + dy} 64 {120 + dy}Z")
-    melena = [(0, 90), (18, 90), (34, 72), (40, 98), (50, 114), (40, 124), (47, 141), (33, 145), (33, 160), (16, 164), (0, 180)]
+    melena = [(0, 90), (18, 90), (34, 72), (40, 98), (50, 114), (40, 124), (47, 141), (33, 145), (33, 160),
+              (16, 164), (0, 180)]
     cara = [(0, 112), (16, 112), (26, 120), (26, 138), (12, 154), (0, 160)]
     k, y0 = 1.25, 130                                    # la cabeza, ampliada alrededor de (128, 130)
 
@@ -421,7 +429,8 @@ def svg_brave():
               f'M{pt(128 + 33 * k, ojo_y)}L{pt(128 + 12 * k, ojo_y + 8 * k)}"/>'
               f'<path d="M{pt(128 - 12 * k, nariz_y)}H{n(128 + 12 * k)}L{pt(128, nariz_y + 13 * k)}Z"/>')
     cuerpo = capa([f'<path d="{escudo}"/>'], "url(#brave-glifo)", "url(#brave-glifo)", 14)
-    cuerpo += [f'<path d="{aumenta(melena)}" fill="#e0451d" stroke="#e0451d" stroke-width="8" stroke-linejoin="round"/>',
+    cuerpo += [f'<path d="{aumenta(melena)}" fill="#e0451d" stroke="#e0451d" stroke-width="8"'
+               ' stroke-linejoin="round"/>',
                f'<path d="{aumenta(cara)}" fill="#f4764a" stroke="#f4764a" stroke-width="6" stroke-linejoin="round"/>',
                f'<g fill="#ffffff" stroke="#ffffff" stroke-width="8" stroke-linecap="round"'
                f' stroke-linejoin="round">{rasgos}</g>']
@@ -445,7 +454,7 @@ def svg_tienda():
                  cuerpo=cuerpo)
 
 
-# los de las apps del catálogo (tienda/iconos/<id>.svg), en el orden del catálogo; el de la Tienda va aparte (tienda.svg)
+# los de las apps del catálogo (tienda/iconos/<id>.svg), en su orden; el de la Tienda va aparte (tienda.svg)
 ICONOS = {
     "spotify": svg_spotify, "antigravity": svg_antigravity, "netflix": svg_netflix, "hbo-max": svg_hbo_max,
     "disney-plus": svg_disney_plus, "claude": svg_claude, "gemini": svg_gemini, "notebooklm": svg_notebooklm,
@@ -474,7 +483,7 @@ def escribir(base=BASE):
 
 
 def hoja_de_prueba(salida="/tmp/tienda-iconos.png", base=BASE):
-    """Hoja de contacto (necesita rsvg-convert y ImageMagick): los 13 iconos a 128 y a 48 px, sobre oscuro y sobre claro."""
+    """Hoja de contacto (con rsvg-convert e ImageMagick): los 13 iconos a 128 y a 48 px, sobre oscuro y sobre claro."""
     with tempfile.TemporaryDirectory() as tmp:
         franjas = []
         for lado, fondo, columnas in ((128, FONDO_OSCURO, 7), (128, FONDO_CLARO, 7),
@@ -485,8 +494,8 @@ def hoja_de_prueba(salida="/tmp/tienda-iconos.png", base=BASE):
                 subprocess.run(["rsvg-convert", "-w", str(lado), "-h", str(lado), "-o", png, ruta], check=True)
                 pngs.append(png)
             franja = os.path.join(tmp, f"franja-{len(franjas)}.png")
-            subprocess.run(["montage", *pngs, "-tile", f"{columnas}x", "-geometry", "+8+8", "-background", fondo, franja],
-                           check=True)
+            subprocess.run(["montage", *pngs, "-tile", f"{columnas}x", "-geometry", "+8+8", "-background", fondo,
+                            franja], check=True)
             franjas.append(franja)
         subprocess.run(["convert", *franjas, "-background", FONDO_OSCURO, "-gravity", "center", "-append", salida],
                        check=True)
@@ -496,7 +505,8 @@ def hoja_de_prueba(salida="/tmp/tienda-iconos.png", base=BASE):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Genera los iconos SVG de la Tienda de Infinity OS.")
     ap.add_argument("--destino", default=BASE, metavar="DIR",
-                    help="raíz donde escribir tienda/iconos/*.svg y tienda.svg (por defecto overlay/usr/share/infinity)")
+                    help="raíz donde escribir tienda/iconos/*.svg y tienda.svg "
+                         "(por defecto overlay/usr/share/infinity)")
     ap.add_argument("--probar", nargs="?", const="/tmp/tienda-iconos.png", metavar="PNG",
                     help="además, deja una hoja de contacto en ese PNG (por defecto /tmp/tienda-iconos.png)")
     args = ap.parse_args(argv)

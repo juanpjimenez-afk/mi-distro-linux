@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Spotify</title>
+  <!-- Tres arcos de sonido que salen de un punto: ondas de audio, no el logotipo de la marca. -->
+  <defs>
+    <linearGradient id="spotify-fondo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1db954"/>
+      <stop offset="1" stop-color="#14833b"/>
+    </linearGradient>
+    <linearGradient id="spotify-luz" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="spotify-borde" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="0.4" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="0.75" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="spotify-glifo" gradientUnits="userSpaceOnUse" x1="0" y1="44" x2="0" y2="212">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dcffe8"/>
+    </linearGradient>
+  </defs>
+  <path d="M161.6 11C191.84 11 206.96 11 218.52 16.89A54 54 0 0 1 242.11 40.48C248 52.04 248 67.16 248 97.4V164.6C248 194.84 248 209.96 242.11 221.52A54 54 0 0 1 218.52 245.11C206.96 251 191.84 251 161.6 251H94.4C64.16 251 49.04 251 37.48 245.11A54 54 0 0 1 13.89 221.52C8 209.96 8 194.84 8 164.6V97.4C8 67.16 8 52.04 13.89 40.48A54 54 0 0 1 37.48 16.89C49.04 11 64.16 11 94.4 11Z" fill="#000000" fill-opacity="0.16"/>
+  <path d="M160.4 9C191.76 9 207.44 9 219.42 15.1A56 56 0 0 1 243.9 39.58C250 51.56 250 67.24 250 98.6V163.4C250 194.76 250 210.44 243.9 222.42A56 56 0 0 1 219.42 246.9C207.44 253 191.76 253 160.4 253H95.6C64.24 253 48.56 253 36.58 246.9A56 56 0 0 1 12.1 222.42C6 210.44 6 194.76 6 163.4V98.6C6 67.24 6 51.56 12.1 39.58A56 56 0 0 1 36.58 15.1C48.56 9 64.24 9 95.6 9Z" fill="#000000" fill-opacity="0.08"/>
+  <path d="M159.8 9C191.72 9 207.68 9 219.88 15.21A57 57 0 0 1 244.79 40.12C251 52.32 251 68.28 251 100.2V163.8C251 195.72 251 211.68 244.79 223.88A57 57 0 0 1 219.88 248.79C207.68 255 191.72 255 159.8 255H96.2C64.28 255 48.32 255 36.12 248.79A57 57 0 0 1 11.21 223.88C5 211.68 5 195.72 5 163.8V100.2C5 68.28 5 52.32 11.21 40.12A57 57 0 0 1 36.12 15.21C48.32 9 64.28 9 96.2 9Z" fill="#000000" fill-opacity="0.04"/>
+  <path d="M161.6 8C191.84 8 206.96 8 218.52 13.89A54 54 0 0 1 242.11 37.48C248 49.04 248 64.16 248 94.4V161.6C248 191.84 248 206.96 242.11 218.52A54 54 0 0 1 218.52 242.11C206.96 248 191.84 248 161.6 248H94.4C64.16 248 49.04 248 37.48 242.11A54 54 0 0 1 13.89 218.52C8 206.96 8 191.84 8 161.6V94.4C8 64.16 8 49.04 13.89 37.48A54 54 0 0 1 37.48 13.89C49.04 8 64.16 8 94.4 8Z" fill="url(#spotify-fondo)"/>
+  <path d="M161.6 8C191.84 8 206.96 8 218.52 13.89A54 54 0 0 1 242.11 37.48C248 49.04 248 64.16 248 94.4V161.6C248 191.84 248 206.96 242.11 218.52A54 54 0 0 1 218.52 242.11C206.96 248 191.84 248 161.6 248H94.4C64.16 248 49.04 248 37.48 242.11A54 54 0 0 1 13.89 218.52C8 206.96 8 191.84 8 161.6V94.4C8 64.16 8 49.04 13.89 37.48A54 54 0 0 1 37.48 13.89C49.04 8 64.16 8 94.4 8Z" fill="url(#spotify-luz)"/>
+  <path d="M162.2 9C191.88 9 206.72 9 218.06 14.78A53 53 0 0 1 241.22 37.94C247 49.28 247 64.12 247 93.8V162.2C247 191.88 247 206.72 241.22 218.06A53 53 0 0 1 218.06 241.22C206.72 247 191.88 247 162.2 247H93.8C64.12 247 49.28 247 37.94 241.22A53 53 0 0 1 14.78 218.06C9 206.72 9 191.88 9 162.2V93.8C9 64.12 9 49.28 14.78 37.94A53 53 0 0 1 37.94 14.78C49.28 9 64.12 9 93.8 9Z" fill="none" stroke="url(#spotify-borde)" stroke-width="2"/>
+  <g transform="translate(0 4)" opacity="0.22">
+    <g fill="#000000" stroke="#000000" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+      <path fill="none" d="M105.93 101.21A34 34 0 0 1 105.93 154.79M123.17 79.14A62 62 0 0 1 123.17 176.86M140.41 57.08A90 90 0 0 1 140.41 198.92"/>
+      <circle cx="85" cy="128" r="14" stroke="none"/>
+    </g>
+  </g>
+  <g fill="url(#spotify-glifo)" stroke="url(#spotify-glifo)" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+    <path fill="none" d="M105.93 101.21A34 34 0 0 1 105.93 154.79M123.17 79.14A62 62 0 0 1 123.17 176.86M140.41 57.08A90 90 0 0 1 140.41 198.92"/>
+    <circle cx="85" cy="128" r="14" stroke="none"/>
+  </g>
+</svg>

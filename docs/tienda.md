@@ -39,6 +39,7 @@ shell/infinity_shell/
   tienda_webapps.py    WebApps: navegador, lanzador .desktop, iconos, quitar/reparar (sin GTK)
   tienda_ops.py        estados, planes, Ejecutor (hilo + progreso), Gestor (cola, dependencias, espacio) (sin GTK)
   tienda_app.py        la ventana GTK 4 (tarjetas, búsqueda, categorías, progreso)
+  tienda_cli.py        lo mismo desde la terminal: infinity-tienda listar | instalar <id> | quitar <id> | actualizar <id>
 overlay/
   usr/bin/infinity-tienda                              lanzador del comando
   usr/libexec/infinity/tienda-ayudante                 la parte de ROOT (la lanza pkexec); un solo fichero, sin imports propios
@@ -62,6 +63,20 @@ sudo apt install pkexec policykit-1-gnome         # Ubuntu 25.04 o más; en 24.0
 python3 -m unittest discover -s shell/tests
 xvfb-run -a python3 -m unittest discover -s shell/tests
 ```
+
+### Desde la terminal
+
+La misma lógica (cola, dependencias, espacio, `pkexec`) sin ventana, para scripts y para probar:
+
+```bash
+infinity-tienda listar                         # las apps y su estado
+infinity-tienda instalar claude                # una WebApp (pide elegir navegador si no hay ninguno)
+infinity-tienda instalar netflix --si          # …y acepta instalar Google Chrome antes
+infinity-tienda instalar antigravity           # APT: pkexec pide tu contraseña de administrador
+infinity-tienda quitar spotify
+```
+
+Códigos de salida: 0 bien, 1 falló, 2 uso incorrecto o hace falta una decisión (`--navegador ID` / `--si`).
 
 ## Cómo funciona cada estrategia
 

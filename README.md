@@ -353,7 +353,7 @@ shell/            el shell propio: orbe, dock, estado, buscador y pAnkI (Python 
   infinity_shell/style.css              ← el estilo de cristal de las piezas
   tests/                                 pruebas automáticas (incluye un Hyprland simulado)
 branding/         logo (SVG), fotos de referencia, fondos, fuente de la hora e imagen del menú de arranque
-docs/             capturas, diseño de pAnkI e informe de revisión
+docs/             capturas, diseño de pAnkI, de Contraseñas y de la Tienda, e informe de revisión
 .github/workflows/build-iso.yml   construye la ISO en GitHub
 ```
 

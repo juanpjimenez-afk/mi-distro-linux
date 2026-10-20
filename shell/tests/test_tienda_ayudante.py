@@ -443,6 +443,8 @@ class TestParsearYExplicar(unittest.TestCase):
     def test_explicar_errores_de_apt(self):
         casos = {
             "E: Could not get lock /var/lib/dpkg/lock-frontend": "usando apt",
+            "Err:2 https://repo.org stable Release\n  OpenSSL error: error:0A000126:SSL routines::unexpected eof while reading": "tls",
+            "E: Failed to fetch https://repo.org/dists/x/InRelease  Certificate verification failed: certificate has expired": "tls",
             "E: Failed to fetch https://repo.org/dists/x/InRelease  404  Not Found [IP: 1.2.3.4 443]": "404",
             "E: The repository 'https://x stable' does not have a Release file.": "404",
             "Err:1 https://x  Temporary failure resolving 'x'": "conexión",
