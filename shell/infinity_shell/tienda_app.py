@@ -135,11 +135,11 @@ window.tienda-ventana label.tienda-subtitulo { color: rgba(233, 235, 247, 0.66);
   background-color: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 18px;
   transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }
+.tienda-tarjeta.tienda-expandida { border-color: rgba(185, 168, 255, 0.30); }
 .tienda-tarjeta:hover {
   border-color: #b9a8ff; background-color: rgba(185, 168, 255, 0.055);
   box-shadow: 0 0 0 1px rgba(185, 168, 255, 0.30), 0 6px 20px rgba(185, 168, 255, 0.22);
 }
-.tienda-tarjeta.tienda-expandida { border-color: rgba(185, 168, 255, 0.30); }
 .tienda-franja { min-height: 3px; opacity: 0.8; }
 window.tienda-ventana label.tienda-nombre { font-size: 15px; font-weight: 600; }
 window.tienda-ventana label.tienda-resumen { font-size: 12.5px; color: rgba(233, 235, 247, 0.68); }
@@ -328,6 +328,10 @@ def ruta_icono_tienda():
     """El SVG de la propia Tienda: el instalado o el del repositorio (al desarrollar). None si no está."""
     aqui = os.path.dirname(os.path.abspath(__file__))
     repo = os.path.abspath(os.path.join(aqui, "..", "..", "overlay", "usr", "share", "infinity"))
+    for carpeta in (RUTA_BASE_SISTEMA, repo):      # primero la imagen elegida (tienda.png); el SVG queda de respaldo
+        ruta = os.path.join(carpeta, "tienda.png")
+        if os.path.isfile(ruta):
+            return ruta
     return C.ruta_icono("tienda", carpetas=(RUTA_BASE_SISTEMA, repo))
 
 

@@ -167,6 +167,7 @@ class TestCatalogoEnLaIso(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(OVERLAY, "usr", "share", "infinity", "tienda", "iconos",
                                                         a.nombre_icono + ".svg")), a.id)
         self.assertTrue(os.path.isfile(os.path.join(OVERLAY, "usr", "share", "infinity", "tienda.svg")))
+        self.assertTrue(os.path.isfile(os.path.join(OVERLAY, "usr", "share", "infinity", "tienda.png")))
 
     def test_el_catalogo_no_lo_puede_escribir_nadie_mas_en_el_repo(self):
         modo = os.stat(os.path.join(OVERLAY, "usr", "share", "infinity", "tienda", "catalogo.json")).st_mode

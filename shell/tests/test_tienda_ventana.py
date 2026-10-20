@@ -88,7 +88,9 @@ class GestorFalso:
 class RatonX:
     """Ratón y teclado REALES para el servidor X (la extensión XTest, con ctypes): no se llama a ningún método de GTK, el
     servidor entrega los eventos como si los hiciera una persona. Es la única forma de comprobar de verdad que un clic llega
-    a un botón de la rejilla (el Gtk.FlowBox se los comía). Lanza OSError si no hay libX11/libXtst o el servidor no tiene XTest."""
+    a un botón de la rejilla (el Gtk.FlowBox se los comía). Lanza OSError si no hay libX11/libXtst, si el servidor no tiene
+    XTest o si hay un gestor de ventanas en marcha: en un escritorio de verdad estas pruebas moverían tu ratón y podrían
+    pulsar sobre otra ventana, así que solo corren en una pantalla virtual (xvfb-run) sin gestor."""
 
     KEYSYM_ESC, KEYSYM_CONTROL = 0xFF1B, 0xFFE3
 
@@ -109,6 +111,29 @@ class RatonX:
         a, b, c, d = (ctypes.c_int() for _ in range(4))
         if not self.xtst.XTestQueryExtension(self.dpy, a, b, c, d):
             raise OSError("el servidor X no tiene la extensión XTest")
+        if self._hay_gestor_de_ventanas():
+            raise OSError("hay un gestor de ventanas: no es una pantalla virtual, no se mueve el ratón de verdad")
+
+    def _hay_gestor_de_ventanas(self):
+        """¿Declara algún gestor de ventanas (_NET_SUPPORTING_WM_CHECK) en la ventana raíz? Xvfb a secas, no."""
+        p, i, ul = ctypes.c_void_p, ctypes.c_int, ctypes.c_ulong
+        self.x11.XInternAtom.restype, self.x11.XInternAtom.argtypes = ul, [p, ctypes.c_char_p, i]
+        self.x11.XDefaultRootWindow.restype, self.x11.XDefaultRootWindow.argtypes = ul, [p]
+        self.x11.XGetWindowProperty.restype = i
+        self.x11.XGetWindowProperty.argtypes = [p, ul, ul, ctypes.c_long, ctypes.c_long, i, ul, ctypes.POINTER(ul),
+                                                ctypes.POINTER(i), ctypes.POINTER(ul), ctypes.POINTER(ul),
+                                                ctypes.POINTER(ctypes.c_void_p)]
+        self.x11.XFree.argtypes = [p]
+        atomo = self.x11.XInternAtom(self.dpy, b"_NET_SUPPORTING_WM_CHECK", 1)
+        if not atomo:
+            return False
+        tipo, formato, n, resto, datos = ul(), i(), ul(), ul(), ctypes.c_void_p()
+        self.x11.XGetWindowProperty(self.dpy, self.x11.XDefaultRootWindow(self.dpy), atomo, 0, 1, 0, 0,
+                                    ctypes.byref(tipo), ctypes.byref(formato), ctypes.byref(n), ctypes.byref(resto),
+                                    ctypes.byref(datos))
+        if datos.value:
+            self.x11.XFree(datos)
+        return tipo.value != 0
 
     def mover(self, x, y):
         self.xtst.XTestFakeMotionEvent(self.dpy, -1, int(x), int(y), 0)
@@ -420,7 +445,7 @@ class TestFunciones(BaseVentana):
     def test_el_icono_de_la_tienda_esta_en_el_repositorio(self):
         ruta = self.X.ruta_icono_tienda()
         self.assertIsNotNone(ruta)
-        self.assertTrue(ruta.endswith("tienda.svg"))
+        self.assertTrue(ruta.endswith("tienda.png"))
 
 
 # ============================================================================== abrir apps y enlaces
@@ -1689,6 +1714,28 @@ class TestEventosReales(BaseVentana):
         for c in texto:
             self.x.tecla(ord(c))
             self.pump(0.04)
+
+    def test_se_niega_a_mover_el_raton_de_verdad_si_hay_un_gestor_de_ventanas(self):
+        """En un escritorio de verdad estas pruebas no deben tocar el ratón: se detecta por _NET_SUPPORTING_WM_CHECK."""
+        x11, ul = self.x.x11, ctypes.c_ulong
+        x11.XInternAtom.argtypes, x11.XInternAtom.restype = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int], ul
+        x11.XChangeProperty.argtypes = [ctypes.c_void_p, ul, ul, ul, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        x11.XDeleteProperty.argtypes = [ctypes.c_void_p, ul, ul]
+        raiz = x11.XDefaultRootWindow(self.x.dpy)
+        atomo = x11.XInternAtom(self.x.dpy, b"_NET_SUPPORTING_WM_CHECK", 0)
+
+        def quitar():
+            x11.XDeleteProperty(self.x.dpy, raiz, atomo)
+            x11.XFlush(self.x.dpy)
+
+        self.addCleanup(quitar)
+        x11.XChangeProperty(self.x.dpy, raiz, atomo, 33, 32, 0, ctypes.c_char_p(raiz.to_bytes(8, "little")), 1)   # XA_WINDOW
+        x11.XFlush(self.x.dpy)
+        with self.assertRaises(OSError) as e:
+            RatonX()
+        self.assertIn("gestor de ventanas", str(e.exception))
+        quitar()
+        RatonX()                                  # sin la propiedad, vuelve a valer
 
     def test_un_clic_real_en_instalar_llega_al_gestor(self):
         v = self.real()
