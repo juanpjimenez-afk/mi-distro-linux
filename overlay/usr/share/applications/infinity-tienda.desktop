@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tienda
+GenericName=Tienda de aplicaciones
+Comment=Instala Spotify, Antigravity, Chrome, Netflix, YouTube, Claude, Gemini y más con un clic
+Exec=infinity-tienda
+Icon=/usr/share/infinity/tienda.svg
+Terminal=false
+Categories=System;PackageManager;
+Keywords=tienda;apps;aplicaciones;instalar;spotify;netflix;youtube;claude;gemini;antigravity;chrome;brave;flatpak;webapp;store;
+StartupWMClass=org.infinity.Tienda
+X-Infinity-Biblioteca=siempre

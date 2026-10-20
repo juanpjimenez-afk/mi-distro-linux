@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<!--
+  Tienda de Infinity OS: permiso para que el ayudante de root instale, actualice o quite aplicaciones de los
+  repositorios APT de terceros listados en /usr/share/infinity/tienda/catalogo.json (Antigravity, Chrome, Brave).
+  Lo pide pkexec desde la Tienda: una ventana gráfica pide la contraseña de administrador y la recuerda unos minutos
+  (auth_admin_keep), así que varias instalaciones seguidas piden la contraseña una sola vez.
+  El ayudante solo acepta «instalar|quitar|actualizar <id>» y toma todo lo demás del catálogo, que solo escribe root.
+-->
+<policyconfig>
+  <vendor>Infinity OS</vendor>
+
+  <action id="org.infinity.tienda.apt">
+    <description>Instalar, actualizar o quitar aplicaciones de la Tienda de Infinity</description>
+    <message>Se necesita autorización de administrador para instalar, actualizar o quitar una aplicación</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/infinity/tienda-ayudante</annotate>
+  </action>
+</policyconfig>

@@ -238,6 +238,18 @@ de tu contraseña maestra con scrypt) y, con el guardado de cambios activado, so
 3 minutos sin usarlo, al suspender y con el botón; el portapapeles se borra a los 25 s. **Si olvidas la contraseña maestra,
 no hay forma de recuperar lo guardado.** Modelo de seguridad y límites (honestos) en [`docs/boveda.md`](docs/boveda.md).
 
+### Tienda
+
+Instala aplicaciones con un clic; sale en la **biblioteca de apps** (el botón de rejilla del dock) y en el buscador
+(`Super + Espacio`, «tienda»). Trae **Spotify** (Flatpak, sin contraseña), **Google Antigravity**, **Google Chrome** y
+**Brave** (repositorios APT de sus fabricantes: la tienda añade la clave GPG, registra el repositorio e instala con
+`apt`, pidiendo tu contraseña de administrador en una ventana de **polkit**) y las **WebApps** de Netflix, HBO Max,
+Disney+, YouTube, Claude, Gemini, NotebookLM y Google Classroom (un lanzador con su icono que abre la web en una ventana
+propia de Chrome/Brave; si no tienes uno, la tienda te ofrece instalarlo). Sin libadwaita: Python + GTK 4 como el resto
+del shell. **Límites honestos**: el repositorio APT de Antigravity es el de la serie 1.x y Google ya no lo actualiza; las
+series con DRM necesitan Chrome (Widevine); y las instalaciones reales contra los servidores de los fabricantes no se
+pudieron probar desde la sandbox de desarrollo. Diseño, seguridad y límites en [`docs/tienda.md`](docs/tienda.md).
+
 ## Optimización
 
 Qué se hizo para que sea ligera, y por qué:
@@ -357,6 +369,7 @@ docs/             capturas, diseño de pAnkI e informe de revisión
 | Cambiar el aspecto de dock/orbe/buscador | `shell/infinity_shell/style.css` |
 | Apps fijadas en el dock | `overlay/etc/infinity/fijados` (o clic derecho en el dock) |
 | Icono del Calendario (31 días) | `branding/make_calendario.py` |
+| Añadir una app a la Tienda | `overlay/usr/share/infinity/tienda/catalogo.json` (+ su icono en `branding/make_tienda_iconos.py`) |
 | Fondo de pantalla | `branding/make_assets.py` (genera `wallpaper.jpg`) |
 | Cambiar el nombre del sistema | `OS_NAME` en `build/config.env` |
 

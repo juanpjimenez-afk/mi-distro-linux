@@ -1,0 +1,224 @@
+{
+  "version": 1,
+  "categorias": [
+    {"id": "entretenimiento", "nombre": "Música y vídeo"},
+    {"id": "ia", "nombre": "Inteligencia artificial"},
+    {"id": "estudio", "nombre": "Estudio"},
+    {"id": "desarrollo", "nombre": "Desarrollo"},
+    {"id": "navegadores", "nombre": "Navegadores"}
+  ],
+  "apps": [
+    {
+      "id": "spotify",
+      "nombre": "Spotify",
+      "resumen": "Música y podcasts en streaming.",
+      "descripcion": "Cliente de Spotify de Flathub. Se instala solo para tu usuario, sin contraseña de administrador. La primera vez descarga también el entorno de Flatpak (cerca de 1 GB).",
+      "categoria": "entretenimiento",
+      "tipo": "flatpak",
+      "origen": {
+        "remoto": "flathub",
+        "url_remoto": "https://dl.flathub.org/repo/flathub.flatpakrepo",
+        "ref": "com.spotify.Client"
+      },
+      "color": "#1db954",
+      "web": "https://www.spotify.com/",
+      "tamano_mb": 1000,
+      "desktop_ids": ["com.spotify.Client.desktop"]
+    },
+    {
+      "id": "antigravity",
+      "nombre": "Google Antigravity",
+      "resumen": "Entorno de desarrollo con agentes de IA, de Google.",
+      "descripcion": "IDE de Google para programar con agentes de IA. La tienda añade la clave de confianza GPG de Google, registra su repositorio APT e instala el paquete antigravity; te pide tu autorización de administrador una sola vez.",
+      "categoria": "desarrollo",
+      "tipo": "apt",
+      "origen": {
+        "paquete": "antigravity",
+        "uri": "https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/",
+        "suite": "antigravity-debian",
+        "componentes": ["main"],
+        "clave_url": "https://us-central1-apt.pkg.dev/doc/repo-signing-key.gpg",
+        "archivo_clave": "/etc/apt/keyrings/antigravity-repo-key.gpg",
+        "archivo_fuente": "antigravity.list"
+      },
+      "color": "#6d7cff",
+      "web": "https://antigravity.google/",
+      "aviso": "Según Google, este repositorio APT es el de la serie 1.x y ya no se actualiza (la última es la 1.23.2). Las versiones 2.x se descargan desde antigravity.google.",
+      "tamano_mb": 700,
+      "desktop_ids": ["antigravity.desktop"]
+    },
+    {
+      "id": "netflix",
+      "nombre": "Netflix",
+      "resumen": "Series y películas.",
+      "descripcion": "Netflix en su propia ventana, como una aplicación. La tienda crea el lanzador y su icono; el vídeo lo reproduce el navegador Chromium que tengas instalado.",
+      "categoria": "entretenimiento",
+      "tipo": "webapp",
+      "origen": {
+        "url": "https://www.netflix.com/browse",
+        "drm": true,
+        "categorias_desktop": ["AudioVideo", "Video", "Network"],
+        "palabras_clave": ["series", "peliculas", "cine", "streaming"]
+      },
+      "color": "#e50914",
+      "web": "https://www.netflix.com/",
+      "aviso": "Usa DRM (Widevine): funciona con Google Chrome; en Brave puede pedirte activarlo la primera vez."
+    },
+    {
+      "id": "hbo-max",
+      "nombre": "HBO Max",
+      "resumen": "Series, películas y estrenos de HBO.",
+      "descripcion": "HBO Max en su propia ventana, como una aplicación. La tienda crea el lanzador y su icono; el vídeo lo reproduce el navegador Chromium que tengas instalado.",
+      "categoria": "entretenimiento",
+      "tipo": "webapp",
+      "origen": {
+        "url": "https://play.hbomax.com/",
+        "drm": true,
+        "categorias_desktop": ["AudioVideo", "Video", "Network"],
+        "palabras_clave": ["hbo", "max", "series", "peliculas", "streaming"]
+      },
+      "color": "#5822b4",
+      "web": "https://www.hbomax.com/",
+      "aviso": "Usa DRM (Widevine): funciona con Google Chrome; en Brave puede pedirte activarlo la primera vez."
+    },
+    {
+      "id": "disney-plus",
+      "nombre": "Disney+",
+      "resumen": "Disney, Pixar, Marvel, Star Wars y más.",
+      "descripcion": "Disney+ en su propia ventana, como una aplicación. La tienda crea el lanzador y su icono; el vídeo lo reproduce el navegador Chromium que tengas instalado.",
+      "categoria": "entretenimiento",
+      "tipo": "webapp",
+      "origen": {
+        "url": "https://www.disneyplus.com/",
+        "drm": true,
+        "categorias_desktop": ["AudioVideo", "Video", "Network"],
+        "palabras_clave": ["disney", "pixar", "marvel", "star wars", "streaming"]
+      },
+      "color": "#113ccf",
+      "web": "https://www.disneyplus.com/",
+      "aviso": "Usa DRM (Widevine): funciona con Google Chrome; en Brave puede pedirte activarlo la primera vez."
+    },
+    {
+      "id": "youtube",
+      "nombre": "YouTube",
+      "resumen": "Vídeos y música de todo el mundo.",
+      "descripcion": "YouTube en su propia ventana, como una aplicación, con tu cuenta de Google y sin abrir un navegador entero.",
+      "categoria": "entretenimiento",
+      "tipo": "webapp",
+      "origen": {
+        "url": "https://www.youtube.com/",
+        "categorias_desktop": ["AudioVideo", "Video", "Network"],
+        "palabras_clave": ["videos", "musica", "streaming"]
+      },
+      "color": "#ff0000",
+      "web": "https://www.youtube.com/"
+    },
+    {
+      "id": "claude",
+      "nombre": "Claude",
+      "resumen": "El asistente de IA de Anthropic.",
+      "descripcion": "Claude en su propia ventana, como una aplicación: conversa, escribe, programa y analiza documentos.",
+      "categoria": "ia",
+      "tipo": "webapp",
+      "origen": {
+        "url": "https://claude.ai/",
+        "categorias_desktop": ["Utility", "Network"],
+        "palabras_clave": ["ia", "asistente", "chat", "anthropic", "inteligencia artificial"]
+      },
+      "color": "#d97757",
+      "web": "https://claude.ai/"
+    },
+    {
+      "id": "gemini",
+      "nombre": "Gemini",
+      "resumen": "El asistente de IA de Google.",
+      "descripcion": "Gemini en su propia ventana, como una aplicación, con tu cuenta de Google.",
+      "categoria": "ia",
+      "tipo": "webapp",
+      "origen": {
+        "url": "https://gemini.google.com/app",
+        "categorias_desktop": ["Utility", "Network"],
+        "palabras_clave": ["ia", "asistente", "chat", "google", "inteligencia artificial"]
+      },
+      "color": "#4285f4",
+      "web": "https://gemini.google.com/"
+    },
+    {
+      "id": "notebooklm",
+      "nombre": "NotebookLM",
+      "resumen": "Cuadernos de IA que estudian tus documentos.",
+      "descripcion": "NotebookLM en su propia ventana, como una aplicación: sube tus fuentes y pregúntales, resume o genera guías de estudio.",
+      "categoria": "ia",
+      "tipo": "webapp",
+      "origen": {
+        "url": "https://notebooklm.google.com/",
+        "categorias_desktop": ["Education", "Utility", "Network"],
+        "palabras_clave": ["ia", "notas", "estudio", "google", "documentos"]
+      },
+      "color": "#2d3a8c",
+      "web": "https://notebooklm.google.com/"
+    },
+    {
+      "id": "classroom",
+      "nombre": "Google Classroom",
+      "resumen": "Clases, tareas y materiales del curso.",
+      "descripcion": "Google Classroom en su propia ventana, como una aplicación, para ver tus clases y entregar tareas.",
+      "categoria": "estudio",
+      "tipo": "webapp",
+      "origen": {
+        "url": "https://classroom.google.com/",
+        "categorias_desktop": ["Education", "Network"],
+        "palabras_clave": ["clases", "tareas", "colegio", "universidad", "google"]
+      },
+      "color": "#0f9d58",
+      "web": "https://classroom.google.com/"
+    },
+    {
+      "id": "chrome",
+      "nombre": "Google Chrome",
+      "resumen": "Navegador de Google. El recomendado para las WebApps.",
+      "descripcion": "Incluye Widevine, así que Netflix, Disney+ y HBO Max se ven sin ajustes extra. Las WebApps de la tienda lo usan en modo aplicación. Se instala desde el repositorio APT oficial de Google.",
+      "categoria": "navegadores",
+      "tipo": "apt",
+      "origen": {
+        "paquete": "google-chrome-stable",
+        "uri": "https://dl.google.com/linux/chrome/deb/",
+        "suite": "stable",
+        "componentes": ["main"],
+        "arquitecturas": ["amd64"],
+        "clave_url": "https://dl.google.com/linux/linux_signing_key.pub",
+        "archivo_clave": "/usr/share/keyrings/google-chrome.gpg",
+        "archivo_fuente": "google-chrome.sources"
+      },
+      "color": "#4285f4",
+      "web": "https://www.google.com/chrome/",
+      "tamano_mb": 450,
+      "desktop_ids": ["google-chrome.desktop"],
+      "navegador": true
+    },
+    {
+      "id": "brave",
+      "nombre": "Brave",
+      "resumen": "Navegador privado basado en Chromium.",
+      "descripcion": "Alternativa a Chrome con bloqueo de anuncios. Las WebApps de la tienda lo usan en modo aplicación. Se instala desde el repositorio APT oficial de Brave.",
+      "categoria": "navegadores",
+      "tipo": "apt",
+      "origen": {
+        "paquete": "brave-browser",
+        "uri": "https://brave-browser-apt-release.s3.brave.com/",
+        "suite": "stable",
+        "componentes": ["main"],
+        "arquitecturas": ["amd64"],
+        "clave_url": "https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg",
+        "archivo_clave": "/usr/share/keyrings/brave-browser-archive-keyring.gpg",
+        "archivo_fuente": "brave-browser-release.sources"
+      },
+      "color": "#fb542b",
+      "web": "https://brave.com/",
+      "aviso": "Para series con DRM (Netflix, Disney+, HBO Max) Brave puede pedirte activar Widevine la primera vez.",
+      "tamano_mb": 400,
+      "desktop_ids": ["brave-browser.desktop"],
+      "navegador": true
+    }
+  ]
+}

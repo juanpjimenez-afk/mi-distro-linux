@@ -1,0 +1,10 @@
+#!/bin/sh
+# Tienda de Infinity OS: instala aplicaciones con un clic. Spotify (Flatpak, sin contraseña), Google Antigravity,
+# Google Chrome y Brave (repositorios APT de sus fabricantes, con tu autorización de administrador) y las WebApps
+# (Netflix, HBO Max, Disney+, YouTube, Claude, Gemini, NotebookLM, Google Classroom: un lanzador que abre la web en una
+# ventana propia de Chrome/Brave). La lógica está en shell/infinity_shell/tienda_*.py (se instalan en /usr/lib/infinity);
+# la parte de root es /usr/libexec/infinity/tienda-ayudante, que lanza pkexec. Catálogo: /usr/share/infinity/tienda/.
+# Diseño y modelo de seguridad: docs/tienda.md
+export PYTHONPATH=/usr/lib/infinity
+export GSK_RENDERER="${GSK_RENDERER:-cairo}"
+exec python3 -m infinity_shell.tienda_app "$@"
