@@ -18,7 +18,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import isla_logica  # noqa: E402  (parseo de volumen compartido con la isla: tolera la coma decimal)
+from . import calendario_icono, isla_logica  # noqa: E402  (parseo de volumen compartido con la isla: tolera la coma decimal)
 from .ajustes import fecha_corta, valor as ajuste  # noqa: E402
 from .controles_logica import elegir_destino_clic, es_minimizada, restaurar  # noqa: E402
 
@@ -141,7 +141,7 @@ class Orbe(Gtk.Window):
 
 
 # =================================================================== DOCK
-DEFECTO_FIJADOS = ["foot.desktop", "org.gnome.Epiphany.desktop", "thunar.desktop"]
+DEFECTO_FIJADOS = ["foot.desktop", "org.gnome.Epiphany.desktop", "thunar.desktop", calendario_icono.ID_APP]
 
 
 def _rutas_fijados():
@@ -195,6 +195,7 @@ class Dock(Gtk.Window):
         self._en_curso = False
         self._repetir = False
         self._firma = None
+        self._cambio_dia = 0  # temporizador que repinta el icono del Calendario al cambiar de día
         _capa(self, "infinity-dock", [LayerShell.Edge.BOTTOM], None, exclusiva=True)
 
         self.caja = Gtk.Box(spacing=4)
@@ -223,6 +224,18 @@ class Dock(Gtk.Window):
         if hypr.disponible:
             hypr.escuchar(self._evento)
         self.refrescar()
+        self._programar_cambio_de_dia()
+
+    # --------------------------------------------------------- el icono del Calendario cambia cada día
+    def _programar_cambio_de_dia(self):
+        self._cambio_dia = GLib.timeout_add_seconds(calendario_icono.segundos_hasta_el_cambio_de_dia(),
+                                                    self._al_cambiar_de_dia)
+
+    def _al_cambiar_de_dia(self):
+        self._cambio_dia = 0
+        self.refrescar()  # la firma incluye el día: si cambió, se redibujan los botones con el icono nuevo
+        self._programar_cambio_de_dia()
+        return False
 
     # ----------------------------------------------------------------- eventos
     def _evento(self, nombre, datos):
@@ -290,7 +303,8 @@ class Dock(Gtk.Window):
         elementos = self._modelo(ventanas)
         # Solo se reconstruyen los botones si algo visible cambió. Reconstruir destruye los
         # menús abiertos, los tooltips y el estado de "hover", y gasta CPU para nada.
-        firma = tuple(
+        dia = calendario_icono.dia_hoy()  # el icono del Calendario lleva el número de hoy
+        firma = (dia,) + tuple(
             (el.app.id if el.app else "clase:" + (el.clase or "").casefold(), el.fijada,
              tuple((v["address"], es_minimizada(v)) for v in el.ventanas),
              any(v["address"] == activa for v in el.ventanas))

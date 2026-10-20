@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>Calendario — 27</title>
+  <defs>
+    <linearGradient id="pagina" gradientUnits="userSpaceOnUse" x1="38" y1="43" x2="473" y2="259">
+      <stop offset="0" stop-color="#00a6f9"/><stop offset="0.22" stop-color="#00a5f8"/>
+      <stop offset="0.55" stop-color="#0095f1"/><stop offset="1" stop-color="#0077e5"/>
+    </linearGradient>
+    <linearGradient id="base" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="512" y2="0">
+      <stop offset="0" stop-color="#00a6f9"/><stop offset="1" stop-color="#007ae6"/>
+    </linearGradient>
+    <radialGradient id="doblez" gradientUnits="userSpaceOnUse" cx="39" cy="259" r="270">
+      <stop offset="0" stop-color="#0050d2" stop-opacity="0.52"/>
+      <stop offset="0.2" stop-color="#0050d2" stop-opacity="0.34"/>
+      <stop offset="0.45" stop-color="#0050d2" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#0050d2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gris" gradientUnits="userSpaceOnUse" x1="0" y1="446" x2="0" y2="497">
+      <stop offset="0" stop-color="#5b6a6a"/><stop offset="0.45" stop-color="#8d9c9c"/>
+      <stop offset="0.75" stop-color="#b0bebe"/><stop offset="1" stop-color="#b1c0c0"/>
+    </linearGradient>
+    <linearGradient id="gris-sombra" gradientUnits="userSpaceOnUse" x1="38" y1="449" x2="92" y2="503">
+      <stop offset="0" stop-color="#2f3d3d" stop-opacity="0.5"/><stop offset="1" stop-color="#2f3d3d" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="anilla" gradientUnits="objectBoundingBox" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffbf00"/><stop offset="0.8" stop-color="#ffbd00"/>
+      <stop offset="0.93" stop-color="#ffaa00"/><stop offset="1" stop-color="#ff8f00"/>
+    </linearGradient>
+    <linearGradient id="sombra-anilla-i" gradientUnits="userSpaceOnUse" x1="196" y1="52" x2="236" y2="92">
+      <stop offset="0" stop-color="#0066e6" stop-opacity="0.78"/><stop offset="1" stop-color="#0066e6" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sombra-anilla-d" gradientUnits="userSpaceOnUse" x1="333" y1="52" x2="373" y2="92">
+      <stop offset="0" stop-color="#0066e6" stop-opacity="0.78"/><stop offset="1" stop-color="#0066e6" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="pliegue-numero" gradientUnits="userSpaceOnUse" x1="0" y1="258" x2="0" y2="292">
+      <stop offset="0" stop-color="#5a6b6b" stop-opacity="0"/>
+      <stop offset="0.03" stop-color="#5a6b6b" stop-opacity="0.13"/>
+      <stop offset="1" stop-color="#5a6b6b" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="hoja-gris">
+      <path d="M38,440 H473 V475 Q473,497 451,497 H60 Q38,497 38,475 Z"/>
+    </clipPath>
+    <clipPath id="trapecio">
+      <path d="M38,259 L2,425 Q-3,449 21,449 H491 Q515,449 510,425 L473,259 Z"/>
+    </clipPath>
+    <clipPath id="hoja">
+      <path d="M38,259 V61 Q38,43 56,43 H455 Q473,43 473,61 V259 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- hoja gris de detrás -->
+  <path d="M38,440 H473 V475 Q473,497 451,497 H60 Q38,497 38,475 Z" fill="url(#gris)"/>
+  <g clip-path="url(#hoja-gris)"><path d="M38,449 H108 L38,519 Z" fill="url(#gris-sombra)"/></g>
+
+  <!-- parte baja (en perspectiva) con la sombra del doblez -->
+  <path d="M38,259 L2,425 Q-3,449 21,449 H491 Q515,449 510,425 L473,259 Z" fill="url(#base)"/>
+  <g clip-path="url(#trapecio)">
+    <path d="M39,259 H520 V460 H232 Z" fill="url(#doblez)"/>
+  </g>
+
+  <!-- hoja de arriba -->
+  <path d="M38,259 V61 Q38,43 56,43 H455 Q473,43 473,61 V259 Z" fill="url(#pagina)"/>
+
+  <!-- sombras alargadas de las anillas -->
+  <g clip-path="url(#hoja)">
+    <path d="M201,40 L272,111 L240,145 L168,76 Z" fill="url(#sombra-anilla-i)"/>
+    <path d="M338,40 L409,111 L377,145 L305,76 Z" fill="url(#sombra-anilla-d)"/>
+  </g>
+
+  <!-- anillas -->
+  <rect x="165" y="14" width="37.5" height="69.5" rx="18.75" fill="url(#anilla)"/>
+  <rect x="302" y="14" width="37.5" height="69.5" rx="18.75" fill="url(#anilla)"/>
+
+  <!-- el número del día -->
+  <g fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+    <path transform="translate(116 149)" d="M17,62 C17,32 38,15 65,15 C92,15 113,32 113,60 C113,104 17,130 17,198 H113"/>
+    <path transform="translate(266 149)" d="M15,15 H115 L52,198"/>
+  </g>
+  <g fill="none" stroke="url(#pliegue-numero)" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+    <path transform="translate(116 149)" d="M17,62 C17,32 38,15 65,15 C92,15 113,32 113,60 C113,104 17,130 17,198 H113"/>
+    <path transform="translate(266 149)" d="M15,15 H115 L52,198"/>
+  </g>
+</svg>

@@ -5,6 +5,7 @@ import shlex
 
 from gi.repository import Gdk, Gio, GLib
 
+from . import calendario_icono
 from .search import normalizar, puntuar
 
 _ESTADO = os.path.join(GLib.get_user_state_dir(), "infinity")
@@ -12,14 +13,14 @@ _USO = os.path.join(_ESTADO, "uso.json")
 
 
 class App:
-    __slots__ = ("id", "info", "nombre", "descripcion", "icono", "ruta", "_n_nombre", "_n_extra", "wm_class", "binario")
+    __slots__ = ("id", "info", "nombre", "descripcion", "_icono", "ruta", "_n_nombre", "_n_extra", "wm_class", "binario")
 
     def __init__(self, info):
         self.info = info
         self.id = info.get_id() or ""
         self.nombre = info.get_name() or self.id
         self.descripcion = info.get_generic_name() or info.get_description() or ""
-        self.icono = info.get_icon()
+        self._icono = info.get_icon()
         self._n_nombre = normalizar(self.nombre)
         palabras = []
         if isinstance(info, Gio.DesktopAppInfo):
@@ -35,6 +36,13 @@ class App:
         except ValueError:
             self.binario = ""
         self._n_extra = normalizar(" ".join([self.descripcion, self.id.removesuffix(".desktop"), self.binario] + palabras))
+
+    @property
+    def icono(self):
+        """El icono de la app. El del Calendario es DINÁMICO: lleva el número del día de hoy."""
+        if self.id == calendario_icono.ID_APP:
+            return calendario_icono.icono_hoy() or self._icono
+        return self._icono
 
     def puntaje(self, consulta):
         """consulta ya normalizada."""
