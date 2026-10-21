@@ -20,7 +20,6 @@ dbus-user-session
 dbus-bin
 libpam-systemd
 polkitd
-pkexec                     # elevar privilegios con ventana gráfica: lo usa la Tienda (infinity-tienda) y gdebi
 udisks2
 sudo
 locales
@@ -31,8 +30,8 @@ bash-completion
 nano
 less
 curl
+gpg                         # convierte las claves GPG de los repositorios de Chrome y Antigravity (build/chroot-setup.sh)
 ca-certificates
-gpg                         # la Tienda comprueba y convierte las claves GPG de los repositorios de terceros (Chrome, Brave…)
 
 # --- Red ---------------------------------------------------------------------
 network-manager
@@ -53,7 +52,7 @@ xwayland
 hyprland                    # compositor Wayland: da el desenfoque "cristal"
 xdg-desktop-portal-hyprland
 xdg-desktop-portal-gtk
-policykit-1-gnome           # agente de polkit: la ventana de contraseña de gdebi y de la Tienda (sin él, pkexec falla)
+policykit-1-gnome           # agente de polkit: la ventana de contraseña de gdebi (sin él, pkexec falla)
 gtklock                     # pantalla de bloqueo: hora gigante de cristal (GTK3, dibuja por CPU)
 swaylock                    # bloqueo de respaldo, por si gtklock fallara
 hypridle
@@ -108,7 +107,6 @@ thunar                      # archivos
 thunar-archive-plugin       # Thunar: "extraer aquí" en .zip y .tar.gz
 file-roller                 # extractor del plugin de arriba (no se instala solo: no hay recomendados)
 gdebi                       # doble clic en un .deb: lo instala, pide contraseña de administrador
-flatpak                     # Tienda: Spotify y otras apps de Flathub, instaladas por usuario (sin contraseña de administrador)
 libfuse2t64                 # libfuse.so.2: sin ella no arranca un AppImage
 fuse3                       # fusermount: el AppImage monta su imagen con él (ya lo trae xdg-desktop-portal)
 xdg-utils                   # xdg-open: el buscador del orbe abre la búsqueda web

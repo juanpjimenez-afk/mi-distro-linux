@@ -17,6 +17,39 @@ paquetes() {
     $(</tmp/infinity/packages)
 }
 
+# Apps de terceros desde los repositorios de sus fabricantes: Google Chrome (lo usan las WebApps y trae Widevine,
+# que Netflix/HBO Max/Disney+ necesitan) y Google Antigravity. Si un repositorio no responde, se avisa y se sigue:
+# la ISO sale igual, sin esa app.
+tercero() {  # nombre  url-de-la-clave  archivo-de-clave  linea-de-fuente  paquete
+  local nombre=$1 clave=$2 archivo=$3 fuente=$4 paquete=$5
+  if curl -fsSL --retry 3 --max-time 60 "$clave" | gpg --dearmor >"$archivo.tmp" && [ -s "$archivo.tmp" ]; then
+    mv "$archivo.tmp" "$archivo"; chmod 644 "$archivo"
+    printf '%s\n' "$fuente" >"/etc/apt/sources.list.d/$nombre.sources"
+    if apt-get update && apt-get -y --no-install-recommends install "$paquete"; then
+      echo "[terceros] $nombre instalado"; return 0
+    fi
+  fi
+  rm -f "$archivo.tmp" "$archivo" "/etc/apt/sources.list.d/$nombre.sources"
+  echo "[terceros] AVISO: no se pudo instalar $nombre; la ISO sale sin él" >&2
+}
+
+terceros() {
+  mkdir -p /etc/apt/keyrings
+  tercero google-chrome https://dl.google.com/linux/linux_signing_key.pub /usr/share/keyrings/google-chrome.gpg \
+"Types: deb
+URIs: https://dl.google.com/linux/chrome/deb/
+Suites: stable
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/google-chrome.gpg" google-chrome-stable
+  tercero antigravity https://us-central1-apt.pkg.dev/doc/repo-signing-key.gpg /etc/apt/keyrings/antigravity-repo-key.gpg \
+"Types: deb
+URIs: https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/
+Suites: antigravity-debian
+Components: main
+Signed-By: /etc/apt/keyrings/antigravity-repo-key.gpg" antigravity
+}
+
 limpiar() {
   apt-get -y autoremove --purge || true
   apt-get clean
@@ -95,7 +128,7 @@ finalizar() {
 }
 
 case "${1:-}" in
-  packages) paquetes ;;
+  packages) paquetes; terceros ;;
   finalize) finalizar ;;
   *) echo "uso: $0 packages|finalize" >&2; exit 2 ;;
 esac

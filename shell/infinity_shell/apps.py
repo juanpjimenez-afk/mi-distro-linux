@@ -12,13 +12,8 @@ _ESTADO = os.path.join(GLib.get_user_state_dir(), "infinity")
 _USO = os.path.join(_ESTADO, "uso.json")
 
 
-# Prefijos del app_id (clase) que Chromium y sus derivados dan a las ventanas en «modo aplicación» (--app=URL).
-PREFIJOS_NAVEGADOR = ("chrome-", "brave-", "chromium-", "msedge-", "vivaldi-")
-
-
 class App:
-    __slots__ = ("id", "info", "nombre", "descripcion", "_icono", "ruta", "_n_nombre", "_n_extra", "wm_class", "binario",
-                 "siempre", "dominio")
+    __slots__ = ("id", "info", "nombre", "descripcion", "_icono", "ruta", "_n_nombre", "_n_extra", "wm_class", "binario")
 
     def __init__(self, info):
         self.info = info
@@ -32,15 +27,9 @@ class App:
             palabras = list(info.get_keywords() or [])
             self.wm_class = (info.get_startup_wm_class() or "").casefold()
             self.ruta = info.get_filename() or ""
-            # Claves propias de Infinity en el .desktop: «X-Infinity-Biblioteca=siempre» (la biblioteca la enseña aunque
-            # sea del sistema: la Tienda) y «X-Infinity-Dominio=<host>» (las WebApps de la Tienda: reconocer su ventana).
-            self.siempre = (info.get_string("X-Infinity-Biblioteca") or "").strip().casefold() == "siempre"
-            self.dominio = (info.get_string("X-Infinity-Dominio") or "").strip().casefold()
         else:
             self.wm_class = ""
             self.ruta = ""
-            self.siempre = False
-            self.dominio = ""
         cmd = info.get_commandline() or ""
         try:
             self.binario = os.path.basename(shlex.split(cmd)[0]).casefold() if cmd else ""
@@ -115,12 +104,6 @@ class Indice:
         for a in self.apps:
             if c in (a.id.removesuffix(".desktop").casefold(), a.wm_class, a.binario):
                 return a
-        if c.startswith(PREFIJOS_NAVEGADOR):
-            # Una WebApp de la Tienda: Chromium pone «<navegador>-<host>_<ruta>-Default» y no hay forma de fijarlo desde
-            # el lanzador, así que se reconoce por el dominio que la tienda anotó en su .desktop.
-            for a in self.apps:
-                if a.dominio and f"-{a.dominio}_" in c:
-                    return a
         for a in self.apps:
             # subcadenas demasiado cortas ("e", "sh") coinciden con casi cualquier app: no se usan
             if c and ((len(c) >= 3 and c in a.id.removesuffix(".desktop").casefold())

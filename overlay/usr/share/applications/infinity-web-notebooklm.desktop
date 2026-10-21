@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=NotebookLM
+Comment=Abre NotebookLM en su propia ventana
+Exec=google-chrome-stable --app=https://notebooklm.google.com/
+Icon=/usr/share/infinity/webapps/notebooklm.svg
+Categories=Education;Utility;Network;
+Keywords=ia;notas;estudio;google;
+StartupWMClass=chrome-notebooklm.google.com__-Default
+StartupNotify=true
+Terminal=false

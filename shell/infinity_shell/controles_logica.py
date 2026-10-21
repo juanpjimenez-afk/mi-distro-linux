@@ -31,9 +31,9 @@ MIN_ALTO = 60
 
 ESPACIO_MINIMIZADAS = "special:minimizadas"  # donde "viven" las ventanas minimizadas
 
-# Ventanas que traen sus propios botones (la HeaderBar de pAnkI, del Calendario, de Contraseñas y de la Tienda tiene −, □ y ×).
+# Ventanas que traen sus propios botones (la HeaderBar de pAnkI, del Calendario y de Contraseñas tiene −, □ y ×).
 # Se compara sin mayúsculas. El Calendario comparte proceso con pAnkI pero fija su propio app_id.
-EXCLUIDAS = ("org.infinity.panki", "org.infinity.calendario", "org.infinity.boveda", "org.infinity.tienda")
+EXCLUIDAS = ("org.infinity.panki", "org.infinity.calendario", "org.infinity.boveda")
 
 # Eventos de Hyprland tras los que conviene mirar de nuevo (no existe uno para "se redimensionó").
 EVENTOS = frozenset({

@@ -19,36 +19,14 @@ from collections import namedtuple
 # considera descargado/instalado por el usuario.
 SISTEMA = ("/usr/share/applications/", "/usr/local/share/applications/")
 
-# La ISO guarda aquí (build.sh) los .desktop que trae de fábrica, uno por línea. Con esa lista, «del sistema» es lo que
-# trae la imagen, no lo que está en /usr/share/applications: lo que instalan apt o gdebi (Chrome, Antigravity, un .deb
-# descargado…) también cae ahí y es «descargado». Sin la lista (sistema de desarrollo o ISO antigua) vale la regla por ruta.
-MANIFIESTO_BASE = "/usr/share/infinity/apps-base.txt"
-_AUTO = object()
-
 Carpeta = namedtuple("Carpeta", "cid nombre apps")
 
 
-def leer_manifiesto(ruta=MANIFIESTO_BASE):
-    """Los nombres de .desktop que trae la imagen (frozenset), o None si no hay manifiesto o no se puede leer."""
-    try:
-        with open(ruta, encoding="utf-8") as f:
-            lineas = f.read().splitlines()
-    except (OSError, UnicodeDecodeError):
-        return None
-    return frozenset(l.strip() for l in lineas if l.strip() and not l.lstrip().startswith("#"))
-
-
-def es_descargada(ruta, base=None):
-    """True si el .desktop no es del sistema. Sin ruta (desconocida) cuenta como descargada.
-
-    `base` es el manifiesto de la imagen (leer_manifiesto): con él, un .desktop de las carpetas del sistema solo es «del
-    sistema» si su nombre está en la lista. Sin él, basta con la ruta.
-    """
+def es_descargada(ruta):
+    """True si el .desktop no es del sistema. Sin ruta (desconocida) cuenta como descargada."""
     if not ruta:
         return True
-    if not ruta.startswith(SISTEMA):
-        return True
-    return base is not None and os.path.basename(ruta) not in base
+    return not ruta.startswith(SISTEMA)
 
 
 def ruta_biblioteca():
@@ -57,17 +35,16 @@ def ruta_biblioteca():
 
 
 class Biblioteca:
-    def __init__(self, ruta=None, base=_AUTO):
+    def __init__(self, ruta=None):
         self.ruta = ruta or ruta_biblioteca()
-        self.base = leer_manifiesto() if base is _AUTO else base   # None: sin manifiesto, regla antigua por ruta
         self.solo_descargadas = True
         self.carpetas = {}  # cid -> {"nombre": str, "apps": [app_id, ...]}
         self.ilegible = False  # el fichero existía pero no se pudo leer: no se sobrescribe sin copia
 
     # ------------------------------------------------------------- persistencia
     @classmethod
-    def cargar(cls, ruta=None, base=_AUTO):
-        b = cls(ruta, base)
+    def cargar(cls, ruta=None):
+        b = cls(ruta)
         if not os.path.exists(b.ruta):
             return b
         try:
@@ -171,10 +148,8 @@ class Biblioteca:
 
     # ------------------------------------------------------------------- vista
     def visibles(self, apps):
-        """Apps que se muestran con el filtro actual (las de carpeta cuentan igual). Una app que lo pide en su
-        .desktop (X-Infinity-Biblioteca=siempre: la Tienda) se ve aunque sea del sistema."""
-        return [a for a in apps
-                if not self.solo_descargadas or es_descargada(a.ruta, self.base) or getattr(a, "siempre", False)]
+        """Apps que se muestran con el filtro actual (las de carpeta cuentan igual)."""
+        return [a for a in apps if not self.solo_descargadas or es_descargada(a.ruta)]
 
     def vista(self, apps):
         """Lista de primer nivel: primero las carpetas, luego las apps sueltas por nombre.

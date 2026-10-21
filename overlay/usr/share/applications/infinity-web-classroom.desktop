@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Google Classroom
+Comment=Abre Google Classroom en su propia ventana
+Exec=google-chrome-stable --app=https://classroom.google.com/
+Icon=/usr/share/infinity/webapps/classroom.svg
+Categories=Education;Network;
+Keywords=clases;tareas;colegio;google;
+StartupWMClass=chrome-classroom.google.com__-Default
+StartupNotify=true
+Terminal=false

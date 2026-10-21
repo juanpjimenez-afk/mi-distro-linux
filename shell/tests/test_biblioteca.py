@@ -7,7 +7,7 @@ from collections import namedtuple
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from infinity_shell.biblioteca import Biblioteca, Carpeta, es_descargada, leer_manifiesto  # noqa: E402
+from infinity_shell.biblioteca import Biblioteca, Carpeta, es_descargada  # noqa: E402
 
 App = namedtuple("App", "id nombre ruta")
 SYS = "/usr/share/applications/"
@@ -210,78 +210,6 @@ class TestPersistenciaTiposRaros(unittest.TestCase):
                                        "c2": {"nombre": "x" * 100, "apps": ["b.desktop"]}}})
         self.assertEqual(b.carpetas["c1"]["nombre"], "Carpeta")
         self.assertEqual(len(b.carpetas["c2"]["nombre"]), 40)
-
-
-class TestManifiestoDeLaImagen(unittest.TestCase):
-    """Con el manifiesto de la imagen (build.sh), «del sistema» es lo que trae la ISO, no lo que está en /usr/share."""
-    BASE = frozenset({"foot.desktop", "thunar.desktop", "infinity-tienda.desktop"})
-
-    def _manifiesto(self, texto):
-        d = tempfile.mkdtemp()
-        ruta = os.path.join(d, "apps-base.txt")
-        with open(ruta, "w", encoding="utf-8") as f:
-            f.write(texto)
-        return ruta
-
-    def test_leer_manifiesto(self):
-        ruta = self._manifiesto("# apps de fábrica\nfoot.desktop\n\n  thunar.desktop  \n#comentado.desktop\n")
-        self.assertEqual(leer_manifiesto(ruta), frozenset({"foot.desktop", "thunar.desktop"}))
-
-    def test_sin_manifiesto_o_ilegible_es_none(self):
-        self.assertIsNone(leer_manifiesto("/no/existe/apps-base.txt"))
-        self.assertIsNone(leer_manifiesto(tempfile.mkdtemp()))
-        ruta = self._manifiesto("")
-        with open(ruta, "wb") as f:
-            f.write(b"\xff\xfe\x00")
-        self.assertIsNone(leer_manifiesto(ruta))
-
-    def test_un_manifiesto_vacio_cuenta_como_manifiesto(self):
-        self.assertEqual(leer_manifiesto(self._manifiesto("")), frozenset())
-
-    def test_lo_que_instalan_apt_o_gdebi_en_usr_share_es_descargado(self):
-        self.assertFalse(es_descargada(SYS + "foot.desktop", self.BASE))
-        self.assertTrue(es_descargada(SYS + "google-chrome.desktop", self.BASE))
-        self.assertTrue(es_descargada(SYS + "antigravity.desktop", self.BASE))
-        self.assertTrue(es_descargada("/usr/local/share/applications/zed.desktop", self.BASE))
-        self.assertFalse(es_descargada("/usr/local/share/applications/foot.desktop", self.BASE))
-
-    def test_lo_de_fuera_de_las_carpetas_del_sistema_sigue_siendo_descargado(self):
-        self.assertTrue(es_descargada(USR + "infinity-webapp-netflix.desktop", self.BASE))
-        self.assertTrue(es_descargada("/var/lib/flatpak/exports/share/applications/com.spotify.Client.desktop", self.BASE))
-        self.assertTrue(es_descargada("", self.BASE))
-        self.assertTrue(es_descargada(None, self.BASE))
-
-    def test_sin_manifiesto_se_sigue_usando_la_ruta(self):
-        self.assertFalse(es_descargada(SYS + "google-chrome.desktop", None))
-
-    def test_la_biblioteca_usa_el_manifiesto(self):
-        b = Biblioteca(ruta=os.path.join(tempfile.mkdtemp(), "b.json"), base=self.BASE)
-        apps = apps_de_prueba() + [App("google-chrome.desktop", "Google Chrome", SYS + "google-chrome.desktop")]
-        ids = [a.id for a in b.vista(apps)]
-        self.assertIn("google-chrome.desktop", ids)
-        self.assertNotIn("foot.desktop", ids)
-
-    def test_la_biblioteca_sin_manifiesto_conserva_el_comportamiento_de_siempre(self):
-        b = Biblioteca(ruta=os.path.join(tempfile.mkdtemp(), "b.json"), base=None)
-        apps = apps_de_prueba() + [App("google-chrome.desktop", "Google Chrome", SYS + "google-chrome.desktop")]
-        self.assertNotIn("google-chrome.desktop", [a.id for a in b.vista(apps)])
-
-    def test_cargar_acepta_el_manifiesto(self):
-        b = Biblioteca.cargar(os.path.join(tempfile.mkdtemp(), "nada.json"), base=self.BASE)
-        self.assertEqual(b.base, self.BASE)
-
-    def test_una_app_que_lo_pide_se_ve_aunque_sea_del_sistema(self):
-        AppS = namedtuple("AppS", "id nombre ruta siempre")
-        tienda = AppS("infinity-tienda.desktop", "Tienda", SYS + "infinity-tienda.desktop", True)
-        otra = AppS("foot.desktop", "Terminal", SYS + "foot.desktop", False)
-        b = Biblioteca(ruta=os.path.join(tempfile.mkdtemp(), "b.json"), base=self.BASE)
-        self.assertEqual([a.id for a in b.vista([tienda, otra])], ["infinity-tienda.desktop"])
-        b.solo_descargadas = False
-        self.assertEqual(len(b.vista([tienda, otra])), 2)
-
-    def test_las_apps_sin_el_atributo_siempre_no_rompen(self):
-        b = Biblioteca(ruta=os.path.join(tempfile.mkdtemp(), "b.json"), base=self.BASE)
-        self.assertEqual(b.vista([App("foot.desktop", "Terminal", SYS + "foot.desktop")]), [])
 
 
 if __name__ == "__main__":

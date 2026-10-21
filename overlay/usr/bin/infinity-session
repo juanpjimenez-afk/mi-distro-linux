@@ -26,10 +26,6 @@ export QT_QPA_PLATFORM=wayland
 export GDK_BACKEND=wayland,x11
 export ELECTRON_OZONE_PLATFORM_HINT=auto
 
-# Las apps de Flatpak (Spotify, instalada desde la Tienda) dejan su lanzador e icono en estas carpetas; sin ellas en
-# XDG_DATA_DIRS el lanzador, el dock y la biblioteca no las ven (greetd no lee /etc/profile.d/flatpak.sh).
-export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:$HOME/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share"
-
 CONF="$HOME/.config/hypr/hyprland.conf"
 [ -f "$CONF" ] || CONF=/etc/skel/.config/hypr/hyprland.conf
 

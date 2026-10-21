@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Disney+
+Comment=Abre Disney+ en su propia ventana
+Exec=google-chrome-stable --app=https://www.disneyplus.com/
+Icon=/usr/share/infinity/webapps/disney-plus.svg
+Categories=AudioVideo;Video;Network;
+Keywords=disney;pixar;marvel;star wars;streaming;
+StartupWMClass=chrome-www.disneyplus.com__-Default
+StartupNotify=true
+Terminal=false

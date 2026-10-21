@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=YouTube
+Comment=Abre YouTube en su propia ventana
+Exec=google-chrome-stable --app=https://www.youtube.com/
+Icon=/usr/share/infinity/webapps/youtube.svg
+Categories=AudioVideo;Video;Network;
+Keywords=videos;musica;streaming;
+StartupWMClass=chrome-www.youtube.com__-Default
+StartupNotify=true
+Terminal=false

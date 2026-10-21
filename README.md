@@ -30,13 +30,13 @@ La ISO se construye **en la nube de GitHub**; tú solo la descargas.
 4. Abre la ejecución terminada y baja **infinity-os-iso** (sección *Artifacts*, abajo). Es un `.zip` con la ISO dentro.
 
 > Para una versión "oficial" (la ISO queda en la pestaña **Releases**, sin zip): crea una etiqueta
-> con la versión, por ejemplo `v0.1.0`.
+> con la versión, por ejemplo `v4.2.2`.
 >
 > Si el repositorio es privado y los *Artifacts* te dan error de cuota, usa la vía de las etiquetas
 > (las *Releases* no cuentan para esa cuota).
 
 Comprueba que la descarga no se dañó: el archivo `.sha256` trae la huella. En PowerShell:
-`Get-FileHash .\infinity-os-0.1.0-amd64.iso -Algorithm SHA256`.
+`Get-FileHash .\infinity-os-4.2.2-amd64.iso -Algorithm SHA256`.
 
 ## 2. Probarla en una máquina virtual (recomendado)
 
@@ -238,18 +238,6 @@ de tu contraseña maestra con scrypt) y, con el guardado de cambios activado, so
 3 minutos sin usarlo, al suspender y con el botón; el portapapeles se borra a los 25 s. **Si olvidas la contraseña maestra,
 no hay forma de recuperar lo guardado.** Modelo de seguridad y límites (honestos) en [`docs/boveda.md`](docs/boveda.md).
 
-### Tienda
-
-Instala aplicaciones con un clic; sale en la **biblioteca de apps** (el botón de rejilla del dock) y en el buscador
-(`Super + Espacio`, «tienda»). Trae **Spotify** (Flatpak, sin contraseña), **Google Antigravity**, **Google Chrome** y
-**Brave** (repositorios APT de sus fabricantes: la tienda añade la clave GPG, registra el repositorio e instala con
-`apt`, pidiendo tu contraseña de administrador en una ventana de **polkit**) y las **WebApps** de Netflix, HBO Max,
-Disney+, YouTube, Claude, Gemini, NotebookLM y Google Classroom (un lanzador con su icono que abre la web en una ventana
-propia de Chrome/Brave; si no tienes uno, la tienda te ofrece instalarlo). Sin libadwaita: Python + GTK 4 como el resto
-del shell. **Límites honestos**: el repositorio APT de Antigravity es el de la serie 1.x y Google ya no lo actualiza; las
-series con DRM necesitan Chrome (Widevine); y las instalaciones reales contra los servidores de los fabricantes no se
-pudieron probar desde la sandbox de desarrollo. Diseño, seguridad y límites en [`docs/tienda.md`](docs/tienda.md).
-
 ## Optimización
 
 Qué se hizo para que sea ligera, y por qué:
@@ -353,7 +341,7 @@ shell/            el shell propio: orbe, dock, estado, buscador y pAnkI (Python 
   infinity_shell/style.css              ← el estilo de cristal de las piezas
   tests/                                 pruebas automáticas (incluye un Hyprland simulado)
 branding/         logo (SVG), fotos de referencia, fondos, fuente de la hora e imagen del menú de arranque
-docs/             capturas, diseño de pAnkI, de Contraseñas y de la Tienda, e informe de revisión
+docs/             capturas, diseño de pAnkI e informe de revisión
 .github/workflows/build-iso.yml   construye la ISO en GitHub
 ```
 
@@ -369,7 +357,6 @@ docs/             capturas, diseño de pAnkI, de Contraseñas y de la Tienda, e 
 | Cambiar el aspecto de dock/orbe/buscador | `shell/infinity_shell/style.css` |
 | Apps fijadas en el dock | `overlay/etc/infinity/fijados` (o clic derecho en el dock) |
 | Icono del Calendario (31 días) | `branding/make_calendario.py` |
-| Añadir una app a la Tienda | `overlay/usr/share/infinity/tienda/catalogo.json` (+ su icono en `branding/make_tienda_iconos.py`) |
 | Fondo de pantalla | `branding/make_assets.py` (genera `wallpaper.jpg`) |
 | Cambiar el nombre del sistema | `OS_NAME` en `build/config.env` |
 

@@ -191,15 +191,6 @@ etapa_configurar() {
   fi
   install -m644 "$ROOT/branding/logo-white.svg" "$ROOTFS/usr/share/pixmaps/infinity.svg"
 
-  # Los .desktop que trae la imagen de fábrica (uno por línea). La biblioteca de apps (shell/infinity_shell/biblioteca.py)
-  # la usa para distinguir lo del sistema de lo «descargado»: lo que se instale después con apt, gdebi o la Tienda
-  # (Chrome, Antigravity, un .deb…) también cae en /usr/share/applications, y sin esta lista parecería del sistema.
-  # Debe generarse DESPUÉS de instalar los paquetes y de copiar el overlay: es una foto de cómo queda la imagen.
-  ( cd "$ROOTFS/usr/share/applications" && find . -maxdepth 1 -name '*.desktop' -printf '%f\n' | LC_ALL=C sort ) \
-    >"$ROOTFS/usr/share/infinity/apps-base.txt"
-  chmod 644 "$ROOTFS/usr/share/infinity/apps-base.txt"
-  [[ -s $ROOTFS/usr/share/infinity/apps-base.txt ]] || die "la lista de apps de fábrica (apps-base.txt) salió vacía"
-
   mount_chroot
   mkdir -p "$ROOTFS/tmp/infinity"
   install -m755 "$ROOT/build/chroot-setup.sh" "$ROOTFS/tmp/infinity/chroot-setup.sh"

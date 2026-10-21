@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=HBO Max
+Comment=Abre HBO Max en su propia ventana
+Exec=google-chrome-stable --app=https://play.hbomax.com/
+Icon=/usr/share/infinity/webapps/hbo-max.svg
+Categories=AudioVideo;Video;Network;
+Keywords=hbo;max;series;peliculas;streaming;
+StartupWMClass=chrome-play.hbomax.com__-Default
+StartupNotify=true
+Terminal=false
