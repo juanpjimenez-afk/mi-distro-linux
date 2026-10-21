@@ -30,7 +30,6 @@ bash-completion
 nano
 less
 curl
-gpg                         # convierte las claves GPG de los repositorios de Chrome y Antigravity (build/chroot-setup.sh)
 ca-certificates
 
 # --- Red ---------------------------------------------------------------------
