@@ -3,7 +3,7 @@ name: Construir ISO de Infinity OS
 # Cómo usarlo (desde Windows, sin instalar nada):
 #   1. En GitHub: pestaña "Actions" -> "Construir ISO de Infinity OS" -> "Run workflow".
 #   2. Espera ~15-25 min. Al terminar, entra a la ejecución y baja el archivo de "Artifacts".
-#   3. Para una versión "oficial": crea una etiqueta (tag) v4.2.2 y la ISO se publica en "Releases".
+#   3. Para una versión "oficial": crea una etiqueta (tag) v4.3.0 y la ISO se publica en "Releases".
 
 on:
   workflow_dispatch:

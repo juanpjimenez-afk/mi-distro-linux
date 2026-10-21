@@ -11,6 +11,17 @@ initramfs-tools
 zstd                        # compresión rápida del initramfs
 casper                      # arranque en vivo desde la ISO
 
+# --- Instalador a disco (infinity-instalar) ------------------------------------
+# GRUB para UEFI y las herramientas de particionado: el sistema instalado necesita GRUB dentro, y el instalador
+# formatea (dosfstools, e2fsprogs) y copia (rsync). Sin Secure Boot: no hay shim firmado.
+grub-efi-amd64-bin
+grub-common
+grub2-common
+efibootmgr
+dosfstools
+rsync
+parted
+
 # --- Sistema base ------------------------------------------------------------
 systemd-sysv
 systemd-resolved

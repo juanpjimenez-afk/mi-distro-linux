@@ -32,11 +32,11 @@ La ISO se construye **en la nube de GitHub**; tú solo la descargas.
    *Source code* son el código, no la ISO). La página de la ejecución en *Actions* no ofrece descarga: si ves ahí un
    aviso amarillo de «Node.js 20 is deprecated», es de GitHub y no afecta a la ISO.
 
-> Para publicar una versión (la ISO queda en **Releases**): crea una etiqueta con la versión, por ejemplo `v4.2.2`.
+> Para publicar una versión (la ISO queda en **Releases**): crea una etiqueta con la versión, por ejemplo `v4.3.0`.
 > Lanzar el flujo a mano solo sube la ISO como *Artifact* (un `.zip` con cuota limitada en repositorios privados).
 
 Comprueba que la descarga no se dañó: el archivo `.sha256` trae la huella. En PowerShell:
-`Get-FileHash .\infinity-os-4.2.2-amd64.iso -Algorithm SHA256`.
+`Get-FileHash .\infinity-os-4.3.0-amd64.iso -Algorithm SHA256`.
 
 ## 2. Probarla en una máquina virtual (recomendado)
 
@@ -90,8 +90,24 @@ HOME, los ajustes, pAnkI y su calendario, las redes wifi y lo que instales sobre
   (`sudo mkfs.ext4 -L writable /dev/sdXN` sobre esa partición; **borra todo lo guardado**).
 
 Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://rufus.ie) en modo
-**"Imagen DD"** (deja la partición persistente de Rufus en 0, MBR y «BIOS o UEFI»; el guardado lo crea el sistema) o con [Ventoy](https://www.ventoy.net). Ojo: **aún no tiene instalador** (ver
-[Estado](#estado-y-limitaciones)) y no arranca con *Secure Boot* activado.
+**"Imagen DD"** (deja la partición persistente de Rufus en 0, MBR y «BIOS o UEFI»; el guardado lo crea el sistema) o con [Ventoy](https://www.ventoy.net). No arranca con *Secure Boot* activado.
+
+### Instalar en el disco del equipo (arrancar sin USB)
+
+Desde la ISO en vivo, abre **Instalar Infinity OS** en la biblioteca de apps (o ejecuta `infinity-instalar` en una
+terminal). Es un asistente de terminal que **BORRA POR COMPLETO el disco que elijas** (Windows incluido) y deja
+Infinity OS solo, con arranque UEFI. Antes:
+
+- **Haz copia de seguridad** de lo que quieras conservar: no hay vuelta atrás.
+- El equipo tiene que haber arrancado en **modo UEFI** (en un Dell, el USB aparece como «UEFI: …» en F12).
+- Si el asistente no ve el disco interno (pasa en muchos Dell): BIOS → *Storage* → *SATA Operation* en **AHCI**
+  (no «RAID On») y vuelve a arrancar la ISO.
+- Pide: el disco (por número), usuario, tu nombre (opcional), nombre del equipo y contraseña (mínimo 6 caracteres).
+  Para empezar hay que escribir **BORRAR**. Nunca ofrece el USB de donde arrancó la ISO.
+- Crea una partición EFI de 512 MiB y una ext4 con el resto, copia el sistema, crea tu usuario (con `sudo`) y
+  pone GRUB. Al terminar: apaga, **quita el USB** y enciende.
+- Sin *Secure Boot* (como la ISO). Teclado, idioma y zona horaria quedan como en la ISO (cámbialos en Ajustes).
+- La instalación pide un inicio de sesión (usuario y contraseña) en vez de entrar directo como en la ISO en vivo.
 
 ## 3. Usarla
 
@@ -401,14 +417,14 @@ hay una partición de guardado (ver [Guardar tus cambios](#guardar-tus-cambios-a
   sistema (esos últimos se explican en la página *Sistema*). La página *Sistema* solo muestra datos.
 - Durante las pruebas hubo **una caída aislada de Hyprland** (en el renderizador por software `llvmpipe`) mientras
   la VM emulaba una CPU exótica; no se repitió con una CPU estándar en más de 9 minutos de uso intensivo.
-- **Sin instalador a disco** todavía. **Sin Secure Boot** (desactívalo en la BIOS/UEFI o usa una VM).
+- **Instalador a disco básico** (borra un disco entero; sin particionado manual ni cifrado). **Sin Secure Boot** (desactívalo en la BIOS/UEFI o usa una VM).
 - La red WiFi se elige con `nmtui` (clic en el icono de red del panel de estado): aún no hay un selector gráfico.
 - No es *exactamente* el "Liquid Glass" de Apple: un compositor normal no puede refractar la luz, así que se
   aproxima con desenfoque + translucidez + reflejo especular en el borde.
 
 ## Hoja de ruta
 
-1. Instalador a disco (Calamares).
+1. Instalador a disco con particionado manual, convivencia con Windows y cifrado (hoy: disco entero).
 2. Panel rápido (WiFi, Bluetooth, brillo, volumen) y centro de notificaciones.
 3. Pantalla de arranque (Plymouth) con el logo ∞ animado.
 4. Ajustes de red, Bluetooth y audio en la app de Ajustes; tema de iconos propio.

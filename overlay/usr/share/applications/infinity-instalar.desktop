@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Instalar Infinity OS
+Comment=Instala Infinity OS en el disco del equipo (borra el disco que elijas)
+Exec=foot --hold --title "Instalar Infinity OS" infinity-instalar
+Icon=system-software-install
+Terminal=false
+Categories=System;
+Keywords=instalar;instalador;disco;install;

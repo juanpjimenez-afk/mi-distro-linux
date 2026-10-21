@@ -1,0 +1,9 @@
+#!/bin/sh
+# Instalador de Infinity OS en el disco del equipo (asistente de terminal).
+# La lógica y las reglas de seguridad están en shell/infinity_shell/instalador.py: solo funciona desde la ISO
+# en vivo, solo con UEFI, y borra el disco que elijas solo si escribes BORRAR.
+export PYTHONPATH=/usr/lib/infinity
+if [ "$(id -u)" != 0 ]; then
+    exec sudo -n env PYTHONPATH="$PYTHONPATH" python3 -m infinity_shell.instalador "$@"
+fi
+exec python3 -m infinity_shell.instalador "$@"
