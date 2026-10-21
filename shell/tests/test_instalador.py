@@ -238,5 +238,61 @@ class TestModoSinPreguntas(unittest.TestCase):
         self.assertEqual(I.main(["--disco", "/dev/sdz", "--usuario", "Root!", "--confirmo", "BORRAR", "--simular"]), 1)
 
 
+class TestAsistente(unittest.TestCase):
+    """El asistente interactivo (el que usa la persona): con entradas simuladas y sin instalar de verdad."""
+
+    def correr(self, respuestas, claves=("secreta123", "secreta123")):
+        import io
+        from unittest import mock
+        discos = [I.Disco("/dev/sda", 15628000000, "USB DISK", "usb", True, True),
+                  I.Disco("/dev/nvme0n1", 512110190592, "SSD", "nvme", False, False)]
+        instalados = []
+        with mock.patch.object(I, "comprobar_entorno"), \
+                mock.patch.object(I, "origen_sistema", return_value="/rofs"), \
+                mock.patch.object(I, "medio_arranque", return_value="/cdrom"), \
+                mock.patch.object(I, "listar_discos", return_value=discos), \
+                mock.patch.object(I.Instalador, "instalar", lambda self: instalados.append(self.c)), \
+                mock.patch("builtins.input", side_effect=list(respuestas)), \
+                mock.patch.object(I.getpass, "getpass", side_effect=list(claves)), \
+                mock.patch("sys.stdout", new=io.StringIO()) as salida:
+            try:
+                I.asistente(None)
+                error = ""
+            except I.ErrorInstalacion as e:
+                error = str(e)
+        return instalados, error, salida.getvalue()
+
+    def test_flujo_completo(self):
+        inst, error, salida = self.correr(["1", "juan", "Juan P", "", "BORRAR"])
+        self.assertEqual(error, "")
+        self.assertEqual(len(inst), 1)
+        c = inst[0]
+        self.assertEqual((c.disco, c.usuario, c.nombre, c.equipo), ("/dev/nvme0n1", "juan", "Juan P", "infinity"))
+        self.assertNotIn("/dev/sda", salida)          # el USB de la ISO no se ofrece
+        self.assertNotIn("secreta123", salida)
+
+    def test_sin_borrar_no_instala(self):
+        inst, error, _ = self.correr(["1", "juan", "", "", "borrar"])   # minúsculas: no vale
+        self.assertEqual(inst, [])
+        self.assertIn("Cancelado", error)
+
+    def test_cancelar_en_el_disco(self):
+        inst, error, _ = self.correr(["0"])
+        self.assertEqual(inst, [])
+        self.assertIn("Cancelado", error)
+
+    def test_reintenta_usuario_y_clave_invalidos(self):
+        inst, error, salida = self.correr(["1", "Root!", "juan", "", "", "BORRAR"], claves=("123", "secreta123", "secreta123"))
+        self.assertEqual(error, "")
+        self.assertEqual(inst[0].usuario, "juan")
+        self.assertIn("minúsculas", salida)
+        self.assertIn("al menos", salida)
+
+    def test_claves_distintas_se_repiten(self):
+        inst, error, salida = self.correr(["1", "juan", "", "", "BORRAR"], claves=("secreta123", "otra12345", "secreta123", "secreta123"))
+        self.assertEqual(error, "")
+        self.assertIn("No coinciden", salida)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -331,7 +331,8 @@ class Instalador:
 
 
 # ------------------------------------------------------------------ asistente de terminal
-def _preguntar(texto, defecto="", validar=None, leer=input):
+def _preguntar(texto, defecto="", validar=None, leer=None):
+    leer = leer or input
     while True:
         pista = f" [{defecto}]" if defecto else ""
         valor = leer(f"{texto}{pista}: ").strip() or defecto
@@ -341,7 +342,8 @@ def _preguntar(texto, defecto="", validar=None, leer=input):
         print(f"  ✗ {error}")
 
 
-def _preguntar_clave(leer=getpass.getpass):
+def _preguntar_clave(leer=None):
+    leer = leer or getpass.getpass
     while True:
         a = leer("Contraseña (no se ve al escribir): ")
         error = validar_clave(a)
