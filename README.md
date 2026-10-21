@@ -27,13 +27,13 @@ La ISO se construye **en la nube de GitHub**; tú solo la descargas.
    (Si no ves el flujo, asegúrate de que este código esté en la rama `main`.)
 2. En la izquierda elige **Construir ISO de Infinity OS** → botón **Run workflow** → **Run workflow**.
 3. Espera unos 10–25 minutos (círculo amarillo → check verde).
-4. Abre la ejecución terminada y baja **infinity-os-iso** (sección *Artifacts*, abajo). Es un `.zip` con la ISO dentro.
+4. **Dónde descargarla:** en **Releases** (a la derecha en la página del repositorio), en la versión más reciente,
+   sección **Assets**: baja `infinity-os-X.Y.Z-amd64.iso` (el `.sha256` es solo la huella de verificación; los
+   *Source code* son el código, no la ISO). La página de la ejecución en *Actions* no ofrece descarga: si ves ahí un
+   aviso amarillo de «Node.js 20 is deprecated», es de GitHub y no afecta a la ISO.
 
-> Para una versión "oficial" (la ISO queda en la pestaña **Releases**, sin zip): crea una etiqueta
-> con la versión, por ejemplo `v4.2.2`.
->
-> Si el repositorio es privado y los *Artifacts* te dan error de cuota, usa la vía de las etiquetas
-> (las *Releases* no cuentan para esa cuota).
+> Para publicar una versión (la ISO queda en **Releases**): crea una etiqueta con la versión, por ejemplo `v4.2.2`.
+> Lanzar el flujo a mano solo sube la ISO como *Artifact* (un `.zip` con cuota limitada en repositorios privados).
 
 Comprueba que la descarga no se dañó: el archivo `.sha256` trae la huella. En PowerShell:
 `Get-FileHash .\infinity-os-4.2.2-amd64.iso -Algorithm SHA256`.
@@ -82,13 +82,15 @@ HOME, los ajustes, pAnkI y su calendario, las redes wifi y lo que instales sobre
 - **En una máquina virtual con la ISO como CD:** el CD no se puede escribir, así que añade un **segundo disco
   virtual vacío** (4 GB bastan) y, una sola vez, en una terminal de Infinity OS: `lsblk` (para ver cuál es el
   disco vacío; suele ser `sdb`) y `sudo mkfs.ext4 -L writable /dev/sdb`. Al reiniciar lo usa solo.
+- **Bluetooth:** `bluez` va incluido; si el equipo tiene adaptador, aparece un botón en la píldora de estado que
+  abre `bluetoothctl`.
 - **Saber si se está guardando:** *Ajustes → Sistema → Guardado de cambios* lo dice.
 - **Ojo al actualizar la ISO:** el guardado conserva tu HOME antiguo y *tapa* los archivos de configuración que
   traiga la ISO nueva. Si algo nuevo no aparece, arranca con **sesión limpia** o borra el guardado
   (`sudo mkfs.ext4 -L writable /dev/sdXN` sobre esa partición; **borra todo lo guardado**).
 
 Para llevarla a un equipo real (no VM): grábala en un USB con [Rufus](https://rufus.ie) en modo
-**"Imagen DD"** o con [Ventoy](https://www.ventoy.net). Ojo: **aún no tiene instalador** (ver
+**"Imagen DD"** (deja la partición persistente de Rufus en 0, MBR y «BIOS o UEFI»; el guardado lo crea el sistema) o con [Ventoy](https://www.ventoy.net). Ojo: **aún no tiene instalador** (ver
 [Estado](#estado-y-limitaciones)) y no arranca con *Secure Boot* activado.
 
 ## 3. Usarla
