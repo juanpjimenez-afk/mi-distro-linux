@@ -9,7 +9,8 @@ import re
 
 RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 SALIDA = os.path.join(RAIZ, "overlay", "usr", "share", "applications")
-CHROME = "google-chrome-stable"
+# Wayland (la ISO no trae X11) y sin los avisos de primera vez de Chrome (condiciones, bienvenida)
+CHROME = "google-chrome-stable --ozone-platform=wayland --no-first-run --no-default-browser-check"
 VIDEO = "AudioVideo;Video;Network;"
 # id, nombre, url, categorías, palabras clave
 APPS = [

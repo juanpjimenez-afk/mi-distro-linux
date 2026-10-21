@@ -2,7 +2,7 @@
 Type=Application
 Name=Google Classroom
 Comment=Abre Google Classroom en su propia ventana
-Exec=google-chrome-stable --app=https://classroom.google.com/
+Exec=google-chrome-stable --ozone-platform=wayland --no-first-run --no-default-browser-check --app=https://classroom.google.com/
 Icon=/usr/share/infinity/webapps/classroom.svg
 Categories=Education;Network;
 Keywords=clases;tareas;colegio;google;

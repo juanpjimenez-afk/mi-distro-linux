@@ -2,7 +2,7 @@
 Type=Application
 Name=NotebookLM
 Comment=Abre NotebookLM en su propia ventana
-Exec=google-chrome-stable --app=https://notebooklm.google.com/
+Exec=google-chrome-stable --ozone-platform=wayland --no-first-run --no-default-browser-check --app=https://notebooklm.google.com/
 Icon=/usr/share/infinity/webapps/notebooklm.svg
 Categories=Education;Utility;Network;
 Keywords=ia;notas;estudio;google;

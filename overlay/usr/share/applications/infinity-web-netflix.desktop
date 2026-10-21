@@ -2,7 +2,7 @@
 Type=Application
 Name=Netflix
 Comment=Abre Netflix en su propia ventana
-Exec=google-chrome-stable --app=https://www.netflix.com/browse
+Exec=google-chrome-stable --ozone-platform=wayland --no-first-run --no-default-browser-check --app=https://www.netflix.com/browse
 Icon=/usr/share/infinity/webapps/netflix.svg
 Categories=AudioVideo;Video;Network;
 Keywords=series;peliculas;cine;streaming;

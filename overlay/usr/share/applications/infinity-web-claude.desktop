@@ -2,7 +2,7 @@
 Type=Application
 Name=Claude
 Comment=Abre Claude en su propia ventana
-Exec=google-chrome-stable --app=https://claude.ai/
+Exec=google-chrome-stable --ozone-platform=wayland --no-first-run --no-default-browser-check --app=https://claude.ai/
 Icon=/usr/share/infinity/webapps/claude.svg
 Categories=Utility;Network;
 Keywords=ia;asistente;chat;anthropic;

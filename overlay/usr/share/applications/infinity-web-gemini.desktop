@@ -2,7 +2,7 @@
 Type=Application
 Name=Gemini
 Comment=Abre Gemini en su propia ventana
-Exec=google-chrome-stable --app=https://gemini.google.com/app
+Exec=google-chrome-stable --ozone-platform=wayland --no-first-run --no-default-browser-check --app=https://gemini.google.com/app
 Icon=/usr/share/infinity/webapps/gemini.svg
 Categories=Utility;Network;
 Keywords=ia;asistente;chat;google;
