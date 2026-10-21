@@ -79,6 +79,7 @@ finalizar() {
   # Servicios: solo lo necesario
   systemctl enable greetd.service NetworkManager.service systemd-resolved.service \
     earlyoom.service fstrim.timer 2>&1 | grep -v '^Created symlink' || true
+  systemctl enable bluetooth.service 2>/dev/null || true
   systemctl enable open-vm-tools.service qemu-guest-agent.service 2>/dev/null || true
   systemctl enable infinity-live-groups.service 2>&1 | grep -v '^Created symlink' || true
   systemctl set-default graphical.target

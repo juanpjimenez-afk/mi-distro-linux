@@ -18,7 +18,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import calendario_icono, isla_logica  # noqa: E402  (parseo de volumen compartido con la isla: tolera la coma decimal)
+from . import bluetooth_logica, calendario_icono, isla_logica  # noqa: E402  (parseo de volumen compartido con la isla: tolera la coma decimal)
 from .ajustes import fecha_corta, valor as ajuste  # noqa: E402
 from .controles_logica import elegir_destino_clic, es_minimizada, restaurar  # noqa: E402
 
@@ -440,6 +440,16 @@ class Estado(Gtk.Window):
         self.red.connect("clicked", lambda *_: _ejecutar(["foot", "nmtui"]))
         caja.append(self.red)
 
+        # Bluetooth (solo si hay adaptador): clic = bluetoothctl en una terminal (power on, scan on, pair…)
+        self.bt_img = Gtk.Image.new_from_icon_name(bluetooth_logica.icono(Gtk.IconTheme.get_for_display(self.get_display()).has_icon))
+        self.bt = Gtk.Button()
+        self.bt.add_css_class("status-btn")
+        self.bt.set_child(self.bt_img)
+        self.bt.set_tooltip_text("Bluetooth · clic para conectar dispositivos")
+        self.bt.connect("clicked", lambda *_: _ejecutar(["foot", "bluetoothctl"]))
+        self.bt.set_visible(bluetooth_logica.hay_adaptador())
+        caja.append(self.bt)
+
         # Batería (solo si existe)
         self.bat_caja = Gtk.Box(spacing=4)
         self.bat_caja.add_css_class("status-btn")
@@ -497,6 +507,7 @@ class Estado(Gtk.Window):
         self._actualizar_volumen()
 
     def _tic_lento(self):
+        self.bt.set_visible(bluetooth_logica.hay_adaptador())     # un adaptador USB se puede enchufar con la sesión abierta
         self._actualizar_bateria()
         self._actualizar_volumen()
         self._actualizar_red()

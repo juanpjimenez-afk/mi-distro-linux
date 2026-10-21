@@ -37,6 +37,7 @@ network-manager
 wpasupplicant
 wireless-regdb
 iw
+bluez                      # Bluetooth: servicio y bluetoothctl (el botón de la píldora de estado lo abre; solo sale si hay adaptador)
 
 # --- Audio -------------------------------------------------------------------
 pipewire
