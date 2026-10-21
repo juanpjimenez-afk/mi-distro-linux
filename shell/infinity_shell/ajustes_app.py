@@ -396,8 +396,10 @@ class VentanaAjustes(Gtk.ApplicationWindow):
             self.pila.add_titled(self._pagina(clave), clave, titulo)
 
         pie = Gtk.Box(spacing=8)
-        pie.set_margin_start(16)
-        pie.set_margin_end(16)
+        # Las burbujas ∞ y pAnkI flotan sobre las esquinas de abajo (50 px, a 18 px del borde): sin este margen
+        # tapan el mensaje de estado y el borde de «Aplicar», y un clic ahí abre pAnkI en vez de aplicar.
+        pie.set_margin_start(76)
+        pie.set_margin_end(76)
         pie.set_margin_top(8)
         pie.set_margin_bottom(12)
         self.estado = Gtk.Label(xalign=0, hexpand=True, wrap=True)

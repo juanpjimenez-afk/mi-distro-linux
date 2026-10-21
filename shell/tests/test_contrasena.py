@@ -112,7 +112,8 @@ class TestResumen(unittest.TestCase):
 
 
 class TestCambiarContrasena(unittest.TestCase):
-    ARGV = ["foot", "--hold", "--title", "Cambiar contraseña", "passwd"]
+    ARGV = ["foot", "--hold", "--title", "Cambiar contraseña",
+            "/usr/libexec/infinity/cambiar-contrasena"]
 
     def test_argv_fijo_sin_shell_y_sin_nada_interpolado(self):
         self.assertEqual(A.argv_cambiar_contrasena(), self.ARGV)

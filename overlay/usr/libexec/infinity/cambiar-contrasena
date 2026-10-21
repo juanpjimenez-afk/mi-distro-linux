@@ -1,0 +1,10 @@
+#!/bin/sh
+# Lo que corre dentro de la terminal de Ajustes → Cambiar contraseña. passwd no muestra nada mientras se
+# teclea (ni asteriscos), y eso parece una terminal bloqueada: se avisa antes. La contraseña la lee passwd,
+# nunca este script.
+printf '%s\n' \
+  "Cambiar la contraseña de $(id -un)." \
+  "Escribe la nueva contraseña y pulsa Enter. NO se ve nada mientras escribes (ni asteriscos): es normal." \
+  "Pide mínimo 6 caracteres y la repites una segunda vez. Cierra esta ventana cuando termines." \
+  ""
+exec passwd

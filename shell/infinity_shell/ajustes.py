@@ -827,9 +827,10 @@ def resumen_contrasena(estado, usuario):
 def argv_cambiar_contrasena():
     """La terminal que ejecuta passwd. Lista fija: sin shell y sin nada interpolado.
 
-    --hold deja la ventana abierta al terminar, para leer el resultado de passwd.
+    --hold deja la ventana abierta al terminar, para leer el resultado de passwd. El script avisa de que
+    passwd no muestra lo que se teclea.
     """
-    return ["foot", "--hold", "--title", "Cambiar contraseña", "passwd"]
+    return ["foot", "--hold", "--title", "Cambiar contraseña", "/usr/libexec/infinity/cambiar-contrasena"]
 
 
 def cambiar_contrasena(correr=None):
