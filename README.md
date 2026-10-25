@@ -32,11 +32,11 @@ La ISO se construye **en la nube de GitHub**; tú solo la descargas.
    *Source code* son el código, no la ISO). La página de la ejecución en *Actions* no ofrece descarga: si ves ahí un
    aviso amarillo de «Node.js 20 is deprecated», es de GitHub y no afecta a la ISO.
 
-> Para publicar una versión (la ISO queda en **Releases**): crea una etiqueta con la versión, por ejemplo `v4.3.0`.
+> Para publicar una versión (la ISO queda en **Releases**): crea una etiqueta con la versión, por ejemplo `v4.3.1`.
 > Lanzar el flujo a mano solo sube la ISO como *Artifact* (un `.zip` con cuota limitada en repositorios privados).
 
 Comprueba que la descarga no se dañó: el archivo `.sha256` trae la huella. En PowerShell:
-`Get-FileHash .\infinity-os-4.3.0-amd64.iso -Algorithm SHA256`.
+`Get-FileHash .\infinity-os-4.3.1-amd64.iso -Algorithm SHA256`.
 
 ## 2. Probarla en una máquina virtual (recomendado)
 
@@ -82,8 +82,10 @@ HOME, los ajustes, pAnkI y su calendario, las redes wifi y lo que instales sobre
 - **En una máquina virtual con la ISO como CD:** el CD no se puede escribir, así que añade un **segundo disco
   virtual vacío** (4 GB bastan) y, una sola vez, en una terminal de Infinity OS: `lsblk` (para ver cuál es el
   disco vacío; suele ser `sdb`) y `sudo mkfs.ext4 -L writable /dev/sdb`. Al reiniciar lo usa solo.
-- **Bluetooth:** `bluez` va incluido; si el equipo tiene adaptador, aparece un botón en la píldora de estado que
-  abre `bluetoothctl`.
+- **Internet y Bluetooth:** el icono de red de la esquina inferior derecha abre una ventana sencilla («Internet y
+  Bluetooth»): interruptor de Wi-Fi, lista de redes (elige una, escribe la contraseña y «Conectar») y, si el equipo
+  tiene adaptador Bluetooth, otro botón con su lista de dispositivos y «Buscar dispositivos». También está en la
+  biblioteca de apps.
 - **Saber si se está guardando:** *Ajustes → Sistema → Guardado de cambios* lo dice.
 - **Ojo al actualizar la ISO:** el guardado conserva tu HOME antiguo y *tapa* los archivos de configuración que
   traiga la ISO nueva. Si algo nuevo no aparece, arranca con **sesión limpia** o borra el guardado

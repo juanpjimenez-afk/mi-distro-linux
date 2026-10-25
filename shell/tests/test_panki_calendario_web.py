@@ -1375,6 +1375,8 @@ class TestPersistencia(unittest.TestCase):
         ctx = _PW.chromium.launch_persistent_context(perfil, **kw)
         ctx.add_init_script("window.__PANKI_NOMBRE_SISTEMA__='pAnkI';try{if(!localStorage.getItem('infinitos.prefs'))localStorage.setItem('infinitos.prefs',JSON.stringify({mode:'fast',web:false}))}catch(e){}")
         page = ctx.new_page()
+        # Fecha fija: sin esto «el 23 de octubre» salta a 2027 en cuanto pasa esa fecha y la prueba caduca sola.
+        page.clock.install(time=instante("America/Santiago", 2026, 10, 19, 12, 0))
         page.goto(URL)
         return ctx, page
 

@@ -210,7 +210,12 @@ class TestOrdenes(unittest.TestCase):
     def test_fstab_y_greetd(self):
         self.assertIn("UUID=r / ext4", I.fstab("r", "e").replace("         ", " "))
         self.assertIn("/boot/efi vfat", I.fstab("r", "e"))
-        self.assertNotIn("initial_session", I.greetd_instalado())   # sin sesión automática
+        g = I.greetd_instalado("juan")
+        self.assertIn('user = "juan"', g)                      # entra a su sesión...
+        self.assertIn("INFINITY_BLOQUEO_ARRANQUE=1", g)        # ...directo a la pantalla de bloqueo (pide contraseña)
+        self.assertIn('user = "_greetd"', g)                   # y si cierra sesión, queda el login de texto
+        with self.assertRaises(I.ErrorInstalacion):
+            I.greetd_instalado('juan"\ncommand = "x')           # nada de inyectar líneas en el archivo
 
 
 class TestModoSinPreguntas(unittest.TestCase):

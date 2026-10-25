@@ -1,0 +1,7 @@
+#!/bin/sh
+# Internet y Bluetooth, sin complicaciones: lista de redes Wi-Fi y de dispositivos Bluetooth con botones.
+# La lógica está en shell/infinity_shell/redes_logica.py y la ventana en redes_app.py (en /usr/lib/infinity).
+# Usa nmcli y bluetoothctl, que ya vienen con el sistema.
+export PYTHONPATH=/usr/lib/infinity
+export GSK_RENDERER="${GSK_RENDERER:-cairo}"
+exec python3 -m infinity_shell.redes_app "$@"

@@ -431,22 +431,22 @@ class Estado(Gtk.Window):
         self.vol.add_controller(der)
         caja.append(self.vol)
 
-        # Red: clic = elegir/conectar (nmtui en una terminal)
+        # Red: clic = ventana sencilla de Internet y Bluetooth (infinity-redes)
         self.red_img = Gtk.Image.new_from_icon_name("network-offline-symbolic")
         self.red = Gtk.Button()
         self.red.add_css_class("status-btn")
         self.red.set_child(self.red_img)
-        self.red.set_tooltip_text("Red · clic para conectar")
-        self.red.connect("clicked", lambda *_: _ejecutar(["foot", "nmtui"]))
+        self.red.set_tooltip_text("Internet · clic para conectarte")
+        self.red.connect("clicked", lambda *_: _ejecutar(["infinity-redes"]))
         caja.append(self.red)
 
-        # Bluetooth (solo si hay adaptador): clic = bluetoothctl en una terminal (power on, scan on, pair…)
+        # Bluetooth (solo si hay adaptador): clic = la misma ventana, buscando dispositivos
         self.bt_img = Gtk.Image.new_from_icon_name(bluetooth_logica.icono(Gtk.IconTheme.get_for_display(self.get_display()).has_icon))
         self.bt = Gtk.Button()
         self.bt.add_css_class("status-btn")
         self.bt.set_child(self.bt_img)
         self.bt.set_tooltip_text("Bluetooth · clic para conectar dispositivos")
-        self.bt.connect("clicked", lambda *_: _ejecutar(["foot", "bluetoothctl"]))
+        self.bt.connect("clicked", lambda *_: _ejecutar(["infinity-redes", "--bluetooth"]))
         self.bt.set_visible(bluetooth_logica.hay_adaptador())
         caja.append(self.bt)
 

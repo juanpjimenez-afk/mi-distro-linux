@@ -162,9 +162,16 @@ def grub_defecto(nombre_os="Infinity OS"):
             "GRUB_DISABLE_OS_PROBER=true\n")
 
 
-def greetd_instalado():
-    """Sin inicio de sesión automático: el sistema instalado pide usuario y contraseña."""
+def greetd_instalado(usuario):
+    """Al encender se entra a la sesión de `usuario` y arranca con la pantalla de bloqueo (la de la cascada, que pide
+    su contraseña): igual que la ISO en vivo y sin el login de texto. infinity-lock bloquea solo en este primer
+    inicio (INFINITY_BLOQUEO_ARRANQUE). Si se cierra la sesión, queda tuigreet para volver a entrar."""
+    if validar_usuario(usuario):
+        raise ErrorInstalacion(f"Usuario no válido para el inicio de sesión: {usuario!r}")
     return ('# greetd: gestor de inicio de sesión mínimo (sistema instalado).\n[terminal]\nvt = 7\n\n'
+            '# Primer inicio: directo a la pantalla de bloqueo, que pide la contraseña.\n[initial_session]\n'
+            'command = "env INFINITY_BLOQUEO_ARRANQUE=1 infinity-session"\n'
+            f'user = "{usuario}"\n\n'
             '[default_session]\ncommand = "tuigreet --time --asterisks --remember --cmd infinity-session"\n'
             'user = "_greetd"\n')
 
@@ -263,7 +270,7 @@ class Instalador:
         self.escribir_archivo("/etc/hostname", c.equipo + "\n")
         self.escribir_archivo("/etc/hosts", f"127.0.0.1 localhost\n127.0.1.1 {c.equipo}\n"
                               "::1 localhost ip6-localhost ip6-loopback\n")
-        self.escribir_archivo("/etc/greetd/config.toml", greetd_instalado())
+        self.escribir_archivo("/etc/greetd/config.toml", greetd_instalado(c.usuario))
         self.escribir_archivo("/etc/default/grub", grub_defecto())
         # Cada instalación tiene su propio machine-id (systemd lo genera al primer arranque)
         self.escribir_archivo("/etc/machine-id", "")

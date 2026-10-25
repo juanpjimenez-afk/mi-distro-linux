@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Internet y Bluetooth
+Comment=Conecta el Wi-Fi y los dispositivos Bluetooth
+Exec=infinity-redes
+Icon=network-wireless
+Terminal=false
+Categories=Settings;Network;
+Keywords=internet;wifi;wi-fi;red;bluetooth;conectar;
+StartupWMClass=org.infinity.Redes
